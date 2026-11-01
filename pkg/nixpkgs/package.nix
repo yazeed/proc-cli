@@ -43,6 +43,16 @@ rustPlatform.buildRustPackage (finalAttrs: {
     export HOME=$(mktemp -d)
   '';
 
+  # The port tests listen on 127.0.0.1, which the macOS sandbox refuses
+  # (EPERM) without this
+  __darwinAllowLocalNetworking = true;
+
+  # This test reads /etc/passwd, which the macOS sandbox can't open; from
+  # 2.2.0 it asks the directory service instead, and this skip goes
+  checkFlags = lib.optionals stdenv.hostPlatform.isDarwin [
+    "--skip=core::process::tests::an_account_whose_shell_is_false_is_named"
+  ];
+
   postInstall = lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
     $out/bin/proc manpage > proc.1
     installManPage proc.1

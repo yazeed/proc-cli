@@ -43,6 +43,10 @@
             export HOME=$(mktemp -d)
           '';
 
+          # The port tests listen on 127.0.0.1, which macOS's sandbox refuses
+          # (EPERM) without this
+          __darwinAllowLocalNetworking = true;
+
           # The whole suite runs in the sandbox; never turn it off. If a test
           # the sandbox stops ever has to be skipped, do it by exact name in
           # `checkFlags = [ "--skip=<name>" ]`, with the reason beside it.

@@ -712,17 +712,22 @@ fn for_filters_drop_what_does_not_match() {
     }
 }
 
-/// Whether lsof, which the open-file lookup runs, is installed. Windows has no
-/// open-file lookup, and a minimal Linux image has no lsof.
+/// Whether the program the open-file lookup runs is installed: lsof, or the
+/// base system's fstat on FreeBSD and NetBSD. Windows has no open-file
+/// lookup, and a minimal Linux image has no lsof.
 #[cfg(unix)]
-fn has_lsof() -> bool {
-    let found = std::process::Command::new("lsof")
-        .arg("-v")
+fn has_open_file_lookup() -> bool {
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+    let (program, probe) = ("fstat", &["-p", "1"][..]);
+    #[cfg(not(any(target_os = "freebsd", target_os = "netbsd")))]
+    let (program, probe) = ("lsof", &["-v"][..]);
+    let found = std::process::Command::new(program)
+        .args(probe)
         .output()
         .is_ok();
     if !found {
         proc_cli::err_println!(
-            "lsof is not installed here, so there is no open-file lookup to test"
+            "{program} is not installed here, so there is no open-file lookup to test"
         );
     }
     found
@@ -781,7 +786,7 @@ fn for_lists_all(file: &Path, pids: &[u32]) -> Option<Value> {
 #[cfg(unix)]
 #[test]
 fn for_finds_a_process_that_has_the_file_open() {
-    if !has_lsof() {
+    if !has_open_file_lookup() {
         return;
     }
     let (_tmp, dir) = fresh_dir();
@@ -790,7 +795,7 @@ fn for_finds_a_process_that_has_the_file_open() {
     let holder = Holder::start(&file);
     assert!(
         for_lists_all(&file, &[holder.0.id()]).is_some(),
-        "lsof never showed {} holding the file",
+        "the open-file lookup never showed {} holding the file",
         holder.0.id()
     );
 }
@@ -799,7 +804,7 @@ fn for_finds_a_process_that_has_the_file_open() {
 #[cfg(unix)]
 #[test]
 fn for_several_processes_without_ports_shows_only_the_table() {
-    if !has_lsof() {
+    if !has_open_file_lookup() {
         return;
     }
     let (_tmp, dir) = fresh_dir();
@@ -810,7 +815,7 @@ fn for_several_processes_without_ports_shows_only_the_table() {
     let pids = [first.0.id(), second.0.id()];
     assert!(
         for_lists_all(&file, &pids).is_some(),
-        "lsof never showed both"
+        "the open-file lookup never showed both"
     );
 
     let (out, code) = run_text(&["for", &file.to_string_lossy()]);

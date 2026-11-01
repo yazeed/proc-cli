@@ -298,7 +298,7 @@ The skill lives in [`skills/proc-cli/`](skills/proc-cli/SKILL.md) and follows th
 
 The Linux binaries are statically linked (musl) and need no particular glibc version, so they also run on Alpine and on older releases such as Debian 10, Ubuntu 20.04 and Amazon Linux 2.
 
-On FreeBSD and NetBSD proc reads ports with `sockstat`, which is in the base system. `proc for` also looks for processes that have the file open with `lsof`, which is not (`pkg install lsof`, or `pkg_add lsof` on NetBSD); without it, `for` finds the processes running that file only. The kernel forgets the path of a working directory once the directory is deleted, so `proc in` a deleted directory exits 4 there, where Linux and macOS still find the processes in it.
+On FreeBSD and NetBSD proc reads ports with `sockstat` and open files with `fstat`, both in the base system, so it needs nothing installed. The kernel forgets the path of a working directory once the directory is deleted, so `proc in` a deleted directory exits 4 there, where Linux and macOS still find the processes in it.
 
 proc is for processes and ports on the machine it runs on. It is not for containers, system services or remote hosts (see [PHILOSOPHY.md](PHILOSOPHY.md)).
 

@@ -64,7 +64,7 @@ curl -fsSL https://raw.githubusercontent.com/yazeed/proc-cli/main/install.sh | s
 
 On other CPUs, build it with `cargo install proc-cli`.
 
-proc reads ports with `sockstat`, which is in the base system. `proc for` also asks `lsof` which processes have the file open; it is a package too (`pkg install lsof`, or `pkg_add lsof`), and without it `for` finds only the processes running that file. Once a directory is deleted, the kernel forgets that it was a process's working directory, so `proc in` a deleted directory exits 4 here, where Linux and macOS still find the processes in it.
+proc reads ports with `sockstat` and open files with `fstat`, both in the base system, so it needs nothing else installed. Once a directory is deleted, the kernel forgets that it was a process's working directory, so `proc in` a deleted directory exits 4 here, where Linux and macOS still find the processes in it.
 
 ## Any platform
 

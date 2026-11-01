@@ -254,6 +254,43 @@ fn same_start(recorded: Option<u64>, current: u64) -> bool {
     }
 }
 
+/// The program `find_by_open_file` asks which processes have a file open
+#[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+pub(crate) const OPEN_FILE_PROGRAM: &str = "fstat";
+#[cfg(all(unix, not(any(target_os = "freebsd", target_os = "netbsd"))))]
+pub(crate) const OPEN_FILE_PROGRAM: &str = "lsof";
+
+/// The PIDs `lsof -t` printed, one per line
+#[cfg(any(all(unix, not(any(target_os = "freebsd", target_os = "netbsd"))), test))]
+fn lsof_pids(stdout: &str) -> Vec<u32> {
+    stdout
+        .lines()
+        .filter_map(|line| line.trim().parse().ok())
+        .collect()
+}
+
+/// The PIDs in what `fstat FILE` printed (FreeBSD and NetBSD): a header, then
+/// one row per open file, `USER CMD PID FD MOUNT ... NAME`, so a process that
+/// holds the file twice is listed twice. A command name can hold spaces, and
+/// so can the path at the end, but a user name can't: the PID is the first
+/// all-digit field after the user. The header has none
+#[cfg(any(target_os = "freebsd", target_os = "netbsd", test))]
+fn fstat_pids(stdout: &str) -> Vec<u32> {
+    let mut pids: Vec<u32> = stdout
+        .lines()
+        .filter_map(|line| {
+            line.split_whitespace()
+                .skip(1)
+                .find(|field| field.bytes().all(|b| b.is_ascii_digit()))?
+                .parse()
+                .ok()
+        })
+        .collect();
+    pids.sort_unstable();
+    pids.dedup();
+    pids
+}
+
 /// How many times a same-process check reads a process that reports no start time
 const START_TIME_READS: u32 = 10;
 
@@ -767,34 +804,42 @@ impl Process {
             .collect())
     }
 
-    /// Find processes that have a file open (Unix only via lsof)
+    /// Find processes that have a file open (Unix only): `lsof`, or on FreeBSD
+    /// and NetBSD `fstat`, which their base system has. pkgsrc's lsof 4.91
+    /// found no holder at all on NetBSD 11 x86_64, and fstat is built with the
+    /// kernel it reads
     #[cfg(unix)]
     pub fn find_by_open_file(path: &std::path::Path) -> Result<Vec<Process>> {
-        Self::find_by_open_file_with("lsof", path)
+        Self::find_by_open_file_with(OPEN_FILE_PROGRAM, path)
     }
 
-    /// `find_by_open_file` with the lsof program to run, so a test can have it missing
+    /// `find_by_open_file` with the program to run, so a test can have it missing
     #[cfg(unix)]
-    fn find_by_open_file_with(lsof: &str, path: &std::path::Path) -> Result<Vec<Process>> {
+    fn find_by_open_file_with(program: &str, path: &std::path::Path) -> Result<Vec<Process>> {
         use std::process::Command;
 
-        let output = crate::ui::interrupt::unblocked_in_child(&mut Command::new(lsof))
-            .args(["-t", &path.to_string_lossy()]) // -t = terse (PIDs only)
+        let mut command = Command::new(program);
+        // -t = terse (PIDs only); fstat has no such option
+        #[cfg(not(any(target_os = "freebsd", target_os = "netbsd")))]
+        command.arg("-t");
+        let output = crate::ui::interrupt::unblocked_in_child(&mut command)
+            .arg(&*path.to_string_lossy())
             .output();
 
         let output = match output {
             Ok(o) => o,
-            Err(_) => return Ok(vec![]), // lsof not available
+            Err(_) => return Ok(vec![]), // the program is not available
         };
 
         if !output.status.success() {
             return Ok(vec![]); // No processes have file open
         }
 
-        let pids: Vec<u32> = String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .filter_map(|line| line.trim().parse().ok())
-            .collect();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+        let pids = fstat_pids(&stdout);
+        #[cfg(not(any(target_os = "freebsd", target_os = "netbsd")))]
+        let pids = lsof_pids(&stdout);
 
         let mut processes = Vec::new();
         for pid in pids {
@@ -1326,20 +1371,22 @@ mod tests {
 
     /// A service account (shell `/bin/false` or `/usr/bin/false`) is named like
     /// any other: sysinfo's user list leaves such accounts out, so proc showed
-    /// their user ID instead. macOS gives every daemon account that shell; a
-    /// Linux machine need not have one, so the test runs on macOS
+    /// their user ID instead. macOS's `daemon` account has that shell; a Linux
+    /// machine need not have one, so the test runs on macOS. It asks the
+    /// directory service, as proc does: Nix's macOS sandbox can't read /etc/passwd
     #[cfg(target_os = "macos")]
     #[test]
     fn an_account_whose_shell_is_false_is_named() {
-        let passwd = std::fs::read_to_string("/etc/passwd").unwrap();
-        let f = passwd
-            .lines()
-            .filter(|line| !line.starts_with('#'))
-            .map(|line| line.split(':').collect::<Vec<_>>())
-            .find(|f| f.len() == 7 && f[6].ends_with("/false") && f[2].parse::<u32>().is_ok())
-            .expect("macOS has daemon accounts with a false shell");
-        let uid = Uid::try_from(f[2].parse::<usize>().unwrap()).unwrap();
-        assert_eq!(user_name(&uid), f[0]);
+        let daemon = nix::unistd::User::from_name("daemon")
+            .unwrap()
+            .expect("macOS has a daemon account");
+        assert!(
+            daemon.shell.to_string_lossy().ends_with("/false"),
+            "{:?}",
+            daemon.shell
+        );
+        let uid = Uid::try_from(daemon.uid.as_raw() as usize).unwrap();
+        assert_eq!(user_name(&uid), "daemon");
     }
 
     #[cfg(unix)]
@@ -2028,6 +2075,35 @@ mod tests {
     fn a_missing_lsof_finds_no_open_file_owners() {
         let found = Process::find_by_open_file_with("proc-no-such-lsof", std::path::Path::new("/"));
         assert!(found.unwrap().is_empty());
+    }
+
+    #[test]
+    fn lsof_prints_one_pid_a_line() {
+        assert_eq!(lsof_pids("1851\n2614\n"), vec![1851, 2614]);
+        assert!(lsof_pids("").is_empty());
+    }
+
+    #[test]
+    fn fstat_rows_give_the_pids_that_hold_the_file() {
+        // as FreeBSD 15.1 and NetBSD 11.0 printed them
+        let freebsd = "USER     CMD          PID   FD MOUNT      INUM MODE         SZ|DV R/W NAME\n\
+            proc     sleep       2614    3 /        1445173 -rw-r--r--       5  r  /home/proc/held.txt\n";
+        let netbsd = "USER     CMD          PID   FD  MOUNT         INUM MODE         SZ|DV R/W NAME\n\
+            proc     sleep       1851    3  /           425799 -rw-r--r--       5 r   /home/proc/held.txt\n";
+        assert_eq!(fstat_pids(freebsd), vec![2614]);
+        assert_eq!(fstat_pids(netbsd), vec![1851]);
+        // nobody holds it: the header alone
+        assert!(fstat_pids(
+            "USER     CMD          PID   FD MOUNT      INUM MODE         SZ|DV R/W NAME\n"
+        )
+        .is_empty());
+        // a command name with a space, a path with digits and a space, and one
+        // process listed for two descriptors
+        let rows =
+            "proc     Web Content  4021   12 /  77 -rw-r--r--  5 r  /home/proc/2026 notes.txt\n\
+            proc     Web Content  4021   13 /  77 -rw-r--r--  5 r  /home/proc/2026 notes.txt\n\
+            root     sshd           90  text /  12 -r-xr-xr-x  9 r  /home/proc/2026 notes.txt\n";
+        assert_eq!(fstat_pids(rows), vec![90, 4021]);
     }
 
     #[test]
