@@ -421,10 +421,18 @@ mod width {
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
 
+    /// Held while a test opens a terminal and starts proc in it
+    static SPAWNING: Mutex<()> = Mutex::new(());
+
     /// Run `proc <args>` in a pseudo-terminal `cols` wide and return everything
     /// it printed, colour codes removed. Killed and reaped on every path.
     fn in_terminal(cols: u16, args: &[&str]) -> String {
         let deadline = Instant::now() + Duration::from_secs(20);
+        // One test at a time opens a terminal and starts proc in it; the
+        // sessions then run side by side (terminal.rs, `SPAWNING`)
+        let spawning = SPAWNING
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let pair = native_pty_system()
             .openpty(PtySize {
                 rows: 40,
@@ -441,6 +449,7 @@ mod width {
             .slave
             .spawn_command(cmd)
             .expect("spawn proc in the pty");
+        drop(spawning);
         // Our copy of the child's end stays open until everything is read:
         // when the last copy closes, macOS and NetBSD throw away output not
         // yet read (terminal.rs, `finish_reading`)
@@ -475,10 +484,16 @@ mod width {
         // has taken it all, then close our copy so the reader reaches the end
         let drained = Instant::now() + Duration::from_secs(2);
         let fd = pair.master.as_raw_fd().expect("the pty's descriptor");
+        // FIONREAD on Linux; TIOCOUTQ elsewhere, since macOS's FIONREAD on
+        // our end reads 0 (terminal.rs, `unread`)
+        #[cfg(target_os = "linux")]
+        let request = libc::FIONREAD as libc::c_ulong;
+        #[cfg(not(target_os = "linux"))]
+        let request: libc::c_ulong = 0x4004_7473;
         let unread = || {
             let mut waiting: libc::c_int = 0;
-            // SAFETY: FIONREAD writes one int, into `waiting`
-            let ok = unsafe { libc::ioctl(fd, libc::FIONREAD as _, &mut waiting) } == 0;
+            // SAFETY: the request writes one int, into `waiting`
+            let ok = unsafe { libc::ioctl(fd, request as _, &mut waiting) } == 0;
             if ok {
                 waiting
             } else {

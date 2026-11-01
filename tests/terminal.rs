@@ -90,13 +90,21 @@ fn is_cooked(flags: Option<u64>) -> bool {
     flags.is_some_and(|flags| flags & wanted == wanted)
 }
 
-/// How many bytes the child wrote that the reader hasn't taken yet
+/// How many bytes the child wrote that the reader hasn't taken yet. Linux
+/// counts them with FIONREAD on our end. macOS answers that with 0 however much
+/// is waiting, and counts them with TIOCOUTQ (`_IOR('t', 115, int)`; libc has
+/// no name for it there or on NetBSD), which FreeBSD and NetBSD answer too;
+/// all three measured with 23 bytes waiting
 #[cfg(unix)]
 fn unread(master: &dyn portable_pty::MasterPty) -> libc::c_int {
+    #[cfg(target_os = "linux")]
+    let request = libc::FIONREAD as libc::c_ulong;
+    #[cfg(not(target_os = "linux"))]
+    let request: libc::c_ulong = 0x4004_7473;
     let fd = master.as_raw_fd().expect("the pty's descriptor");
     let mut waiting: libc::c_int = 0;
-    // SAFETY: FIONREAD writes one int, into `waiting`
-    if unsafe { libc::ioctl(fd, libc::FIONREAD as _, &mut waiting) } != 0 {
+    // SAFETY: the request writes one int, into `waiting`
+    if unsafe { libc::ioctl(fd, request as _, &mut waiting) } != 0 {
         return 0;
     }
     waiting
@@ -121,6 +129,15 @@ fn finish_reading(
         std::thread::sleep(Duration::from_millis(5));
     }
 }
+
+/// Held while a session opens its terminal and starts the child in it; the
+/// sessions then run side by side. portable-pty opens a terminal and marks its
+/// descriptors close-on-exec in a second step, so a child another test starts
+/// in between inherits them, and the child's own cleanup can't close them
+/// where `/dev/fd` lists only 0 to 2 (FreeBSD without fdescfs). On FreeBSD,
+/// width tests opening terminals 4 at a time then failed to start proc (EPERM)
+/// in 5 runs of 8, and in 0 of 12 holding this; one at a time, 0 of 8
+static SPAWNING: Mutex<()> = Mutex::new(());
 
 /// The whole session may take this long; then the child is killed and the test fails
 const SESSION_LIMIT: Duration = Duration::from_secs(20);
@@ -232,6 +249,9 @@ fn try_run_in_pty(args: &[&str], script: &[Step]) -> Result<PtyRun, String> {
 /// prints, for one
 fn try_run_program_in_pty(program: &str, args: &[&str], script: &[Step]) -> Result<PtyRun, String> {
     let deadline = Instant::now() + SESSION_LIMIT;
+    let spawning = SPAWNING
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let pair = native_pty_system()
         .openpty(PtySize {
             rows: 40,
@@ -249,6 +269,7 @@ fn try_run_program_in_pty(program: &str, args: &[&str], script: &[Step]) -> Resu
         .slave
         .spawn_command(cmd)
         .expect("spawn proc in the pty");
+    drop(spawning);
     // Windows: the child holds the only other end; with ours closed, the
     // reader sees end-of-file when the child is gone.
     // Unix: we keep our copy of the child's end until we have read everything,
