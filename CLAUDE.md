@@ -18,7 +18,7 @@ Project-specific instructions for Claude Code.
 
 ## Project Overview
 
-proc is a semantic CLI tool for process management written in Rust. It provides a unified interface for process and port operations across macOS, Linux, and Windows.
+proc is a semantic CLI tool for process management written in Rust. It provides a unified interface for process and port operations across macOS, Linux, Windows, FreeBSD and NetBSD.
 
 **Tagline (use exactly):** "Semantic CLI tool for process management. Target by port, PID, name or path."
 

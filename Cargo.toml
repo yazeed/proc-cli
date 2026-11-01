@@ -98,6 +98,14 @@ bin-dir = "proc-linux-x86_64"
 pkg-url = "{ repo }/releases/download/v{ version }/proc-linux-aarch64.tar.gz"
 bin-dir = "proc-linux-aarch64"
 
+[package.metadata.binstall.overrides.x86_64-unknown-freebsd]
+pkg-url = "{ repo }/releases/download/v{ version }/proc-freebsd-x86_64.tar.gz"
+bin-dir = "proc-freebsd-x86_64"
+
+[package.metadata.binstall.overrides.x86_64-unknown-netbsd]
+pkg-url = "{ repo }/releases/download/v{ version }/proc-netbsd-x86_64.tar.gz"
+bin-dir = "proc-netbsd-x86_64"
+
 [profile.release]
 opt-level = 3
 lto = true

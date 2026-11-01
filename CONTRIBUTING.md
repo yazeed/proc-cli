@@ -208,6 +208,17 @@ Tests aim proc only at processes they started themselves (a copy of `examples/li
 
 `nix flake check -L` builds proc from `Cargo.lock` and runs this whole suite in Nix's build sandbox, on Linux and macOS in CI. The sandbox has no real `$HOME`, a bare `PATH`, its own process namespace, and the system's `coreutils` may be one multi-call binary, so a test must not assume a home directory, a tool the machine happens to have, that `sleep` runs under another name, or that the machine has more than one process tree. `flake.nix` sets `$HOME` for the terminal tests and adds the tools the tests call, since the `PATH` has neither `/bin` nor `/usr/sbin` (`procps` on Linux; Apple's `ps`, `darwin.ps`, and `lsof` on macOS, where proc reads ports with `lsof`); it never turns the tests off. A test the sandbox must stop is skipped by exact name in `checkFlags`, with the reason beside it. Without Nix installed, run the check in the `nixos/nix` Docker image (`--privileged` for the sandbox, and `NIX_CONFIG="experimental-features = nix-command flakes"`).
 
+### FreeBSD and NetBSD
+
+GitHub has no BSD runners, so the `bsd` job in CI boots FreeBSD 15.1 and NetBSD 11.0 virtual machines on a Linux runner (`vmactions/freebsd-vm`, `vmactions/netbsd-vm`) and runs the whole suite in each, with `lsof` installed for `proc for`. The `build` job cross-compiles the release binaries with `cross`. Neither OS is in the coverage merge, so code that only exists on a BSD is checked by that job's tests alone.
+
+Two rules keep proc correct there:
+
+- **Every sysinfo refresh goes through `sysinfo_locked`** (`src/core/process.rs`), or `refreshed_system()` for a full snapshot. FreeBSD's libkvm reads command lines into buffers shared by the whole program, so two threads refreshing at once crash proc (the tests run in parallel threads and found it). The lock also points stderr at `/dev/null` while it refreshes, because libprocstat prints a warning there for every process that exits mid-read.
+- **CPU time comes from `cpu_time_ms`**, never from sysinfo's `accumulated_cpu_time` directly. On NetBSD sysinfo counts it in hundredths of a second and rounds it to whole seconds, so a process spinning at 100% read 0% over a 0.2 s window; `cpu_time_ms` reads the kernel's counter there.
+
+Four tests of a deleted working directory are ignored on both, with the reason in the attribute: once a directory is deleted, FreeBSD shows `-` for the path and NetBSD none at all, so `proc in` has nothing to match.
+
 ### Coverage
 
 CI fails a change that lowers line coverage or leaves a flag without a test. The `Coverage gate` job checks:

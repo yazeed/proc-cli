@@ -2,7 +2,7 @@
 
 Semantic CLI tool for process management. Target by port, PID, name or path.
 
-Find what's on a port, why it's there, and stop it, in one command you'd guess on the first try. On macOS, Linux and Windows.
+Find what's on a port, why it's there, and stop it, in one command you'd guess on the first try. On macOS, Linux, Windows, FreeBSD and NetBSD.
 
 ```bash
 brew install yazeed/proc/proc
@@ -40,7 +40,7 @@ A dev server won't start because port 3000 is taken. proc finds the old tmux ses
 | Pause a process | `proc freeze node` | `kill -STOP $(pgrep node)` |
 | Wait for it to exit | `proc wait node` | `while ps aux \| grep node \| grep -v grep; do sleep 5; done` |
 | Watch in real time | `proc watch node` | `watch -n2 'ps aux \| grep node'` |
-| Find leftovers (macOS, Linux) | `proc orphans --in .` | No standard tool |
+| Find leftovers (not on Windows) | `proc orphans --in .` | No standard tool |
 
 [Full comparison &rarr;](https://proc-cli.com/posts/proc-vs-lsof-fuser-killport-fkill/)
 
@@ -66,6 +66,7 @@ proc free :3000 --yes             # a port target: no question
 | Linux | `curl -fsSL https://raw.githubusercontent.com/yazeed/proc-cli/main/install.sh \| bash`, or `brew install yazeed/proc/proc` |
 | Debian / Ubuntu | Download `proc-cli_X.Y.Z_amd64.deb` (or `_arm64.deb`) from the [latest release](https://github.com/yazeed/proc-cli/releases/latest), then `sudo apt install ./proc-cli_X.Y.Z_amd64.deb` |
 | Fedora / RHEL | Download `proc-cli-X.Y.Z-1.x86_64.rpm` (or `.aarch64.rpm`) from the [latest release](https://github.com/yazeed/proc-cli/releases/latest), then `sudo dnf install ./proc-cli-X.Y.Z-1.x86_64.rpm` |
+| FreeBSD / NetBSD (x86_64) | `curl -fsSL https://raw.githubusercontent.com/yazeed/proc-cli/main/install.sh \| sh` (curl is a package: `pkg install curl`), or `cargo install proc-cli` on other CPUs |
 | Windows | `scoop bucket add proc https://github.com/yazeed/scoop-bucket-proc && scoop install proc` |
 | npm / bun | `npm install -g proc-cli` |
 | Rust | `cargo install proc-cli` (or `cargo binstall proc-cli` for the pre-built binary) |
@@ -111,6 +112,10 @@ sudo mv proc-linux-x86_64 /usr/local/bin/proc
 # Linux (ARM64)
 curl -fsSL https://github.com/yazeed/proc-cli/releases/latest/download/proc-linux-aarch64.tar.gz | tar xz
 sudo mv proc-linux-aarch64 /usr/local/bin/proc
+
+# FreeBSD (x86_64); for NetBSD the file is proc-netbsd-x86_64
+curl -fsSL https://github.com/yazeed/proc-cli/releases/latest/download/proc-freebsd-x86_64.tar.gz | tar xz
+sudo mv proc-freebsd-x86_64 /usr/local/bin/proc
 
 # Windows (PowerShell, run as administrator to write to System32)
 Invoke-WebRequest -Uri https://github.com/yazeed/proc-cli/releases/latest/download/proc-windows-x86_64.exe.zip -OutFile proc.zip
@@ -287,9 +292,13 @@ The skill lives in [`skills/proc-cli/`](skills/proc-cli/SKILL.md) and follows th
 | macOS | Apple Silicon (ARM64), Intel (x86_64) | ✅ |
 | Linux | x86_64, ARM64 | ✅ |
 | Windows | x86_64 | ✅ (no `freeze`, `thaw`, `orphans`, `stop --signal`) |
+| FreeBSD | x86_64 (other CPUs: `cargo install proc-cli`) | ✅ (see below) |
+| NetBSD | x86_64 (other CPUs: `cargo install proc-cli`) | ✅ (see below) |
 | Docker | linux/amd64, linux/arm64 | ✅ |
 
 The Linux binaries are statically linked (musl) and need no particular glibc version, so they also run on Alpine and on older releases such as Debian 10, Ubuntu 20.04 and Amazon Linux 2.
+
+On FreeBSD and NetBSD proc reads ports with `sockstat`, which is in the base system. `proc for` also looks for processes that have the file open with `lsof`, which is not (`pkg install lsof`, or `pkg_add lsof` on NetBSD); without it, `for` finds the processes running that file only. The kernel forgets the path of a working directory once the directory is deleted, so `proc in` a deleted directory exits 4 there, where Linux and macOS still find the processes in it.
 
 proc is for processes and ports on the machine it runs on. It is not for containers, system services or remote hosts (see [PHILOSOPHY.md](PHILOSOPHY.md)).
 

@@ -12,7 +12,9 @@
 //!
 //! Commas still work (`proc watch :3000,:8080`) but are deprecated.
 
-use crate::core::process::{classify_sysinfo, self_and_ancestors};
+use crate::core::process::{
+    classify_sysinfo, refreshed_system, self_and_ancestors, sysinfo_locked,
+};
 use crate::core::{
     flatten_targets, parse_target, resolve_in_dir, sort_processes, Hit, NameMatch, Process,
     ProcessStatus, SortKey, TargetType,
@@ -350,11 +352,10 @@ impl WatchCommand {
         terminal::enable_raw_mode()
             .map_err(|e| crate::error::ProcError::SystemError(e.to_string()))?;
 
-        let mut sys = System::new_all();
+        let mut sys = refreshed_system();
         let interval = Duration::from_secs_f64(self.interval);
 
-        // Initial refresh to get baseline CPU readings
-        sys.refresh_all();
+        // The snapshot above is the baseline for the first CPU readings
         std::thread::sleep(Duration::from_millis(250));
 
         let result = self.tui_event_loop(&mut sys, &mut stdout, interval);
@@ -372,7 +373,7 @@ impl WatchCommand {
         interval: Duration,
     ) -> Result<()> {
         loop {
-            sys.refresh_all();
+            sysinfo_locked(|| sys.refresh_all());
             let processes = self.collect_processes(sys);
 
             // Get terminal size
@@ -665,15 +666,14 @@ impl WatchCommand {
 
     /// JSON loop: NDJSON output, one line per refresh
     fn run_json_loop(&self) -> Result<()> {
-        let mut sys = System::new_all();
+        let mut sys = refreshed_system();
         let interval = Duration::from_secs_f64(self.interval);
 
-        // Initial refresh for baseline CPU
-        sys.refresh_all();
+        // The snapshot above is the baseline for the first CPU readings
         std::thread::sleep(Duration::from_millis(250));
 
         loop {
-            sys.refresh_all();
+            sysinfo_locked(|| sys.refresh_all());
             let processes = self.collect_processes(&sys);
 
             let output = WatchJsonOutput {
@@ -697,10 +697,9 @@ impl WatchCommand {
 
     /// Single snapshot (non-TTY mode)
     fn run_snapshot(&self) -> Result<()> {
-        let mut sys = System::new_all();
-        sys.refresh_all();
+        let mut sys = refreshed_system();
         std::thread::sleep(Duration::from_millis(250));
-        sys.refresh_all();
+        sysinfo_locked(|| sys.refresh_all());
 
         let processes = self.collect_processes(&sys);
 
@@ -1200,8 +1199,7 @@ mod tests {
 
     #[test]
     fn collecting_applies_the_sort_and_the_limit() {
-        let mut sys = System::new_all();
-        sys.refresh_all();
+        let sys = refreshed_system();
         let mut cmd = watch_args();
         cmd.sort = WatchSortKey::Pid;
         let all = cmd.collect_processes(&sys);
@@ -1217,8 +1215,7 @@ mod tests {
 
     #[test]
     fn a_port_holder_the_snapshot_has_not_seen_is_left_out() {
-        let mut sys = System::new_all();
-        sys.refresh_all();
+        let sys = refreshed_system();
         let mut cmd = watch_args();
         cmd.target = vec![":8080".into()];
         // This test's own process is in the snapshot; PID 4294967294 is not
@@ -1233,8 +1230,7 @@ mod tests {
 
     #[test]
     fn a_name_never_finds_the_processes_that_ran_watch() {
-        let mut sys = System::new_all();
-        sys.refresh_all();
+        let sys = refreshed_system();
         let me = Pid::from_u32(std::process::id());
         let parent = sys.process(me).and_then(|p| p.parent()).expect("a parent");
         let parent_name = sys
@@ -1255,8 +1251,7 @@ mod tests {
 
     #[test]
     fn every_holder_of_a_port_is_watched_once() {
-        let mut sys = System::new_all();
-        sys.refresh_all();
+        let sys = refreshed_system();
         let mut cmd = watch_args();
         cmd.target = vec![":8080".into(), std::process::id().to_string()];
         let me = std::process::id();

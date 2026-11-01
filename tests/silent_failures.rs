@@ -248,6 +248,10 @@ fn a_missing_in_directory_is_an_error_for_every_command() {
 /// can be found
 #[cfg(unix)]
 #[test]
+#[cfg_attr(
+    any(target_os = "freebsd", target_os = "netbsd"),
+    ignore = "FreeBSD and NetBSD forget the path of a deleted working directory"
+)]
 fn a_deleted_directory_with_a_process_in_it_still_finds_the_process() {
     let (tmp, dir) = fresh_dir();
     let project = dir.join("project");
@@ -270,6 +274,10 @@ fn a_deleted_directory_with_a_process_in_it_still_finds_the_process() {
 /// part of the path that still exists is resolved, the rest kept as typed
 #[cfg(unix)]
 #[test]
+#[cfg_attr(
+    any(target_os = "freebsd", target_os = "netbsd"),
+    ignore = "FreeBSD and NetBSD forget the path of a deleted working directory"
+)]
 fn a_deleted_directory_typed_through_a_symlink_still_finds_the_process() {
     let (tmp, dir) = fresh_dir();
     let real = dir.join("real");
@@ -463,6 +471,10 @@ fn tree_in_shows_a_matching_child_once() {
 /// nothing
 #[cfg(unix)]
 #[test]
+#[cfg_attr(
+    any(target_os = "freebsd", target_os = "netbsd"),
+    ignore = "FreeBSD and NetBSD forget the path of a deleted working directory"
+)]
 fn ports_in_a_deleted_directory_whose_process_listens_on_nothing_is_empty() {
     let (_tmp, dir) = fresh_dir();
     let project = dir.join("project");

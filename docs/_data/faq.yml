@@ -110,7 +110,7 @@
 - q: How do I pause and resume a process?
   id: pause-resume-process
   a: |
-    `proc freeze` pauses a process without ending it, and `proc thaw` resumes it. This is handy for a CPU-heavy build while you need the machine for something else (macOS and Linux).
+    `proc freeze` pauses a process without ending it, and `proc thaw` resumes it. This is handy for a CPU-heavy build while you need the machine for something else (not on Windows).
 
     ```bash
     proc freeze :3000
@@ -136,4 +136,4 @@
 - q: Is proc free, and where does it run?
   id: about-proc
   a: |
-    Yes. proc is free and open source under the MIT license, written in Rust, and runs on macOS, Linux and Windows as a single binary. See [install](install) for every option.
+    Yes. proc is free and open source under the MIT license, written in Rust, and runs on macOS, Linux, Windows, FreeBSD and NetBSD as a single binary. See [install](install) for every option.

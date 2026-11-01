@@ -4,7 +4,7 @@ This file is about what might come next. Nothing in it is promised. An idea ship
 
 Each candidate lists what it would look like, how it fares against the feature test so far, and what's still open.
 
-## Decided: the next minor release
+## Decided: the minor release after 2.2.0
 
 ### One rich, consistent view of a process
 
@@ -34,6 +34,7 @@ The flake is done (see the CHANGELOG): it reads its version from Cargo.toml, has
 
 - A nixpkgs package, `proc-cli` (`pkgs/by-name/pr/proc-cli/package.nix`), with `passthru.updateScript = nix-update-script { }` so the update bot follows releases, and a maintainer entry. The file lives in this repo as `pkg/nixpkgs/package.nix`, and each release moves it and the pull request to the new version (RELEASE.md, "After the tag: nixpkgs"). The first pull request is for 2.1.1, the first release whose tests pass wherever Nix builds them.
 - The README and website install rows say `nix profile install github:yazeed/proc-cli` already; they change to `nix run nixpkgs#proc-cli` once nixpkgs merges the package.
+- With 2.2.0, the package's `meta.platforms` widens from `linux ++ darwin` to the BSDs as well (`freebsd ++ netbsd`), since proc runs there from that release.
 
 **Open:** when nixpkgs merges the package. (The macOS Nix job passes with nothing skipped: its sandbox needed Apple's `ps` and nixpkgs' `lsof` as check inputs.)
 
@@ -153,7 +154,8 @@ Each of these puts proc one command away for people who don't use the channels p
 1. **winget**, the package manager that ships with Windows. Its contributing guide sets no popularity bar, and the identifier `yazeed.proc-cli` is free. The manifest uses the release's `proc-windows-x86_64.exe.zip` as a zip with a nested portable installer and the command alias `proc` (the shape `sharkdp.fd` uses); a Windows CI job checks it with `winget validate` and `winget install --manifest`. The first version is one hand-written PR to microsoft/winget-pkgs (Microsoft's CLA is signed on it); after it merges, a `winget-releaser` job in release.yml submits each release, which needs a fork of winget-pkgs and a classic token (`public_repo`, `workflow`). winget scans installers with several antivirus engines, which can flag a tool that kills processes.
 2. **`.deb` and `.rpm` files on GitHub Releases.** Decided for 2.2.0, built and tested on `main`, shipped with the release (this item leaves the file then). No gatekeeper: they are release assets, not a repository. nfpm (`pkg/nfpm/`) builds both from the static musl binaries in the `package-linux` job of release.yml, with the man page and completions `proc` prints; each was tested with `dpkg -i` or `rpm -i`, `apt` and `dnf` in Debian 12 and 13, Ubuntu 24.04 and Fedora containers on amd64 and arm64. No distro package installs a `/usr/bin/proc` (checked with `apt-file` and `dnf provides`). Without an apt or dnf repository (which needs a signing key) users get no updates, and the files are unsigned.
 3. **PyPI as `proc-cli`** (the name is free; `proc` is a 2020 library that installs no command), built with maturin's `bin` bindings, as crate-ci/typos does, so `pip`, `pipx` and `uv tool` put `proc` on PATH. Wheels for manylinux and musllinux (x86_64, aarch64), macOS (two) and Windows, published with PyPI trusted publishing, which needs a one-time setup on pypi.org. A TestPyPI run comes first.
-4. **homebrew-core**, later: `brew install proc` with no tap, and Linuxbrew. A new formula needs 75 stars when someone else submits it, 225 when the repo's owner does (or 30 / 90 forks or watchers), and must build from source with a `livecheck`. The repo had 62 stars when this was written.
+4. **The BSDs' own package systems and CPUs**, after 2.2.0 (the first release with FreeBSD and NetBSD binaries, for x86_64 only): a FreeBSD port (`pkg install proc-cli`) and a pkgsrc package for NetBSD, which proc can't publish itself (each goes through that project's review); and ARM64 binaries, which wait on cross: its released 0.2.5 has no `aarch64-unknown-freebsd` image (its main branch has one) and none for ARM64 NetBSD.
+5. **homebrew-core**, later: `brew install proc` with no tap, and Linuxbrew. A new formula needs 75 stars when someone else submits it, 225 when the repo's owner does (or 30 / 90 forks or watchers), and must build from source with a `livecheck`. The repo had 62 stars when this was written.
 
 **Feature test:** install, not a feature; it makes the common case (getting proc) one command on each platform. **Open:** the winget and PyPI builds have not been run yet; whether winget's antivirus scan accepts proc; whether the first release's packages install from the real release page (the release run itself is the one thing the containers could not test).
 

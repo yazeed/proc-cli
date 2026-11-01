@@ -183,7 +183,7 @@ groups:
         examples:
           - t: "node"
             kind: name
-            text: "Pauses every <code>node</code> process (SIGSTOP) without ending them, until you thaw them. macOS and Linux."
+            text: "Pauses every <code>node</code> process (SIGSTOP) without ending them, until you thaw them. Not on Windows."
           - t: "1234"
             kind: pid
             text: "Pauses process 1234, handy for a heavy build while you need the machine back."

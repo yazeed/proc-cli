@@ -41,7 +41,7 @@ The table has the same columns as `proc list`, including uptime on terminals at 
 
 **Terminal (default)**: Alternate screen with auto-refresh. Adapts to terminal size.
 
-**JSON** (`--json`): Newline-delimited JSON, one object per refresh cycle. Pipe to `jq` or other tools. When the reader leaves (`proc watch --json | head -n1`), watch stops at once on Linux and macOS, and at the next refresh on Windows.
+**JSON** (`--json`): Newline-delimited JSON, one object per refresh cycle. Pipe to `jq` or other tools. When the reader leaves (`proc watch --json | head -n1`), watch stops at once on Linux, macOS and the BSDs, and at the next refresh on Windows.
 
 **No terminal**: When stdout is not a terminal (piped), or stdin is not (nothing to press `q` on), prints a single snapshot and exits. If only stdin is missing, a `note:` on stderr says so.
 

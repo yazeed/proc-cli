@@ -89,6 +89,15 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: proc-windows-x86_64.exe
+          # The BSDs build in cross's containers, which carry their libc
+          - os: ubuntu-latest
+            target: x86_64-unknown-freebsd
+            artifact: proc-freebsd-x86_64
+            cross: true
+          - os: ubuntu-latest
+            target: x86_64-unknown-netbsd
+            artifact: proc-netbsd-x86_64
+            cross: true
 
     steps:
       - uses: actions/checkout@v4
@@ -97,6 +106,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross@0.2.5
 
       - name: Install cross-compilation tools (Linux ARM64)
         if: matrix.target == 'aarch64-unknown-linux-musl'
@@ -107,7 +122,7 @@ jobs:
           echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
 
       - name: Build release
-        run: cargo build --release --target ${{ matrix.target }}
+        run: ${{ matrix.cross && 'cross' || 'cargo' }} build --release --target ${{ matrix.target }}
 
       # Same check as release.yml: the runners have the Visual C++ runtime, so
       # only the import table shows that proc.exe would need it
@@ -139,6 +154,87 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
           if-no-files-found: error
+
+  # GitHub has no BSD runners: the whole suite runs in a FreeBSD or NetBSD VM
+  # that vmactions boots on the Linux runner. lsof is for `proc for`, which
+  # reads open files with it there as on Linux
+  bsd:
+    name: Test (${{ matrix.os }})
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [freebsd, netbsd]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test on FreeBSD
+        if: matrix.os == 'freebsd'
+        uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1.5.9
+        with:
+          release: "15.1"
+          cpu: 4
+          mem: 8192
+          copyback: false
+          prepare: pkg install -y rust lsof
+          run: |
+            cd "$GITHUB_WORKSPACE"
+            cargo test -- --test-threads=4
+
+      - name: Test on NetBSD
+        if: matrix.os == 'netbsd'
+        uses: vmactions/netbsd-vm@c8a0d7ddb84619a7a8cc4e652efa7950b3fd9f92 # v1.5.2
+        with:
+          release: "11.0"
+          cpu: 4
+          mem: 8192
+          copyback: false
+          prepare: /usr/sbin/pkg_add rust lsof
+          run: |
+            cd "$GITHUB_WORKSPACE"
+            cargo test -- --test-threads=4
+
+  # The build job cross-compiles the BSD binaries and can't run them: each one
+  # runs here, in its own OS, and reads the port table through sockstat
+  bsd-binary:
+    name: Run the ${{ matrix.os }} binary
+    timeout-minutes: 20
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [freebsd, netbsd]
+
+    steps:
+      - name: Download the binary
+        uses: actions/download-artifact@v4
+        with:
+          name: proc-${{ matrix.os }}-x86_64
+
+      - name: Run it on FreeBSD
+        if: matrix.os == 'freebsd'
+        uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1.5.9
+        with:
+          release: "15.1"
+          copyback: false
+          run: |
+            chmod +x proc-freebsd-x86_64
+            ./proc-freebsd-x86_64 --version
+            ./proc-freebsd-x86_64 ports --json
+
+      - name: Run it on NetBSD
+        if: matrix.os == 'netbsd'
+        uses: vmactions/netbsd-vm@c8a0d7ddb84619a7a8cc4e652efa7950b3fd9f92 # v1.5.2
+        with:
+          release: "11.0"
+          copyback: false
+          run: |
+            chmod +x proc-netbsd-x86_64
+            ./proc-netbsd-x86_64 --version
+            ./proc-netbsd-x86_64 ports --json
 
   # The flake builds proc from Cargo.lock and runs the whole test suite in
   # Nix's sandbox (nix flake check); nix build then installs it with its man

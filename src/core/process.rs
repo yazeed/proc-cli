@@ -10,6 +10,96 @@ use std::sync::OnceLock;
 use std::time::Duration;
 #[cfg(windows)]
 use sysinfo::Users;
+
+/// Runs `refresh`, a sysinfo process refresh, so that no two run at once.
+///
+/// On FreeBSD libkvm reads a process's command line and environment into a
+/// buffer kept in static variables (`kvm_argv` in lib/libkvm/kvm_proc.c), one
+/// for the whole program, so two threads refreshing at the same time read each
+/// other's half-written arrays and crash (seen in the parallel test suite). A
+/// program-wide lock makes that impossible. And libprocstat, which sysinfo asks
+/// for each process's files, prints `kinfo_getfile(): No such process` to
+/// stderr for a process that exits while it reads (lib/libprocstat/libprocstat.c),
+/// so stderr points at /dev/null while the refresh runs. Elsewhere this only
+/// calls `refresh`.
+pub(crate) fn sysinfo_locked<T>(refresh: impl FnOnce() -> T) -> T {
+    #[cfg(target_os = "freebsd")]
+    {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _held = LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _quiet = QuietStderr::new();
+        refresh()
+    }
+    #[cfg(not(target_os = "freebsd"))]
+    refresh()
+}
+
+/// Stderr pointed at /dev/null until dropped (FreeBSD, see [`sysinfo_locked`]).
+/// If either descriptor can't be had, stderr is left as it is.
+#[cfg(target_os = "freebsd")]
+struct QuietStderr {
+    saved: Option<libc::c_int>,
+}
+
+#[cfg(target_os = "freebsd")]
+impl QuietStderr {
+    fn new() -> Self {
+        // SAFETY: plain descriptor calls; every descriptor opened here is
+        // closed, and stderr is restored in Drop
+        unsafe {
+            let saved = libc::dup(libc::STDERR_FILENO);
+            if saved < 0 {
+                return QuietStderr { saved: None };
+            }
+            let null = libc::open(c"/dev/null".as_ptr(), libc::O_WRONLY | libc::O_CLOEXEC);
+            if null < 0 {
+                libc::close(saved);
+                return QuietStderr { saved: None };
+            }
+            libc::dup2(null, libc::STDERR_FILENO);
+            libc::close(null);
+            QuietStderr { saved: Some(saved) }
+        }
+    }
+}
+
+#[cfg(target_os = "freebsd")]
+impl Drop for QuietStderr {
+    fn drop(&mut self) {
+        if let Some(saved) = self.saved {
+            // SAFETY: `saved` is the descriptor `new` duplicated stderr into
+            unsafe {
+                libc::dup2(saved, libc::STDERR_FILENO);
+                libc::close(saved);
+            }
+        }
+    }
+}
+
+/// Each running process's name, by PID, as [`Process`] records it (one refresh
+/// of exactly those PIDs); a PID that is gone is missing from the map. For
+/// socket tables whose own name column is cut short (FreeBSD's sockstat keeps
+/// 10 characters)
+#[cfg(any(target_os = "freebsd", target_os = "netbsd", test))]
+pub(crate) fn names_by_pid(pids: &[u32]) -> std::collections::HashMap<u32, String> {
+    let wanted: Vec<Pid> = pids.iter().map(|&pid| Pid::from_u32(pid)).collect();
+    let mut sys = System::new();
+    sysinfo_locked(|| sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&wanted), true));
+    sys.processes()
+        .iter()
+        .map(|(pid, proc)| (pid.as_u32(), Process::from_sysinfo(*pid, proc).name))
+        .collect()
+}
+
+/// A snapshot of every process and of the system, as `System::new_all` and
+/// `refresh_all` give it, taken under [`sysinfo_locked`]
+pub(crate) fn refreshed_system() -> System {
+    sysinfo_locked(|| {
+        let mut sys = System::new_all();
+        sys.refresh_all();
+        sys
+    })
+}
 use sysinfo::{Pid, ProcessStatus as SysProcessStatus, System, Uid};
 
 /// Resolve a user ID to its user name, falling back to the ID itself.
@@ -95,7 +185,7 @@ fn looks_stuck(cpu_percent: f32, status: SysProcessStatus) -> bool {
 }
 
 /// CPU use in percent of one core: the CPU time a process used between two
-/// reads (`accumulated_cpu_time`, in ms) over the wall time between them.
+/// reads ([`cpu_time_ms`]) over the wall time between them.
 /// sysinfo's own `cpu_usage` can't be trusted across two reads: on Windows a
 /// process's first update stores no baseline, so the next one divides its
 /// lifetime CPU by all CPU time since boot and reads ~0% for a full core.
@@ -164,6 +254,31 @@ fn same_start(recorded: Option<u64>, current: u64) -> bool {
     }
 }
 
+/// How many times a same-process check reads a process that reports no start time
+const START_TIME_READS: u32 = 10;
+
+/// The wait between those reads
+const START_TIME_READ_GAP: Duration = Duration::from_millis(2);
+
+/// Runs `read` (one refresh of a process: the start time it read, None if the
+/// process is gone) once, and again while it reads `Some(0)`, up to
+/// [`START_TIME_READS`] times in all; only once unless `wants_start`, since a
+/// record without a start time compares none. NetBSD leaves the start time and
+/// the CPU time out of a process's record (p_uvalid 0) for a few hundred
+/// microseconds at a time while the process takes a signal or execs: in each
+/// of 10 rounds, reads in the 2 ms after SIGCONT found such a record, between
+/// reads with the real values. [`same_start`] takes 0 for another process, and
+/// a CPU time of 0 makes the next reading's look like the process's whole
+/// lifetime. Where 0 lasts (another user's process on macOS) the check still
+/// fails closed, 20 ms later.
+fn read_until_started(wants_start: bool, mut read: impl FnMut() -> Option<u64>) {
+    let mut reads = 1;
+    while read() == Some(0) && wants_start && reads < START_TIME_READS {
+        std::thread::sleep(START_TIME_READ_GAP);
+        reads += 1;
+    }
+}
+
 /// What a `taskkill` run (no `/F`) came to: success, or the reason it gave
 /// (compiled on Unix for the tests only)
 #[cfg(any(windows, test))]
@@ -183,8 +298,71 @@ fn taskkill_outcome(output: &std::process::Output) -> Result<()> {
 fn cpu_used(sys: &System) -> std::collections::HashMap<Pid, u64> {
     sys.processes()
         .iter()
-        .map(|(pid, p)| (*pid, p.accumulated_cpu_time()))
+        .map(|(pid, p)| (*pid, cpu_time_ms(*pid, p)))
         .collect()
+}
+
+/// The CPU time process `pid` has used so far, in ms. On NetBSD sysinfo counts
+/// it in hundredths of a second and rounds it to whole seconds, so over a 0.2 s
+/// window a process spinning at 100% read 0%: there it is the kernel's own
+/// counter, which `ps` shows, read right after the refresh that found `process`.
+/// 0 once the process is gone, so a window it ended in reads no CPU.
+fn cpu_time_ms(pid: Pid, process: &sysinfo::Process) -> u64 {
+    #[cfg(target_os = "netbsd")]
+    {
+        let _ = process;
+        netbsd_cpu_time_ms(pid.as_u32()).unwrap_or(0)
+    }
+    #[cfg(not(target_os = "netbsd"))]
+    {
+        let _ = pid;
+        process.accumulated_cpu_time()
+    }
+}
+
+/// NetBSD: the CPU time a process has used (p_rtime), from its kinfo_proc2;
+/// None if the kernel has no such process. The kernel leaves the CPU time out
+/// with the start time (p_uvalid 0, both 0) for a moment while the process
+/// takes a signal, so this reads again as [`read_until_started`] does
+#[cfg(target_os = "netbsd")]
+fn netbsd_cpu_time_ms(pid: u32) -> Option<u64> {
+    let mut last = None;
+    read_until_started(true, || {
+        last = netbsd_kinfo(pid);
+        last.map(|info| u64::from(info.p_ustart_sec))
+    });
+    last.filter(|info| info.p_uvalid != 0)
+        .map(|info| u64::from(info.p_rtime_sec) * 1000 + u64::from(info.p_rtime_usec) / 1000)
+}
+
+/// NetBSD: the kernel's kinfo_proc2 record of process `pid`; None if there is none
+#[cfg(target_os = "netbsd")]
+fn netbsd_kinfo(pid: u32) -> Option<libc::kinfo_proc2> {
+    let size = std::mem::size_of::<libc::kinfo_proc2>();
+    let mib = [
+        libc::CTL_KERN,
+        libc::KERN_PROC2,
+        libc::KERN_PROC_PID,
+        pid as libc::c_int,
+        size as libc::c_int,
+        1,
+    ];
+    // SAFETY: kinfo_proc2 is plain integers and arrays, so all zeroes is a valid value
+    let mut info: libc::kinfo_proc2 = unsafe { std::mem::zeroed() };
+    let mut len = size;
+    // SAFETY: `mib` holds its 6 names, and sysctl writes at most `len` bytes,
+    // the size of `info`, into it
+    let read = unsafe {
+        libc::sysctl(
+            mib.as_ptr(),
+            mib.len() as libc::c_uint,
+            (&mut info as *mut libc::kinfo_proc2).cast(),
+            &mut len,
+            std::ptr::null(),
+            0,
+        )
+    };
+    (read == 0 && len == size).then_some(info)
 }
 
 /// Whether a process has been running for `timeout_secs`. A process's age is in whole
@@ -497,8 +675,7 @@ impl Process {
     /// name but processes have the text in their command line, the error says
     /// so: it costs nothing, the same pass over the processes counts them.
     pub fn find_by_name(pattern: &str, mode: NameMatch) -> Result<Vec<Process>> {
-        let mut sys = System::new_all();
-        sys.refresh_all();
+        let sys = refreshed_system();
 
         // Exclude the entire ancestor chain — their command lines contain proc's
         // arguments (e.g. "zsh -c proc by node"), causing false positives
@@ -535,8 +712,7 @@ impl Process {
 
     /// Find a specific process by PID
     pub fn find_by_pid(pid: u32) -> Result<Option<Process>> {
-        let mut sys = System::new_all();
-        sys.refresh_all();
+        let sys = refreshed_system();
 
         let sysinfo_pid = Pid::from_u32(pid);
 
@@ -548,8 +724,7 @@ impl Process {
 
     /// Get all running processes (excludes proc's own process)
     pub fn find_all() -> Result<Vec<Process>> {
-        let mut sys = System::new_all();
-        sys.refresh_all();
+        let sys = refreshed_system();
 
         let self_pid = sysinfo::Pid::from_u32(std::process::id());
         #[allow(unused_mut)]
@@ -647,7 +822,7 @@ impl Process {
         let timeout_secs = timeout.as_secs();
         // each read is timed from its start, as in `measure_cpu`
         let mut read_at = std::time::Instant::now();
-        let mut sys = System::new_all();
+        let mut sys = sysinfo_locked(System::new_all);
         let mut used = cpu_used(&sys);
         let mut cpu: std::collections::HashMap<Pid, f32> = std::collections::HashMap::new();
         let mut stuck: Option<std::collections::HashSet<Pid>> = None;
@@ -655,7 +830,7 @@ impl Process {
         for _ in 0..STUCK_READINGS {
             std::thread::sleep(STUCK_READING_GAP);
             let started = std::time::Instant::now();
-            sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+            sysinfo_locked(|| sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true));
             let wall = started - read_at;
             read_at = started;
             // a process first seen in this read has no CPU figure yet
@@ -666,7 +841,7 @@ impl Process {
                     let before = used.get(pid)?;
                     Some((
                         *pid,
-                        cpu_percent_between(*before, p.accumulated_cpu_time(), wall),
+                        cpu_percent_between(*before, cpu_time_ms(*pid, p), wall),
                     ))
                 })
                 .collect();
@@ -716,22 +891,22 @@ impl Process {
         let pid = Pid::from_u32(self.pid);
         let mut sys = System::new();
         let mut read_at = std::time::Instant::now();
-        sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
+        self.refresh_for_check(&mut sys);
         let mut used = sys
             .process(pid)
             .filter(|p| self.is_same(p))
-            .map(|p| p.accumulated_cpu_time());
+            .map(|p| cpu_time_ms(pid, p));
         (0..STUCK_READINGS).all(|_| {
             std::thread::sleep(STUCK_READING_GAP);
             let started = std::time::Instant::now();
-            sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
+            self.refresh_for_check(&mut sys);
             let wall = started - read_at;
             read_at = started;
             let (Some(before), Some(p)) = (used, sys.process(pid).filter(|p| self.is_same(p)))
             else {
                 return false;
             };
-            let after = p.accumulated_cpu_time();
+            let after = cpu_time_ms(pid, p);
             used = Some(after);
             looks_stuck(cpu_percent_between(before, after, wall), p.status())
         })
@@ -748,17 +923,17 @@ impl Process {
         let pid = Pid::from_u32(self.pid);
         let mut sys = System::new();
         let started = std::time::Instant::now();
-        sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
+        self.refresh_for_check(&mut sys);
         let before = sys
             .process(pid)
             .filter(|p| self.is_same(p))
-            .map(|p| p.accumulated_cpu_time())?;
+            .map(|p| cpu_time_ms(pid, p))?;
         std::thread::sleep(window.max(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL));
         let wall = started.elapsed();
-        sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
+        self.refresh_for_check(&mut sys);
         sys.process(pid)
             .filter(|p| self.is_same(p))
-            .map(|p| cpu_percent_between(before, p.accumulated_cpu_time(), wall))
+            .map(|p| cpu_percent_between(before, cpu_time_ms(pid, p), wall))
     }
 
     /// Measure the CPU use of these processes over 0.2 s and set `cpu_percent`,
@@ -781,13 +956,13 @@ impl Process {
         let mut sys = System::new();
 
         let first = std::time::Instant::now();
-        sys.refresh_processes_specifics(which, true, cpu_only);
+        sysinfo_locked(|| sys.refresh_processes_specifics(which, true, cpu_only));
         let before = cpu_used(&sys);
         std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
         // each refresh reads the processes in the same order, so timing both
         // from their start gives every process the same window
         let wall = first.elapsed();
-        sys.refresh_processes_specifics(which, true, cpu_only);
+        sysinfo_locked(|| sys.refresh_processes_specifics(which, true, cpu_only));
 
         for process in processes.iter_mut() {
             let pid = Pid::from_u32(process.pid);
@@ -796,7 +971,7 @@ impl Process {
             };
             if process.is_same(current) {
                 process.cpu_percent =
-                    cpu_percent_between(cpu_before, current.accumulated_cpu_time(), wall);
+                    cpu_percent_between(cpu_before, cpu_time_ms(pid, current), wall);
             }
         }
     }
@@ -804,16 +979,25 @@ impl Process {
     /// Force kill the process (SIGKILL on Unix, taskkill /F on Windows)
     pub fn kill(&self) -> Result<()> {
         let mut sys = System::new();
-        sys.refresh_processes(
-            sysinfo::ProcessesToUpdate::Some(&[Pid::from_u32(self.pid)]),
-            true,
-        );
+        self.refresh_for_check(&mut sys);
 
         match sys.process(Pid::from_u32(self.pid)) {
             Some(proc) if self.is_same(proc) => kill_outcome(proc.kill(), self.pid),
             // gone, or the PID now belongs to a new process
             _ => Err(ProcError::ProcessNotFound(self.pid.to_string())),
         }
+    }
+
+    /// Refreshes this record's PID in `sys` for a check with [`is_same`](Self::is_same),
+    /// reading again while the process reports no start time ([`read_until_started`])
+    fn refresh_for_check(&self, sys: &mut System) {
+        let pid = Pid::from_u32(self.pid);
+        read_until_started(self.start_time.is_some(), || {
+            sysinfo_locked(|| {
+                sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true)
+            });
+            sys.process(pid).map(|p| p.start_time())
+        });
     }
 
     /// Whether `current`, the process now holding this PID, is the one this record
@@ -828,7 +1012,7 @@ impl Process {
     fn ensure_same_process(&self) -> Result<()> {
         let mut sys = System::new();
         let pid = Pid::from_u32(self.pid);
-        sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
+        self.refresh_for_check(&mut sys);
         match sys.process(pid) {
             Some(current) if self.is_same(current) => Ok(()),
             _ => Err(ProcError::ProcessNotFound(self.pid.to_string())),
@@ -981,7 +1165,7 @@ impl Process {
     pub fn exists(&self) -> bool {
         let mut sys = System::new();
         let pid = Pid::from_u32(self.pid);
-        sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
+        self.refresh_for_check(&mut sys);
         match sys.process(pid) {
             None => false,
             Some(current) if current.status() == SysProcessStatus::Zombie => false,
@@ -1094,6 +1278,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn names_by_pid_names_a_process_as_the_process_list_does() {
+        let me = std::process::id();
+        let names = names_by_pid(&[me, 4_000_000]);
+        let record = Process::find_by_pid(me).unwrap().unwrap();
+        assert_eq!(names.get(&me), Some(&record.name));
+        assert!(!names.contains_key(&4_000_000), "a PID nobody holds");
+    }
+
+    #[test]
     fn a_signal_needs_the_start_time_the_record_saw() {
         // the same start time, or within the second the clock rounds to
         assert!(same_start(Some(1_000), 1_000));
@@ -1105,6 +1298,30 @@ mod tests {
         // a record without a start time has nothing to compare
         assert!(same_start(None, 0));
         assert!(same_start(None, 1_000));
+    }
+
+    #[test]
+    fn a_start_time_that_reads_0_is_read_again_until_it_is_there() {
+        // how many reads each sequence of answers gets
+        let reads = |wants_start: bool, answers: &[Option<u64>]| {
+            let mut left = answers.iter();
+            let mut count = 0;
+            read_until_started(wants_start, || {
+                count += 1;
+                // past the given answers, the start time stays unread
+                left.next().copied().unwrap_or(Some(0))
+            });
+            count
+        };
+        // NetBSD, while the process takes a signal: there a moment later
+        assert_eq!(reads(true, &[Some(0), Some(0), Some(1_000)]), 3);
+        // never readable: gives up after START_TIME_READS reads
+        assert_eq!(reads(true, &[]), START_TIME_READS);
+        // read at once, or the process is gone: one read
+        assert_eq!(reads(true, &[Some(1_000)]), 1);
+        assert_eq!(reads(true, &[None]), 1);
+        // a record without a start time compares none, so 0 is not read again
+        assert_eq!(reads(false, &[Some(0)]), 1);
     }
 
     /// A service account (shell `/bin/false` or `/usr/bin/false`) is named like
@@ -1458,7 +1675,7 @@ mod tests {
         // listed, so the climb ends there instead of going on
         let me = Pid::from_u32(std::process::id());
         let mut sys = System::new();
-        sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[me]), true);
+        sysinfo_locked(|| sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[me]), true));
         let parent = sys.process(me).and_then(|p| p.parent());
         let expected: std::collections::HashSet<Pid> = std::iter::once(me).chain(parent).collect();
         assert_eq!(self_and_ancestors(&sys), expected);

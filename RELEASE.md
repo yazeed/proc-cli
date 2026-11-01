@@ -15,16 +15,20 @@ cargo audit                                    # No security vulnerabilities
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps # The docs.rs pages build with no broken links
 ```
 
-- [ ] CI is green on main, including "Coverage gate" (100% lines across Linux, macOS and Windows; see CONTRIBUTING.md "Coverage") and both "Nix" jobs (the flake builds proc and runs its tests in Nix's sandbox). A tag release does not wait for it. Locally: `scripts/coverage-local.sh`
+- [ ] CI is green on main, including "Coverage gate" (100% lines across Linux, macOS and Windows; see CONTRIBUTING.md "Coverage"), both "Nix" jobs (the flake builds proc and runs its tests in Nix's sandbox), both "Test (freebsd)"/"Test (netbsd)" jobs (the whole suite in a BSD VM) and both "Run the … binary" jobs (the cross-compiled BSD binaries run in their OS). A tag release does not wait for it. Locally: `scripts/coverage-local.sh`
 
 ### Cross-Platform Check
 
-Code behind `#[cfg(unix)]` or `#[cfg(windows)]` (signals, `freeze`/`thaw`, lsof and netstat parsing) only compiles on its own platform, so a Unix-only import or helper breaks the Windows build with `-D warnings`. Always verify, tests included:
+Code behind `#[cfg(unix)]`, `#[cfg(windows)]` or a BSD's `target_os` (signals, `freeze`/`thaw`, lsof, netstat and sockstat parsing) only compiles on its own platform, so a Unix-only import or helper breaks another build with `-D warnings`. Always verify, tests included:
 
 ```bash
-rustup target add x86_64-pc-windows-msvc  # One-time setup
+rustup target add x86_64-pc-windows-msvc x86_64-unknown-freebsd x86_64-unknown-netbsd  # One-time setup
 cargo check --target x86_64-pc-windows-msvc --all-targets
+cargo clippy --target x86_64-unknown-freebsd --all-targets -- -D warnings
+cargo clippy --target x86_64-unknown-netbsd --all-targets -- -D warnings
 ```
+
+Clippy for the BSDs needs no linker, so it runs on any machine; their tests run only in CI's BSD jobs.
 
 ### Oldest Supported Rust
 
@@ -144,8 +148,9 @@ nixpkgs builds proc from the tag, with its tests, as `proc-cli`. `pkg/nixpkgs/pa
 
 After tag push, monitor GitHub Actions:
 - [ ] Build succeeds for all platforms, including each build's "Check the binary reports the tag's version" step
+- [ ] Both "Check the freebsd/netbsd binary" jobs pass: the cross-compiled BSD binaries print the tag's version in their own OS (the GitHub Release needs them)
 - [ ] Docker's "Check the tag matches Cargo.toml" step passes
-- [ ] GitHub Release created with binaries, the four `.deb`/`.rpm` packages and `checksums.txt` (the `package-linux` job passed)
+- [ ] GitHub Release created with binaries (`proc-freebsd-x86_64` and `proc-netbsd-x86_64` among them, each with its `.tar.gz`), the four `.deb`/`.rpm` packages and `checksums.txt` (the `package-linux` job passed)
 - [ ] crates.io published
 - [ ] npm published
 - [ ] Homebrew tap updated
@@ -159,6 +164,11 @@ After tag push, monitor GitHub Actions:
 cargo install proc-cli                    # crates.io
 npm info proc-cli version                 # npm
 npm install --prefix /tmp/proc-npm-check proc-cli && /tmp/proc-npm-check/node_modules/.bin/proc --version  # npm installer works
+# install.sh, npm and cargo-binstall on FreeBSD and NetBSD download these files (CI already ran
+# the binaries in their OS): each must answer 302
+for f in proc-freebsd-x86_64 proc-freebsd-x86_64.tar.gz proc-netbsd-x86_64 proc-netbsd-x86_64.tar.gz; do
+  curl -sI -o /dev/null -w "%{http_code} $f\n" https://github.com/yazeed/proc-cli/releases/download/vX.Y.Z/$f
+done
 brew update && brew info yazeed/proc/proc # Homebrew
 brew upgrade yazeed/proc/proc && proc --version  # upgrades only proc, nothing else
 docker pull yazeed/proc-cli               # Docker (the same image is also pushed as yazeed/proc)

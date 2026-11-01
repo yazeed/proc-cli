@@ -1,8 +1,8 @@
 ---
 name: proc-cli
 description: >-
-  Finds, inspects and stops processes and ports with the proc CLI (macOS, Linux, Windows) under
-  a safety protocol: preview, show the user, then act by PID. Use when a port is busy or in use
+  Finds, inspects and stops processes and ports with the proc CLI (macOS, Linux, Windows,
+  FreeBSD, NetBSD) under a safety protocol: preview, show the user, then act by PID. Use when a port is busy or in use
   (EADDRINUSE, "address already in use") and needs freeing, to see what listens on a port, runs
   from a directory or holds a file, to kill a process or stop, free a port, pause, resume or wait
   for one, to clean up the dev servers and headless browsers an agent started, or to look into a
@@ -11,7 +11,7 @@ description: >-
   did not start needs a dry run and the user's approval first. Not for containers, system
   services or remote hosts.
 license: MIT
-compatibility: Requires the proc CLI 2.0 or later, on macOS, Linux or Windows
+compatibility: Requires the proc CLI 2.0 or later, on macOS, Linux or Windows (2.2 or later on FreeBSD and NetBSD)
 metadata:
   author: yazeed
   repository: https://github.com/yazeed/proc-cli

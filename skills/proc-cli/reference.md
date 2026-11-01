@@ -35,7 +35,7 @@ A signal that ends proc (SIGINT, SIGTERM, SIGHUP, SIGQUIT, or Ctrl+C / Ctrl+Brea
 
 A prompt (the `[y/N]` question of `kill`, `stop`, `freeze`, `thaw`, `free`, `unstick`, `stuck --kill` and `orphans --kill` without `--yes`) always comes with the list of what would change, shown where the person will see it: on stdout when that is a terminal, on stderr when stdout is a file or a pipe. If the list cannot be written there, proc asks nothing and changes nothing: exit 4, `reason: needs_confirmation`, with the `processes` it would have changed. An agent never needs to answer a prompt: use `--dry-run --json`, then `--yes`.
 
-`watch` without `--json` draws a screen only when both stdin and stdout are terminals; otherwise it prints one snapshot (with a `note:` on stderr when only stdin is missing). `watch --json` stops as soon as its reader leaves on Linux and macOS (on Windows at the next refresh). `wait` is different on purpose: its exit code (0 exited, 1 timed out) is its result, so it keeps waiting after its reader leaves and exits with that code.
+`watch` without `--json` draws a screen only when both stdin and stdout are terminals; otherwise it prints one snapshot (with a `note:` on stderr when only stdin is missing). `watch --json` stops as soon as its reader leaves on Linux, macOS and the BSDs (on Windows at the next refresh). `wait` is different on purpose: its exit code (0 exited, 1 timed out) is its result, so it keeps waiting after its reader leaves and exits with that code.
 
 If the reader of proc's output goes away (`proc ... | head -n1`), proc stops writing and exits with the code the command's result calls for: a `kill --yes` that worked is still 0 and a not-found is still 2, and nothing is said about the pipe. The action is done either way, so when stdout may be cut short, read the exit code, not the document. A write that fails for another reason (a full disk) is exit 1 with `proc: cannot write to stdout: ...` on stderr.
 
@@ -376,14 +376,15 @@ Both list candidates. Neither proves that a process is hung or abandoned. Never 
 
 ## Platform differences
 
-| Area | Windows | Linux | macOS |
-|------|---------|-------|-------|
-| `freeze`, `thaw`, `stop --signal` | exit 4, not supported | works | works |
-| `kill --graceful` | `taskkill` without `/F`: fails for console programs (exit 1). Use `stop`, which escalates. | SIGTERM | SIGTERM |
-| `for` (open files) | finds none (executables only) | works | works |
-| `orphans` | PID 1 test: may list nothing | PID 1 test | many app false positives |
-| Names | `.exe` optional | cut to 15 chars; the executable and argv[0] file names also match | full names |
-| Port tables | built in | read from `/proc`, nothing to install | `lsof` |
+| Area | Windows | Linux | macOS | FreeBSD, NetBSD |
+|------|---------|-------|-------|-----------------|
+| `freeze`, `thaw`, `stop --signal` | exit 4, not supported | works | works | works |
+| `kill --graceful` | `taskkill` without `/F`: fails for console programs (exit 1). Use `stop`, which escalates. | SIGTERM | SIGTERM | SIGTERM |
+| `for` (open files) | finds none (executables only) | works | works | needs `lsof` from packages; without it, executables only |
+| `orphans` | PID 1 test: may list nothing | PID 1 test | many app false positives | PID 1 test |
+| Names | `.exe` optional | cut to 15 chars; the executable and argv[0] file names also match | full names | full names |
+| Port tables | built in | read from `/proc`, nothing to install | `lsof` | `sockstat`, in the base system |
+| A deleted working directory | | still found by `in` | still found by `in` | the kernel forgets the path: `in` exits 4 (directory not found) |
 
 A Windows cwd may appear in 8.3 short form.
 

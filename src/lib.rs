@@ -21,7 +21,7 @@
 //! - **Ancestry Tracing**: `proc why :3000` - trace why a port is busy
 //! - **Orphan Detection**: `proc orphans` - find abandoned child processes
 //! - **File Lookup**: `proc for ./server` - find by file path
-//! - **Cross-Platform**: macOS, Linux, and Windows
+//! - **Cross-Platform**: macOS, Linux, Windows, FreeBSD and NetBSD
 //! - **Shell Completions**: bash, zsh, fish, elvish, PowerShell via `proc completions`
 //! - **Man Pages**: `proc manpage` generates the top-level page (commands and examples; per-command flags are in `proc <command> --help`)
 //!

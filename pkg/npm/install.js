@@ -36,6 +36,17 @@ function getPlatformInfo() {
       os = "linux";
       archiveExt = ".tar.gz";
       break;
+    case "freebsd":
+    case "netbsd":
+      // Releases have an x86_64 build only for these
+      if (arch !== "x64") {
+        throw new Error(
+          `No ${platform} ${arch} build in the releases; build it with: cargo install proc-cli`
+        );
+      }
+      os = platform;
+      archiveExt = ".tar.gz";
+      break;
     case "win32":
       os = "windows";
       archiveExt = ".exe.zip";

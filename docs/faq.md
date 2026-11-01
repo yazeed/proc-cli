@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Questions and answers
-description: "Killing whatever is on a port, fixing “address already in use”, finding zombie and orphan processes, and more, on macOS, Linux and Windows."
+description: "Killing whatever is on a port, fixing “address already in use”, finding zombie and orphan processes, and more, on macOS, Linux, Windows, FreeBSD and NetBSD."
 permalink: /faq
 faq: true
 ---

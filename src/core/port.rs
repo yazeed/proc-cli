@@ -8,7 +8,8 @@ use crate::error::{ProcError, Result};
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "linux")]
 use std::path::Path;
-// lsof on macOS, netstat and tasklist on Windows; Linux reads /proc instead
+// lsof on macOS, sockstat on FreeBSD and NetBSD, netstat and tasklist on
+// Windows; Linux reads /proc instead
 #[cfg(not(target_os = "linux"))]
 use std::process::Command;
 
@@ -51,6 +52,8 @@ impl PortInfo {
         let mut ports = Self::get_listening_linux()?;
         #[cfg(target_os = "windows")]
         let mut ports = Self::get_listening_windows()?;
+        #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+        let mut ports = Self::get_listening_bsd()?;
         ports.sort_by_key(|p| (p.port, p.pid));
         Ok(ports)
     }
@@ -65,6 +68,90 @@ impl PortInfo {
     /// Get the full process info for this port's process
     pub fn get_process(&self) -> Result<Option<Process>> {
         Process::find_by_pid(self.pid)
+    }
+
+    /// FreeBSD and NetBSD: `sockstat`, in the base system of both, lists the
+    /// listening sockets with the process that holds each one. NetBSD's has no
+    /// `-P` (protocol) option, so its UDP rows are dropped by the parser, and
+    /// needs `-n` for numeric addresses
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+    fn get_listening_bsd() -> Result<Vec<PortInfo>> {
+        #[cfg(target_os = "freebsd")]
+        let args = ["-4", "-6", "-l", "-P", "tcp"];
+        #[cfg(target_os = "netbsd")]
+        let args = ["-4", "-6", "-l", "-n"];
+        let output = crate::ui::interrupt::unblocked_in_child(&mut Command::new("sockstat"))
+            .args(args)
+            .output()
+            .map_err(|e| ProcError::SystemError(format!("Failed to run sockstat: {}", e)))?;
+
+        let mut ports = Self::parse_sockstat_output(
+            &String::from_utf8_lossy(&output.stdout),
+            cfg!(target_os = "netbsd"),
+        );
+        // sockstat cuts names short (FreeBSD keeps 10 characters): name each
+        // holder as the process list does, keeping sockstat's name for one
+        // that is already gone
+        let pids: Vec<u32> = ports.iter().map(|p| p.pid).collect();
+        let names = crate::core::process::names_by_pid(&pids);
+        for port in &mut ports {
+            if let Some(name) = names.get(&port.pid) {
+                port.process_name = name.clone();
+            }
+        }
+        Ok(ports)
+    }
+
+    /// The listening TCP ports in sockstat's output, one entry per port and
+    /// process. `dotted`: the address and port are joined with a dot
+    /// (`127.0.0.1.8080`, NetBSD) rather than a colon (`127.0.0.1:8080`,
+    /// FreeBSD). Compiled on other systems for the tests only
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd", test))]
+    fn parse_sockstat_output(stdout: &str, dotted: bool) -> Vec<PortInfo> {
+        let mut ports = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for port_info in stdout
+            .lines()
+            .filter_map(|line| Self::parse_sockstat_line(line, dotted))
+        {
+            // One entry per port and process, as on macOS: a socket a process
+            // holds on both IPv4 and IPv6, or under several descriptors, is one
+            if seen.insert((port_info.port, port_info.pid)) {
+                ports.push(port_info);
+            }
+        }
+        ports
+    }
+
+    /// One sockstat row: `USER COMMAND PID FD PROTO LOCAL FOREIGN`. Read from
+    /// the right, so a command name with a space in it stays whole; the header
+    /// and anything that isn't a listening TCP socket give `None`
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd", test))]
+    fn parse_sockstat_line(line: &str, dotted: bool) -> Option<PortInfo> {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        let n = parts.len();
+        if n < 7 {
+            return None;
+        }
+        let (proto, local, foreign) = (parts[n - 3], parts[n - 2], parts[n - 1]);
+        if !proto.starts_with("tcp") || !foreign.starts_with('*') {
+            return None;
+        }
+        let pid: u32 = parts[n - 5].parse().ok()?;
+        let process_name = escape_control(&parts[1..n - 5].join(" ")).into_owned();
+        let (address, port) = if dotted {
+            let (host, port) = local.rsplit_once('.')?;
+            split_listen_address(&format!("{host}:{port}"))?
+        } else {
+            split_listen_address(local)?
+        };
+        Some(PortInfo {
+            port,
+            protocol: Protocol::Tcp,
+            pid,
+            process_name,
+            address: Some(address),
+        })
     }
 
     #[cfg(target_os = "macos")]
@@ -444,7 +531,13 @@ fn holders_in(listening: Vec<PortInfo>, port: u16) -> Vec<PortInfo> {
 /// `[fe80::1%eth0]:22`) and are returned without them, as the kernel tables on
 /// Linux are; `*`, every address, is returned as `0.0.0.0`. A scope suffix
 /// (`%eth0`) stays.
-#[cfg(any(target_os = "macos", target_os = "windows", test))]
+#[cfg(any(
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    test
+))]
 fn split_listen_address(local: &str) -> Option<(String, u16)> {
     let (host, port) = local.rsplit_once(':')?;
     let port = port.parse().ok()?;
@@ -494,6 +587,90 @@ mod tests {
         assert_eq!(info.process_name, "Activity Monitor");
         assert_eq!(info.pid, 644);
         assert_eq!(info.port, 7768);
+    }
+
+    /// (port, pid, name, address) of each entry, for comparing parses
+    fn rows(ports: &[PortInfo]) -> Vec<(u16, u32, &str, &str)> {
+        ports
+            .iter()
+            .map(|p| {
+                let address = p.address.as_deref().unwrap_or("");
+                (p.port, p.pid, p.process_name.as_str(), address)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn freebsd_sockstat_rows_are_listening_ports() {
+        // `sockstat -4 -6 -l -P tcp` on FreeBSD 15.1, plus a command with a
+        // space in its name
+        let out = "\
+USER COMMAND     PID FD PROTO LOCAL ADDRESS         FOREIGN ADDRESS
+proc nc         2651  3 tcp6  [::1]:45680           *:*
+proc nc         2650  3 tcp4  *:45679               *:*
+proc nc         2649  3 tcp4  127.0.0.1:45678       *:*
+root sshd       2542  6 tcp6  *:22                  *:*
+root sshd       2542  7 tcp4  *:22                  *:*
+proc Web Content 2700 4 tcp46 *:8080                *:*
+";
+        assert_eq!(
+            rows(&PortInfo::parse_sockstat_output(out, false)),
+            vec![
+                (45680, 2651, "nc", "::1"),
+                (45679, 2650, "nc", "0.0.0.0"),
+                (45678, 2649, "nc", "127.0.0.1"),
+                // the IPv4 row of the same port and process adds nothing
+                (22, 2542, "sshd", "0.0.0.0"),
+                (8080, 2700, "Web Content", "0.0.0.0"),
+            ]
+        );
+    }
+
+    #[test]
+    fn netbsd_sockstat_rows_are_listening_tcp_ports() {
+        // `sockstat -4 -6 -l -n` on NetBSD 11.0: a dot before the port, UDP
+        // and raw sockets mixed in (no -P), and a connected socket
+        let out = "\
+USER     COMMAND    PID   FD PROTO  LOCAL ADDRESS         FOREIGN ADDRESS
+root     dhcpcd     545   13 2/0    *.*                   *.*
+_mdnsd   mdnsd      555    3 udp    *.65535               *.*
+proc     nc         3546   3 tcp    *.45679               *.*
+root     sshd       5563   6 tcp6   *.22                  *.*
+root     sshd       5563   7 tcp    *.22                  *.*
+proc     nc         5715   3 tcp6   ::1.45680             *.*
+proc     nc         11181  3 tcp    127.0.0.1.45678       *.*
+proc     nc         11181  4 tcp    127.0.0.1.45678       127.0.0.1.65534
+";
+        assert_eq!(
+            rows(&PortInfo::parse_sockstat_output(out, true)),
+            vec![
+                (45679, 3546, "nc", "0.0.0.0"),
+                (22, 5563, "sshd", "0.0.0.0"),
+                (45680, 5715, "nc", "::1"),
+                (45678, 11181, "nc", "127.0.0.1"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_sockstat_line_that_is_not_a_listener_is_skipped() {
+        for (line, dotted) in [
+            (
+                "USER COMMAND PID FD PROTO LOCAL ADDRESS FOREIGN ADDRESS",
+                false,
+            ),
+            ("proc nc 2654 3 tcp4 127.0.0.1:58879 127.0.0.1:45678", false),
+            ("proc nc 2654 3 tcp4 127.0.0.1:http *:*", false),
+            ("proc nc x 3 tcp4 127.0.0.1:80 *:*", false),
+            // an unbound socket has no port
+            ("proc nc 12 3 tcp *.* *.*", true),
+            ("short line", false),
+        ] {
+            assert!(
+                PortInfo::parse_sockstat_line(line, dotted).is_none(),
+                "{line}"
+            );
+        }
     }
 
     #[test]

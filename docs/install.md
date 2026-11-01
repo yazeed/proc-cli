@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Install
-description: "Install proc on macOS, Linux or Windows. One binary, no dependencies."
+description: "Install proc on macOS, Linux, Windows, FreeBSD or NetBSD. One binary, no dependencies."
 permalink: /install
 ---
 
@@ -53,6 +53,18 @@ With [Scoop](https://scoop.sh):
 scoop bucket add proc https://github.com/yazeed/scoop-bucket-proc
 scoop install proc
 ```
+
+## FreeBSD and NetBSD
+
+The install script downloads the release binary for x86_64. It needs `curl`, which is a package on both (`pkg install curl` on FreeBSD, `pkg_add curl` on NetBSD):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yazeed/proc-cli/main/install.sh | sh
+```
+
+On other CPUs, build it with `cargo install proc-cli`.
+
+proc reads ports with `sockstat`, which is in the base system. `proc for` also asks `lsof` which processes have the file open; it is a package too (`pkg install lsof`, or `pkg_add lsof`), and without it `for` finds only the processes running that file. Once a directory is deleted, the kernel forgets that it was a process's working directory, so `proc in` a deleted directory exits 4 here, where Linux and macOS still find the processes in it.
 
 ## Any platform
 

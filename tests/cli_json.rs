@@ -668,6 +668,10 @@ mod unix {
     }
 
     #[test]
+    #[cfg_attr(
+        any(target_os = "freebsd", target_os = "netbsd"),
+        ignore = "FreeBSD and NetBSD forget the path of a deleted working directory"
+    )]
     fn in_finds_processes_in_a_deleted_directory() {
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().canonicalize().unwrap();
