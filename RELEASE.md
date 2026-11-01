@@ -91,7 +91,7 @@ Update version in ALL of these files:
 - [ ] `docs/_data/release.yml` — `version` field (the website's header, footer, install page and structured data read it)
 - [ ] `Cargo.lock` — rebuild after the bump so its `proc-cli` entry changes, and commit it (`flake.nix` reads its version from `Cargo.toml` and its dependencies from `Cargo.lock`, so it needs no bump of its own)
 
-`pkg/aur/PKGBUILD` is not bumped. Both AUR packages are community packages maintained by Rafael Dominiquini: `proc` (built from source) and `proc-bin` (the release binaries). The project has no AUR account yet, so the README points Arch users to his packages, and the PKGBUILD stays in the repo for the day the project can co-maintain them (see "After the tag: AUR" below).
+`pkg/aur/PKGBUILD` is not bumped. Both AUR packages are community packages maintained by Rafael Dominiquini: `proc-cli` (built from source) and `proc-cli-bin` (the release binaries); he moved them from `proc` and `proc-bin`, which are orphaned at 2.1.1, with 2.2.0. The project has no AUR account yet, so the README points Arch users to his packages, and the PKGBUILD stays in the repo for the day the project can co-maintain them (see "After the tag: AUR" below).
 
 ## 4. Documentation
 
@@ -129,7 +129,7 @@ The tag must be `v` + Cargo.toml's version: both the release and Docker workflow
 
 ### After the tag: AUR
 
-Nothing to publish: the AUR's `proc` and `proc-bin` are Rafael Dominiquini's. Step 7 checks that they caught up with the release. Once the project has an AUR account and co-maintains them, this step goes back to updating the AUR repositories with a PKGBUILD whose `sha256sums` is the tag tarball's checksum (`curl -fsSL https://github.com/yazeed/proc-cli/archive/vX.Y.Z.tar.gz | shasum -a 256`) and a regenerated `.SRCINFO` (`makepkg --printsrcinfo > .SRCINFO` on Arch).
+Nothing to publish: the AUR's `proc-cli` and `proc-cli-bin` are Rafael Dominiquini's. Step 7 checks that they caught up with the release. Once the project has an AUR account and co-maintains them, this step goes back to updating the AUR repositories with a PKGBUILD whose `sha256sums` is the tag tarball's checksum (`curl -fsSL https://github.com/yazeed/proc-cli/archive/vX.Y.Z.tar.gz | shasum -a 256`) and a regenerated `.SRCINFO` (`makepkg --printsrcinfo > .SRCINFO` on Arch).
 
 ### After the tag: nixpkgs
 
@@ -181,7 +181,7 @@ docker run --rm -e NIX_CONFIG="experimental-features = nix-command flakes" nixos
 # after it reaches nixos-unstable, `nix run nixpkgs#proc-cli -- --version` prints proc X.Y.Z
 
 # AUR (Rafael Dominiquini's packages): both should reach the new version within a few days
-curl -s 'https://aur.archlinux.org/rpc/v5/info?arg[]=proc&arg[]=proc-bin' | jq -r '.results[] | "\(.Name) \(.Version)"'
+curl -s 'https://aur.archlinux.org/rpc/v5/info?arg[]=proc-cli&arg[]=proc-cli-bin' | jq -r '.results[] | "\(.Name) \(.Version)"'
 
 # Linux binaries are static (musl): they must run on an older distro and on Alpine
 mkdir -p /tmp/proc-linux && cd /tmp/proc-linux
@@ -302,4 +302,4 @@ If the repository or the workflow file is renamed, both trusted publishers must 
 | Debian, Ubuntu (release file) | proc-cli | `sudo apt install ./proc-cli_X.Y.Z_amd64.deb` |
 | Fedora, RHEL (release file) | proc-cli | `sudo dnf install ./proc-cli-X.Y.Z-1.x86_64.rpm` |
 | Nix (flake in this repo) | proc-cli | `nix profile install github:yazeed/proc-cli` |
-| AUR (community, Rafael Dominiquini) | proc, proc-bin | `yay -S proc` (from source), `yay -S proc-bin` (release binary) |
+| AUR (community, Rafael Dominiquini) | proc-cli, proc-cli-bin | `yay -S proc-cli` (from source), `yay -S proc-cli-bin` (release binary) |

@@ -89,8 +89,8 @@ proc ports
 
 | Platform | Method | Command |
 |----------|--------|---------|
-| Arch Linux | AUR (community-maintained), release binary | `yay -S proc-bin` |
-| Arch Linux | AUR (community-maintained), built from source | `yay -S proc` |
+| Arch Linux | AUR (community-maintained), release binary | `yay -S proc-cli-bin` |
+| Arch Linux | AUR (community-maintained), built from source | `yay -S proc-cli` |
 
 The AUR packages are not published by this project and can lag behind releases. Check `proc --version` after installing: before 2.0, a name matched any part of a command line and `--json` counted as `--yes`.
 

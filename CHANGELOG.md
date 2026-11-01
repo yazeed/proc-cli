@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The README names the AUR's current packages.** The Arch install rows said `yay -S proc-bin` and `yay -S proc`; with 2.2.0 the AUR packages moved to `proc-cli-bin` (the release binary) and `proc-cli` (built from source), and the old names stayed at 2.1.1 with no maintainer
+
 ## [2.2.0] - 2026-11-01
 
 ### Added
