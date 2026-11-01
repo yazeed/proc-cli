@@ -274,7 +274,10 @@ jobs:
         run: |
           for img in debian:bookworm debian:trixie ubuntu:24.04; do
             echo "== $img"
+            # Ubuntu's image tells dpkg to skip /usr/share/man and docs
+            # (a normal install doesn't), so the man page check removes that
             docker run --rm -v "$PWD/packages":/p:ro "$img" sh -ec '
+              rm -f /etc/dpkg/dpkg.cfg.d/excludes
               apt-get update -qq
               apt-get install -y -qq /p/proc-cli_*_${{ matrix.arch }}.deb >/dev/null
               proc --version

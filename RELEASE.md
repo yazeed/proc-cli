@@ -200,9 +200,10 @@ for f in proc-cli_${VER}_amd64.deb proc-cli_${VER}_arm64.deb proc-cli-${VER}-1.x
   curl -fsSLO https://github.com/yazeed/proc-cli/releases/download/v${VER}/$f
 done
 curl -fsSL https://github.com/yazeed/proc-cli/releases/download/v${VER}/checksums.txt | grep -E '\.(deb|rpm)$' | shasum -a 256 -c -
+# (Ubuntu's image tells dpkg to skip /usr/share/man, which a normal install doesn't; rm undoes that)
 for p in amd64 arm64; do
   for img in debian:bookworm debian:trixie ubuntu:24.04; do
-    docker run --rm --platform linux/$p -v "$PWD":/p:ro $img sh -c "apt-get update -qq && apt-get install -y -qq /p/proc-cli_${VER}_$p.deb >/dev/null && proc --version && ls /usr/share/man/man1/proc.1.gz && apt-get remove -y -qq proc-cli >/dev/null && ! test -e /usr/bin/proc"
+    docker run --rm --platform linux/$p -v "$PWD":/p:ro $img sh -c "rm -f /etc/dpkg/dpkg.cfg.d/excludes && apt-get update -qq && apt-get install -y -qq /p/proc-cli_${VER}_$p.deb >/dev/null && proc --version && ls /usr/share/man/man1/proc.1.gz && apt-get remove -y -qq proc-cli >/dev/null && ! test -e /usr/bin/proc"
   done
 done
 docker run --rm --platform linux/amd64 -v "$PWD":/p:ro fedora:latest sh -c "dnf install -y -q /p/proc-cli-${VER}-1.x86_64.rpm && proc --version && ls /usr/share/man/man1/proc.1.gz && dnf remove -y -q proc-cli && ! test -e /usr/bin/proc"
