@@ -15,11 +15,11 @@ cargo audit                                    # No security vulnerabilities
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps # The docs.rs pages build with no broken links
 ```
 
-- [ ] CI is green on main, including "Coverage gate" (100% lines across Linux, macOS and Windows; see CONTRIBUTING.md "Coverage"), both "Nix" jobs (the flake builds proc and runs its tests in Nix's sandbox), both "Test (freebsd)"/"Test (netbsd)" jobs (the whole suite in a BSD VM) and both "Run the … binary" jobs (the cross-compiled BSD binaries run in their OS). A tag release does not wait for it. Locally: `scripts/coverage-local.sh`
+- [ ] CI is green on main, including "Coverage gate" (100% lines across Linux, macOS and Windows; see CONTRIBUTING.md "Coverage"), both "Nix" jobs (the flake builds proc and runs its tests in Nix's sandbox, macOS's included, and the nixpkgs package builds), both "Test (freebsd)"/"Test (netbsd)" jobs (the whole suite in a BSD VM, then the release binary built and run there) and the "Package .deb and .rpm" and "Install the packages" jobs (the four packages install, run and remove in Debian, Ubuntu and Fedora). A tag release does not wait for it. Locally: `scripts/coverage-local.sh`
 
 ### Cross-Platform Check
 
-Code behind `#[cfg(unix)]`, `#[cfg(windows)]` or a BSD's `target_os` (signals, `freeze`/`thaw`, lsof, netstat and sockstat parsing) only compiles on its own platform, so a Unix-only import or helper breaks another build with `-D warnings`. Always verify, tests included:
+Code behind `#[cfg(unix)]`, `#[cfg(windows)]` or a BSD's `target_os` (signals, `freeze`/`thaw`, lsof, fstat, netstat and sockstat parsing) only compiles on its own platform, so a Unix-only import or helper breaks another build with `-D warnings`. Always verify, tests included:
 
 ```bash
 rustup target add x86_64-pc-windows-msvc x86_64-unknown-freebsd x86_64-unknown-netbsd  # One-time setup
@@ -148,7 +148,7 @@ nixpkgs builds proc from the tag, with its tests, as `proc-cli`. `pkg/nixpkgs/pa
 
 After tag push, monitor GitHub Actions:
 - [ ] Build succeeds for all platforms, including each build's "Check the binary reports the tag's version" step
-- [ ] Both "Check the freebsd/netbsd binary" jobs pass: the cross-compiled BSD binaries print the tag's version in their own OS (the GitHub Release needs them)
+- [ ] Both "Build freebsd/netbsd" jobs pass: each BSD binary is built in its own OS and prints the tag's version there (the GitHub Release needs them)
 - [ ] Docker's "Check the tag matches Cargo.toml" step passes
 - [ ] GitHub Release created with binaries (`proc-freebsd-x86_64` and `proc-netbsd-x86_64` among them, each with its `.tar.gz`), the four `.deb`/`.rpm` packages and `checksums.txt` (the `package-linux` job passed)
 - [ ] crates.io published
@@ -255,7 +255,7 @@ docker image prune -f     # Dangling images left by those builds
 
 On tag push, GitHub Actions handles:
 
-1. **Build**: Cross-compile for all platforms. Each build then checks its binary: no `-dev` marker, and the targets the runner can execute must print exactly `proc <tag version>`. Every publish job below needs this job, so a mislabelled binary or a tag that doesn't match Cargo.toml publishes nothing
+1. **Build**: Cross-compile for all platforms. Each build then checks its binary: no `-dev` marker, and the targets the runner can execute must print exactly `proc <tag version>`. Every publish job below needs this job, so a mislabelled binary or a tag that doesn't match Cargo.toml publishes nothing. FreeBSD and NetBSD build in `build-bsd` instead, natively in their own VMs (`scripts/bsd-build.sh`), with the same checks; the GitHub Release needs it
 2. **Linux packages**: `package-linux` builds `proc-cli_X.Y.Z_{amd64,arm64}.deb` and `proc-cli-X.Y.Z-1.{x86_64,aarch64}.rpm` from the two static Linux binaries with nfpm (`pkg/nfpm/`; the man page and completions come from running the x86_64 binary). The GitHub Release needs it
 3. **GitHub Release**: Create release with binaries and the packages
 4. **crates.io**: Publish with `--allow-dirty`

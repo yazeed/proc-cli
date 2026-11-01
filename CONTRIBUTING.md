@@ -210,7 +210,7 @@ Tests aim proc only at processes they started themselves (a copy of `examples/li
 
 ### FreeBSD and NetBSD
 
-GitHub has no BSD runners, so the `bsd` job in CI boots FreeBSD 15.1 and NetBSD 11.0 virtual machines on a Linux runner (`vmactions/freebsd-vm`, `vmactions/netbsd-vm`) and runs the whole suite in each, with `lsof` installed for `proc for`. The `build` job cross-compiles the release binaries with `cross`. Neither OS is in the coverage merge, so code that only exists on a BSD is checked by that job's tests alone.
+GitHub has no BSD runners, so the `bsd` job in CI boots FreeBSD 15.1 and NetBSD 11.0 virtual machines on a Linux runner (`vmactions/freebsd-vm`, `vmactions/netbsd-vm`) and runs the whole suite in each, with only Rust installed (ports come from `sockstat` and open files from `fstat`, both in the base system). The same job then builds the release binary natively with `scripts/bsd-build.sh` and runs it; release.yml's `build-bsd` job does the same for a tag. They aren't cross-compiled: cross's FreeBSD image has no `libgeom` and its NetBSD image no `libkvm` or `libexecinfo`, which proc links. Neither OS is in the coverage merge, so code that only exists on a BSD is checked by that job's tests alone. Nix's macOS sandbox is another environment the plain macOS jobs don't have: it refuses local network listeners without `__darwinAllowLocalNetworking` and can't read `/etc/passwd`, so the CI Nix job on macOS runs with `sandbox = relaxed`, as nixpkgs reviewers build.
 
 Two rules keep proc correct there:
 

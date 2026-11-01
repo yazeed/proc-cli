@@ -89,15 +89,7 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: proc-windows-x86_64.exe
-          # The BSDs build in cross's containers, which carry their libc
-          - os: ubuntu-latest
-            target: x86_64-unknown-freebsd
-            artifact: proc-freebsd-x86_64
-            cross: true
-          - os: ubuntu-latest
-            target: x86_64-unknown-netbsd
-            artifact: proc-netbsd-x86_64
-            cross: true
+          # FreeBSD and NetBSD build in their own VMs (the bsd job below)
 
     steps:
       - uses: actions/checkout@v4
@@ -106,12 +98,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-
-      - name: Install cross
-        if: matrix.cross
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cross@0.2.5
 
       - name: Install cross-compilation tools (Linux ARM64)
         if: matrix.target == 'aarch64-unknown-linux-musl'
@@ -122,7 +108,7 @@ jobs:
           echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
 
       - name: Build release
-        run: ${{ matrix.cross && 'cross' || 'cargo' }} build --release --target ${{ matrix.target }}
+        run: cargo build --release --target ${{ matrix.target }}
 
       # Same check as release.yml: the runners have the Visual C++ runtime, so
       # only the import table shows that proc.exe would need it
@@ -155,12 +141,16 @@ jobs:
           path: ${{ matrix.artifact }}
           if-no-files-found: error
 
-  # GitHub has no BSD runners: the whole suite runs in a FreeBSD or NetBSD VM
-  # that vmactions boots on the Linux runner. lsof is for `proc for`, which
-  # reads open files with it there as on Linux
+  # GitHub has no BSD runners: a FreeBSD or NetBSD VM that vmactions boots on
+  # the Linux runner runs the whole suite, then builds the release binary
+  # natively (scripts/bsd-build.sh: cross's images lack libraries proc links)
+  # and runs it there. Nothing but Rust is installed: proc reads ports with
+  # sockstat and open files with fstat, both in the base system. The target
+  # directory stays outside the workspace, which is copied back to the runner
+  # for the binary
   bsd:
     name: Test (${{ matrix.os }})
-    timeout-minutes: 45
+    timeout-minutes: 60
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -170,71 +160,145 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Test on FreeBSD
+      - name: Test and build on FreeBSD
         if: matrix.os == 'freebsd'
         uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1.5.9
         with:
           release: "15.1"
           cpu: 4
           mem: 8192
-          copyback: false
-          prepare: pkg install -y rust lsof
+          prepare: pkg install -y rust
           run: |
             cd "$GITHUB_WORKSPACE"
+            export CARGO_TARGET_DIR="$HOME/proc-target"
+            rustc --version
             cargo test -- --test-threads=4
+            sh scripts/bsd-build.sh proc-freebsd-x86_64
 
-      - name: Test on NetBSD
+      - name: Test and build on NetBSD
         if: matrix.os == 'netbsd'
         uses: vmactions/netbsd-vm@c8a0d7ddb84619a7a8cc4e652efa7950b3fd9f92 # v1.5.2
         with:
           release: "11.0"
           cpu: 4
           mem: 8192
-          copyback: false
-          prepare: /usr/sbin/pkg_add rust lsof
+          prepare: /usr/sbin/pkg_add rust
           run: |
             cd "$GITHUB_WORKSPACE"
+            export CARGO_TARGET_DIR="$HOME/proc-target"
+            rustc --version
             cargo test -- --test-threads=4
+            sh scripts/bsd-build.sh proc-netbsd-x86_64
 
-  # The build job cross-compiles the BSD binaries and can't run them: each one
-  # runs here, in its own OS, and reads the port table through sockstat
-  bsd-binary:
-    name: Run the ${{ matrix.os }} binary
-    timeout-minutes: 20
+      - name: Upload the binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: proc-${{ matrix.os }}-x86_64
+          path: proc-${{ matrix.os }}-x86_64
+          if-no-files-found: error
+
+  # The .deb and .rpm files a release attaches, built the way release.yml's
+  # package-linux job builds them, from this push's static Linux binaries
+  packages:
+    name: Package .deb and .rpm
+    timeout-minutes: 15
     needs: build
     runs-on: ubuntu-latest
+    env:
+      # The same pin as release.yml; change both together
+      NFPM_VERSION: 2.48.0
+      NFPM_SHA256: 6d7f9a28b2f397934403950fcbba83f598b08d02edbe79a0815b3b4897341750
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the Linux binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: proc-linux-*
+          merge-multiple: true
+          path: linux
+
+      - name: Install nfpm
+        run: |
+          curl -fsSL -o nfpm.tar.gz "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          echo "${NFPM_SHA256}  nfpm.tar.gz" | sha256sum -c -
+          mkdir -p "$HOME/.local/bin"
+          tar -xzf nfpm.tar.gz -C "$HOME/.local/bin" nfpm
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Build the packages
+        run: |
+          chmod +x linux/proc-linux-x86_64 linux/proc-linux-aarch64
+          pkg/nfpm/generate-docs.sh linux/proc-linux-x86_64 docs-out
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n1)
+          pkg/nfpm/build.sh "$version" amd64 linux/proc-linux-x86_64 docs-out packages
+          pkg/nfpm/build.sh "$version" arm64 linux/proc-linux-aarch64 docs-out packages
+          ls -la packages
+          test "$(find packages -type f | wc -l)" -eq 4
+
+      - name: Upload the packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: packages/*
+          if-no-files-found: error
+
+  # Each package installs with apt or dnf, runs, puts the man page and
+  # completions where its distro looks, and removes cleanly; arm64 on an
+  # arm64 runner, so nothing is emulated
+  packages-install:
+    name: Install the packages (${{ matrix.arch }})
+    timeout-minutes: 20
+    needs: packages
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        os: [freebsd, netbsd]
+        include:
+          - arch: amd64
+            rpm_arch: x86_64
+            runner: ubuntu-latest
+          - arch: arm64
+            rpm_arch: aarch64
+            runner: ubuntu-24.04-arm
 
     steps:
-      - name: Download the binary
+      - name: Download the packages
         uses: actions/download-artifact@v4
         with:
-          name: proc-${{ matrix.os }}-x86_64
+          name: linux-packages
+          path: packages
 
-      - name: Run it on FreeBSD
-        if: matrix.os == 'freebsd'
-        uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1.5.9
-        with:
-          release: "15.1"
-          copyback: false
-          run: |
-            chmod +x proc-freebsd-x86_64
-            ./proc-freebsd-x86_64 --version
-            ./proc-freebsd-x86_64 ports --json
+      - name: Install, run and remove in Debian and Ubuntu
+        run: |
+          for img in debian:bookworm debian:trixie ubuntu:24.04; do
+            echo "== $img"
+            docker run --rm -v "$PWD/packages":/p:ro "$img" sh -ec '
+              apt-get update -qq
+              apt-get install -y -qq /p/proc-cli_*_${{ matrix.arch }}.deb >/dev/null
+              proc --version
+              proc list --json >/dev/null
+              test -f /usr/share/man/man1/proc.1.gz
+              test -f /usr/share/bash-completion/completions/proc
+              test -f /usr/share/zsh/vendor-completions/_proc
+              test -f /usr/share/fish/vendor_completions.d/proc.fish
+              apt-get remove -y -qq proc-cli >/dev/null
+              ! test -e /usr/bin/proc'
+          done
 
-      - name: Run it on NetBSD
-        if: matrix.os == 'netbsd'
-        uses: vmactions/netbsd-vm@c8a0d7ddb84619a7a8cc4e652efa7950b3fd9f92 # v1.5.2
-        with:
-          release: "11.0"
-          copyback: false
-          run: |
-            chmod +x proc-netbsd-x86_64
-            ./proc-netbsd-x86_64 --version
-            ./proc-netbsd-x86_64 ports --json
+      - name: Install, run and remove in Fedora
+        run: |
+          docker run --rm -v "$PWD/packages":/p:ro fedora:latest sh -ec '
+            dnf install -y -q /p/proc-cli-*.${{ matrix.rpm_arch }}.rpm
+            proc --version
+            proc list --json >/dev/null
+            test -f /usr/share/man/man1/proc.1.gz
+            test -f /usr/share/bash-completion/completions/proc
+            test -f /usr/share/zsh/site-functions/_proc
+            test -f /usr/share/fish/vendor_completions.d/proc.fish
+            dnf remove -y -q proc-cli
+            ! test -e /usr/bin/proc'
 
   # The flake builds proc from Cargo.lock and runs the whole test suite in
   # Nix's sandbox (nix flake check); nix build then installs it with its man
@@ -251,11 +315,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Nix leaves macOS builds unsandboxed by default, so tests the sandbox
+      # stops passed here and failed for nixpkgs reviewers (sandbox = relaxed,
+      # as nixpkgs-review-gha builds on macOS); Linux always sandboxes
       - name: Install Nix
         uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+        with:
+          extra_nix_config: ${{ runner.os == 'macOS' && 'sandbox = relaxed' || '' }}
 
       - name: Check the flake (builds proc and runs its tests in the sandbox)
         run: nix flake check -L
+
+      # The package as nixpkgs carries it (pkg/nixpkgs/package.nix), which
+      # builds the release it names, with that release's tests
+      - name: Build the nixpkgs package
+        run: nix build -L --impure -f pkg/nixpkgs/build.nix -o result-nixpkgs && ./result-nixpkgs/bin/proc --version
 
       - name: Build the package
         run: nix build -L
