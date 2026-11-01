@@ -13,7 +13,7 @@
 
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "proc-cli";
-  version = "2.1.1";
+  version = "2.2.0";
 
   __structuredAttrs = true;
 
@@ -21,10 +21,10 @@ rustPlatform.buildRustPackage (finalAttrs: {
     owner = "yazeed";
     repo = "proc-cli";
     tag = "v${finalAttrs.version}";
-    hash = "sha256-pPBnEbnclCuDd6y5W+MNocDiFt2slHJNL/efRZsZEkQ=";
+    hash = "sha256-OPkrluAQsSBGbD9xbMI6VnpFYBn7Ipm/JwgC4QTXm2s=";
   };
 
-  cargoHash = "sha256-wqcsOLce7ZYCObjSaDRDeA/CtSuNsTL2jAkPGDCQl+Q=";
+  cargoHash = "sha256-s1lcWcMBjxcTLMc8Wsbfaj3tZchoHTJOJ0EXaXiOqEo=";
 
   nativeBuildInputs = [ installShellFiles ];
 
@@ -47,12 +47,6 @@ rustPlatform.buildRustPackage (finalAttrs: {
   # (EPERM) without this
   __darwinAllowLocalNetworking = true;
 
-  # This test reads /etc/passwd, which the macOS sandbox can't open; from
-  # 2.2.0 it asks the directory service instead, and this skip goes
-  checkFlags = lib.optionals stdenv.hostPlatform.isDarwin [
-    "--skip=core::process::tests::an_account_whose_shell_is_false_is_named"
-  ];
-
   postInstall = lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
     $out/bin/proc manpage > proc.1
     installManPage proc.1
@@ -74,6 +68,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
     license = lib.licenses.mit;
     mainProgram = "proc";
     maintainers = with lib.maintainers; [ yazeed ];
-    platforms = lib.platforms.linux ++ lib.platforms.darwin;
+    platforms =
+      lib.platforms.linux ++ lib.platforms.darwin ++ lib.platforms.freebsd ++ lib.platforms.netbsd;
   };
 })

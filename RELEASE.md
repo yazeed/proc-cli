@@ -221,8 +221,9 @@ bunx skills add yazeed/proc-cli --skill proc-cli -a claude-code -y   # installs 
 cd - && rm -rf /tmp/proc-skill-check
 
 # Is skills.sh's stored copy current? Prints "current" when its SKILL.md matches main's
+# (trailing blank lines aside: its copy ends with an extra one, which read as "stale" after 2.2.0)
 curl -s https://skills.sh/api/download/yazeed/proc-cli/proc-cli \
-  | uv run python -c 'import json,sys; f={x["path"]:x["contents"] for x in json.load(sys.stdin)["files"]}; print("current" if f["SKILL.md"]==open("skills/proc-cli/SKILL.md").read() else "stale")'
+  | uv run python -c 'import json,sys; f={x["path"]:x["contents"] for x in json.load(sys.stdin)["files"]}; print("current" if f["SKILL.md"].rstrip()==open("skills/proc-cli/SKILL.md").read().rstrip() else "stale")'
 ```
 
 Also verify:
