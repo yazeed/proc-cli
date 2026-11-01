@@ -271,19 +271,26 @@ fn lsof_pids(stdout: &str) -> Vec<u32> {
 
 /// The PIDs in what `fstat FILE` printed (FreeBSD and NetBSD): a header, then
 /// one row per open file, `USER CMD PID FD MOUNT ... NAME`, so a process that
-/// holds the file twice is listed twice. A command name can hold spaces, and
-/// so can the path at the end, but a user name can't: the PID is the first
-/// all-digit field after the user. The header has none
+/// holds the file twice is listed twice. A command name can hold spaces and
+/// digits ("Web 4021" is a valid executable name), so the first number is not
+/// always the PID. The mount point always starts with `/`, and neither a user
+/// name nor a command name can hold one (the kernel takes the command name
+/// from the executable's file name): the PID is two fields before the first
+/// field that starts with `/`, after at least one command-name field. A row
+/// that doesn't fit is left out, so an odd row misses a holder, never names
+/// another process. The header has no `/`
 #[cfg(any(target_os = "freebsd", target_os = "netbsd", test))]
 fn fstat_pids(stdout: &str) -> Vec<u32> {
     let mut pids: Vec<u32> = stdout
         .lines()
         .filter_map(|line| {
-            line.split_whitespace()
-                .skip(1)
-                .find(|field| field.bytes().all(|b| b.is_ascii_digit()))?
-                .parse()
-                .ok()
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            let mount = fields.iter().position(|field| field.starts_with('/'))?;
+            // USER, at least one CMD field, PID, FD, then the mount point
+            let pid = fields.get(mount.checked_sub(2).filter(|&at| at >= 2)?)?;
+            pid.bytes()
+                .all(|b| b.is_ascii_digit())
+                .then(|| pid.parse().ok())?
         })
         .collect();
     pids.sort_unstable();
@@ -2104,6 +2111,17 @@ mod tests {
             proc     Web Content  4021   13 /  77 -rw-r--r--  5 r  /home/proc/2026 notes.txt\n\
             root     sshd           90  text /  12 -r-xr-xr-x  9 r  /home/proc/2026 notes.txt\n";
         assert_eq!(fstat_pids(rows), vec![90, 4021]);
+        // command names made of numbers are not taken for the PID: an
+        // executable named "4021", and one named "Web 4021"
+        let numeric =
+            "proc     4021          777    3 /home  77 -rw-r--r--  5 r  /home/proc/held.txt\n\
+            proc     Web 4021      778    3 /home  77 -rw-r--r--  5 r  /home/proc/held.txt\n";
+        assert_eq!(fstat_pids(numeric), vec![777, 778]);
+        // a row with no mount point, or no command name before the PID, is left out
+        assert!(
+            fstat_pids("proc     sleep  2614    3 -  77 -rw-r--r--  5 r  held.txt\n").is_empty()
+        );
+        assert!(fstat_pids("proc  2614    3 /  77 -rw-r--r--  5 r  /h\n").is_empty());
     }
 
     #[test]
