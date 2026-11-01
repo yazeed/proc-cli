@@ -31,6 +31,20 @@ curl -fsSL https://raw.githubusercontent.com/yazeed/proc-cli/main/install.sh | b
 
 Homebrew on Linux works too: `brew install yazeed/proc/proc`.
 
+### Debian, Ubuntu, Fedora, RHEL
+
+Each release has `.deb` and `.rpm` files for x86_64 (amd64) and ARM64 on the [releases page](https://github.com/yazeed/proc-cli/releases/latest). They install `proc`, its man page and its bash, zsh and fish completions, and need no other package. The file names carry the version, so put the version you downloaded in the command:
+
+```bash
+# Debian, Ubuntu (amd64; the ARM64 file ends in _arm64.deb)
+sudo apt install ./proc-cli_X.Y.Z_amd64.deb
+
+# Fedora, RHEL and others that use dnf (x86_64; the ARM64 file ends in .aarch64.rpm)
+sudo dnf install ./proc-cli-X.Y.Z-1.x86_64.rpm
+```
+
+These are files on the release page, not an apt or dnf repository, so `apt upgrade` and `dnf upgrade` never update them: download the new file for each release. `sudo apt remove proc-cli` or `sudo dnf remove proc-cli` removes proc. The files are not signed, so `dnf` prints a warning that it skipped the OpenPGP check.
+
 ## Windows
 
 With [Scoop](https://scoop.sh):
@@ -92,7 +106,7 @@ npx skills add yazeed/proc-cli
 
 ## Shell completions
 
-The Nix package installs the completions and the man page. With any other install method, add them yourself:
+The Nix package and the `.deb` and `.rpm` files install the completions and the man page. With any other install method, add them yourself:
 
 ```bash
 proc completions bash > /etc/bash_completion.d/proc          # bash

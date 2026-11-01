@@ -145,7 +145,7 @@ nixpkgs builds proc from the tag, with its tests, as `proc-cli`. `pkg/nixpkgs/pa
 After tag push, monitor GitHub Actions:
 - [ ] Build succeeds for all platforms, including each build's "Check the binary reports the tag's version" step
 - [ ] Docker's "Check the tag matches Cargo.toml" step passes
-- [ ] GitHub Release created with binaries
+- [ ] GitHub Release created with binaries, the four `.deb`/`.rpm` packages and `checksums.txt` (the `package-linux` job passed)
 - [ ] crates.io published
 - [ ] npm published
 - [ ] Homebrew tap updated
@@ -181,6 +181,24 @@ for img in debian:bullseye-slim alpine; do
   docker run --rm --platform linux/arm64 -v "$PWD":/w $img /w/proc-linux-aarch64 --version
 done
 cd -
+
+# The .deb and .rpm release files install in a container, run, and remove cleanly
+# (apt and dnf install the local file; the man page and completions land where each distro looks)
+VER=X.Y.Z   # the release just made
+mkdir -p /tmp/proc-pkgs && cd /tmp/proc-pkgs
+for f in proc-cli_${VER}_amd64.deb proc-cli_${VER}_arm64.deb proc-cli-${VER}-1.x86_64.rpm proc-cli-${VER}-1.aarch64.rpm; do
+  curl -fsSLO https://github.com/yazeed/proc-cli/releases/download/v${VER}/$f
+done
+curl -fsSL https://github.com/yazeed/proc-cli/releases/download/v${VER}/checksums.txt | grep -E '\.(deb|rpm)$' | shasum -a 256 -c -
+for p in amd64 arm64; do
+  for img in debian:bookworm debian:trixie ubuntu:24.04; do
+    docker run --rm --platform linux/$p -v "$PWD":/p:ro $img sh -c "apt-get update -qq && apt-get install -y -qq /p/proc-cli_${VER}_$p.deb >/dev/null && proc --version && ls /usr/share/man/man1/proc.1.gz && apt-get remove -y -qq proc-cli >/dev/null && ! test -e /usr/bin/proc"
+  done
+done
+docker run --rm --platform linux/amd64 -v "$PWD":/p:ro fedora:latest sh -c "dnf install -y -q /p/proc-cli-${VER}-1.x86_64.rpm && proc --version && ls /usr/share/man/man1/proc.1.gz && dnf remove -y -q proc-cli && ! test -e /usr/bin/proc"
+docker run --rm --platform linux/arm64 -v "$PWD":/p:ro fedora:latest sh -c "dnf install -y -q /p/proc-cli-${VER}-1.aarch64.rpm && proc --version && ls /usr/share/man/man1/proc.1.gz && dnf remove -y -q proc-cli && ! test -e /usr/bin/proc"
+cd -
+# Afterwards: docker rmi debian:bookworm debian:trixie ubuntu:24.04 fedora:latest (the ones step 7 pulled), then the prunes in step 8
 
 # Agent skill: skills.sh doesn't watch the repo, and there's no refresh command. It re-reads
 # main when the skill is installed with telemetry on (no DISABLE_TELEMETRY / DO_NOT_TRACK):
@@ -228,14 +246,17 @@ docker image prune -f     # Dangling images left by those builds
 On tag push, GitHub Actions handles:
 
 1. **Build**: Cross-compile for all platforms. Each build then checks its binary: no `-dev` marker, and the targets the runner can execute must print exactly `proc <tag version>`. Every publish job below needs this job, so a mislabelled binary or a tag that doesn't match Cargo.toml publishes nothing
-2. **GitHub Release**: Create release with binaries
-3. **crates.io**: Publish with `--allow-dirty`
-4. **npm**: Publish proc-cli package
-5. **Homebrew**: Update yazeed/homebrew-proc tap
-6. **Scoop**: Update yazeed/scoop-bucket-proc bucket
-7. **Docker**: Push to yazeed/proc-cli on Docker Hub, and the same build to yazeed/proc (the image's original name). A separate workflow (`docker.yml`) with its own tag check: it stops if the tag isn't `v` + Cargo.toml's version
+2. **Linux packages**: `package-linux` builds `proc-cli_X.Y.Z_{amd64,arm64}.deb` and `proc-cli-X.Y.Z-1.{x86_64,aarch64}.rpm` from the two static Linux binaries with nfpm (`pkg/nfpm/`; the man page and completions come from running the x86_64 binary). The GitHub Release needs it
+3. **GitHub Release**: Create release with binaries and the packages
+4. **crates.io**: Publish with `--allow-dirty`
+5. **npm**: Publish proc-cli package
+6. **Homebrew**: Update yazeed/homebrew-proc tap
+7. **Scoop**: Update yazeed/scoop-bucket-proc bucket
+8. **Docker**: Push to yazeed/proc-cli on Docker Hub, and the same build to yazeed/proc (the image's original name). A separate workflow (`docker.yml`) with its own tag check: it stops if the tag isn't `v` + Cargo.toml's version
 
 Nix has nothing to publish: the flake lives in the repository, so `nix run github:yazeed/proc-cli/vX.Y.Z` works as soon as the tag is pushed, and CI's Nix jobs have already built and tested the flake on main. The nixpkgs package (`nix run nixpkgs#proc-cli`) is moved to each release by hand until it is merged, and by the nixpkgs update bot after (see "After the tag: nixpkgs").
+
+nfpm is pinned in `release.yml` (`NFPM_VERSION`) with the SHA-256 of its Linux x86_64 tarball (`NFPM_SHA256`, from that release's `checksums.txt`). To update it, change both together, then rebuild the packages and run the install check in step 7.
 
 Third-party actions in `release.yml` and `docker.yml` are pinned to commit SHAs, with the version in a comment, because those jobs hold the publishing tokens. To update one, resolve the new tag's commit (`gh api repos/<owner>/<action>/commits/<tag> --jq .sha`) and change the SHA and the comment together.
 
@@ -265,5 +286,7 @@ If the repository or the workflow file is renamed, both trusted publishers must 
 | Homebrew | proc | `brew install yazeed/proc/proc` |
 | Scoop | proc | `scoop bucket add proc https://github.com/yazeed/scoop-bucket-proc && scoop install proc` |
 | Docker | yazeed/proc-cli (also yazeed/proc) | `docker run yazeed/proc-cli` |
+| Debian, Ubuntu (release file) | proc-cli | `sudo apt install ./proc-cli_X.Y.Z_amd64.deb` |
+| Fedora, RHEL (release file) | proc-cli | `sudo dnf install ./proc-cli-X.Y.Z-1.x86_64.rpm` |
 | Nix (flake in this repo) | proc-cli | `nix profile install github:yazeed/proc-cli` |
 | AUR (community, Rafael Dominiquini) | proc, proc-bin | `yay -S proc` (from source), `yay -S proc-bin` (release binary) |

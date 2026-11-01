@@ -8,7 +8,7 @@ Find what's on a port, why it's there, and stop it, in one command you'd guess o
 brew install yazeed/proc/proc
 ```
 
-Also on [npm, cargo, Scoop, Nix and Docker](#install).
+Also on [npm, cargo, Scoop, Nix, Docker, and as .deb and .rpm files](#install).
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/yazeed/proc-cli/main/demo.gif" alt="proc demo: npm run dev fails because port 3000 is taken; proc on, why and free find the old tmux session holding it and free the port; proc orphans finds and cleans up leftover processes" width="800" />
@@ -64,6 +64,8 @@ proc free :3000 --yes             # a port target: no question
 |----------|---------|
 | macOS | `brew install yazeed/proc/proc`, or the install script below |
 | Linux | `curl -fsSL https://raw.githubusercontent.com/yazeed/proc-cli/main/install.sh \| bash`, or `brew install yazeed/proc/proc` |
+| Debian / Ubuntu | Download `proc-cli_X.Y.Z_amd64.deb` (or `_arm64.deb`) from the [latest release](https://github.com/yazeed/proc-cli/releases/latest), then `sudo apt install ./proc-cli_X.Y.Z_amd64.deb` |
+| Fedora / RHEL | Download `proc-cli-X.Y.Z-1.x86_64.rpm` (or `.aarch64.rpm`) from the [latest release](https://github.com/yazeed/proc-cli/releases/latest), then `sudo dnf install ./proc-cli-X.Y.Z-1.x86_64.rpm` |
 | Windows | `scoop bucket add proc https://github.com/yazeed/scoop-bucket-proc && scoop install proc` |
 | npm / bun | `npm install -g proc-cli` |
 | Rust | `cargo install proc-cli` (or `cargo binstall proc-cli` for the pre-built binary) |
@@ -71,6 +73,8 @@ proc free :3000 --yes             # a port target: no question
 | Docker | `docker run --rm -it --pid=host --net=host yazeed/proc-cli` |
 
 `--pid=host` lets proc in Docker see the host's processes, and `--net=host` its ports (for `on :port`, `ports` and `free`).
+
+The `.deb` and `.rpm` files install `proc`, its man page and its bash, zsh and fish completions. They come from the release page, not from an apt or dnf repository, so `apt upgrade` and `dnf upgrade` never update them: download the new file for each release.
 
 Check it works:
 
@@ -291,7 +295,7 @@ proc is for processes and ports on the machine it runs on. It is not for contain
 
 ## Shell completions and man page
 
-The Nix package installs both. With any other install method, add them yourself:
+The Nix package and the `.deb` and `.rpm` files install both. With any other install method, add them yourself:
 
 ```bash
 # Bash

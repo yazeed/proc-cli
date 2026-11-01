@@ -1,0 +1,69 @@
+# nfpm config for the .deb and .rpm packages attached to each GitHub Release.
+# build.sh sets NFPM_ARCH (amd64 or arm64), NFPM_VERSION, NFPM_BIN (the proc
+# binary), NFPM_DOCS (the man page and completions) and NFPM_ROOT (the repo).
+# One file builds both formats; `packager:` limits an entry to one of them.
+name: proc-cli
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${NFPM_VERSION}
+section: utils
+priority: optional
+maintainer: Yazeed Al Oyoun
+description: Semantic CLI tool for process management. Target by port, PID, name or path.
+homepage: https://github.com/yazeed/proc-cli
+license: MIT
+
+# No dependencies: the binary is static (musl), so it needs no libc of its own.
+
+contents:
+  - src: ${NFPM_BIN}
+    expand: true
+    dst: /usr/bin/proc
+    file_info:
+      mode: 0755
+
+  - src: ${NFPM_DOCS}/proc.1.gz
+    expand: true
+    dst: /usr/share/man/man1/proc.1.gz
+    file_info:
+      mode: 0644
+
+  # bash and fish: the same directory on Debian, Ubuntu and Fedora
+  - src: ${NFPM_DOCS}/proc.bash
+    expand: true
+    dst: /usr/share/bash-completion/completions/proc
+    file_info:
+      mode: 0644
+  - src: ${NFPM_DOCS}/proc.fish
+    expand: true
+    dst: /usr/share/fish/vendor_completions.d/proc.fish
+    file_info:
+      mode: 0644
+
+  # zsh: Debian's zsh looks in vendor-completions, Fedora's in site-functions
+  - src: ${NFPM_DOCS}/_proc
+    expand: true
+    dst: /usr/share/zsh/vendor-completions/_proc
+    packager: deb
+    file_info:
+      mode: 0644
+  - src: ${NFPM_DOCS}/_proc
+    expand: true
+    dst: /usr/share/zsh/site-functions/_proc
+    packager: rpm
+    file_info:
+      mode: 0644
+
+  - src: ${NFPM_ROOT}/LICENSE
+    expand: true
+    dst: /usr/share/doc/proc-cli/copyright
+    packager: deb
+    file_info:
+      mode: 0644
+  - src: ${NFPM_ROOT}/LICENSE
+    expand: true
+    dst: /usr/share/licenses/proc-cli/LICENSE
+    type: license
+    packager: rpm
+    file_info:
+      mode: 0644

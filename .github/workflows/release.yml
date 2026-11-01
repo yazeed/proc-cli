@@ -122,9 +122,59 @@ jobs:
             ${{ matrix.artifact }}.zip
           if-no-files-found: warn
 
+  # .deb and .rpm files for the GitHub Release (not an apt or dnf repository, so
+  # they don't update themselves). nfpm packs the static musl binaries; the man
+  # page and completions come from running the x86_64 binary on this runner.
+  package-linux:
+    name: Package .deb and .rpm
+    needs: build-release
+    runs-on: ubuntu-latest
+    env:
+      # Pinned release; the checksum is the one in that release's checksums.txt
+      NFPM_VERSION: 2.48.0
+      NFPM_SHA256: 6d7f9a28b2f397934403950fcbba83f598b08d02edbe79a0815b3b4897341750
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Download the Linux binaries
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: proc-linux-*
+          merge-multiple: true
+          path: linux
+
+      - name: Install nfpm
+        run: |
+          curl -fsSL -o nfpm.tar.gz "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          echo "${NFPM_SHA256}  nfpm.tar.gz" | sha256sum -c -
+          mkdir -p "$HOME/.local/bin"
+          tar -xzf nfpm.tar.gz -C "$HOME/.local/bin" nfpm
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Generate the man page and completions
+        run: |
+          chmod +x linux/proc-linux-x86_64 linux/proc-linux-aarch64
+          pkg/nfpm/generate-docs.sh linux/proc-linux-x86_64 docs-out
+
+      - name: Build the packages
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          pkg/nfpm/build.sh "$VERSION" amd64 linux/proc-linux-x86_64 docs-out packages
+          pkg/nfpm/build.sh "$VERSION" arm64 linux/proc-linux-aarch64 docs-out packages
+          ls -la packages
+          test "$(find packages -type f | wc -l)" -eq 4
+
+      - name: Upload packages
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: linux-packages
+          path: packages/*
+          if-no-files-found: error
+
   create-release:
     name: Create Release
-    needs: build-release
+    needs: [build-release, package-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
