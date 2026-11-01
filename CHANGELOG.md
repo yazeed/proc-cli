@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-01
+
 ### Added
 
 - **FreeBSD and NetBSD.** proc ran on macOS, Linux and Windows only. Each release now has x86_64 binaries for both (`proc-freebsd-x86_64` and `proc-netbsd-x86_64`, also as `.tar.gz`), which the install script, npm and `cargo binstall` download; on other CPUs, `cargo install proc-cli` builds it. Ports come from `sockstat` and open files (for `proc for`) from `fstat`, both in the base system, so nothing else is needed: pkgsrc's `lsof` found no process holding a file on NetBSD 11 x86_64. CI runs the whole test suite in FreeBSD 15.1 and NetBSD 11.0 VMs, then builds and runs the release binary in each (natively: cross's images lack `libgeom`, `libkvm` and `libexecinfo`, which proc links), and a release stops unless each binary prints its version in its own OS. What the suite found on the way: two threads reading processes at once crashed proc on FreeBSD (its libkvm keeps command lines in buffers the whole program shares), so every read now takes a lock; NetBSD CPU readings came out 0% for a process spinning at full speed (sysinfo rounds CPU time to whole seconds there), so proc reads the kernel's own counter; and NetBSD leaves a process's start and CPU time out of its record for a few hundred microseconds while the process takes a signal, which made `unstick` interrupt a process that had just recovered, so proc reads again while they are missing; and NetBSD's `poll` doesn't wake when a pipe's reader closes during the wait, so `watch --json | head -n1` there would have run on for a whole refresh interval: it looks again every 100 ms. One thing the kernels can't give: once a directory is deleted, neither keeps it as a process's working directory, so `proc in` a deleted directory exits 4 on both
@@ -894,7 +896,8 @@ All commands accept **targets**: `:port`, `PID`, or `name` where applicable.
 
 ---
 
-[Unreleased]: https://github.com/yazeed/proc-cli/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/yazeed/proc-cli/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/yazeed/proc-cli/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/yazeed/proc-cli/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/yazeed/proc-cli/compare/v2.0.2...v2.1.0
 [2.0.2]: https://github.com/yazeed/proc-cli/compare/v2.0.1...v2.0.2

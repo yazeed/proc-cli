@@ -655,7 +655,7 @@ dependencies = [
 
 [[package]]
 name = "proc-cli"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "assert_cmd",
  "cargo-husky",

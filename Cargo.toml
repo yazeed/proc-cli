@@ -1,6 +1,6 @@
 [package]
 name = "proc-cli"
-version = "2.1.1"
+version = "2.2.0"
 edition = "2021"
 # sysinfo 0.38 needs 1.88
 rust-version = "1.88"
