@@ -90,6 +90,38 @@ fn is_cooked(flags: Option<u64>) -> bool {
     flags.is_some_and(|flags| flags & wanted == wanted)
 }
 
+/// How many bytes the child wrote that the reader hasn't taken yet
+#[cfg(unix)]
+fn unread(master: &dyn portable_pty::MasterPty) -> libc::c_int {
+    let fd = master.as_raw_fd().expect("the pty's descriptor");
+    let mut waiting: libc::c_int = 0;
+    // SAFETY: FIONREAD writes one int, into `waiting`
+    if unsafe { libc::ioctl(fd, libc::FIONREAD as _, &mut waiting) } != 0 {
+        return 0;
+    }
+    waiting
+}
+
+/// Unix: once the child has exited, read what it printed to the very end.
+/// All of it is in the terminal's queue: wait until the reader has taken it
+/// (nothing unread), then close our copy of the child's end, so the reader
+/// stores its last chunk and then sees end-of-file. Bounded, like the session
+#[cfg(unix)]
+fn finish_reading(
+    master: &dyn portable_pty::MasterPty,
+    slave: &mut Option<Box<dyn portable_pty::SlavePty + Send>>,
+    reading: &std::thread::JoinHandle<()>,
+) {
+    let until = Instant::now() + Duration::from_secs(5);
+    while unread(master) > 0 && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    drop(slave.take());
+    while !reading.is_finished() && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
 /// The whole session may take this long; then the child is killed and the test fails
 const SESSION_LIMIT: Duration = Duration::from_secs(20);
 
@@ -217,9 +249,17 @@ fn try_run_program_in_pty(program: &str, args: &[&str], script: &[Step]) -> Resu
         .slave
         .spawn_command(cmd)
         .expect("spawn proc in the pty");
-    // The child holds the only other end; with ours closed, the reader sees
-    // end-of-file when the child is gone
+    // Windows: the child holds the only other end; with ours closed, the
+    // reader sees end-of-file when the child is gone.
+    // Unix: we keep our copy of the child's end until we have read everything,
+    // then close it, and the reader sees end-of-file. When the last copy of
+    // that end closes, macOS and NetBSD throw away output not yet read (a
+    // child that wrote and exited at once lost all of it, measured on both),
+    // so proc's last lines went missing whenever it outran the reader
+    #[cfg(windows)]
     drop(pair.slave);
+    #[cfg(unix)]
+    let mut slave = Some(pair.slave);
     let mut guard = ChildGuard(child);
 
     let mut writer = pair.master.take_writer().expect("pty writer");
@@ -298,8 +338,12 @@ fn try_run_program_in_pty(program: &str, args: &[&str], script: &[Step]) -> Resu
                 answer(&mut writer);
                 // Read before looking: if proc had ended and its output had
                 // been read to the end by now, `seen` is all it will ever print
-                let over =
-                    guard.0.try_wait().expect("poll the child").is_some() && reading.is_finished();
+                let exited = guard.0.try_wait().expect("poll the child").is_some();
+                #[cfg(unix)]
+                if exited {
+                    finish_reading(&*pair.master, &mut slave, &reading);
+                }
+                let over = exited && reading.is_finished();
                 let seen = text();
                 if let Some(at) = seen.get(cursor..).and_then(|rest| rest.find(wanted)) {
                     cursor += at + wanted.len();
@@ -348,6 +392,8 @@ fn try_run_program_in_pty(program: &str, args: &[&str], script: &[Step]) -> Resu
         let master = pair.master;
         std::thread::spawn(move || drop(master));
     }
+    #[cfg(unix)]
+    finish_reading(&*pair.master, &mut slave, &reading);
     let drained = Instant::now() + Duration::from_secs(5);
     while !reading.is_finished() && Instant::now() < drained {
         std::thread::sleep(Duration::from_millis(5));

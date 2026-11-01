@@ -441,7 +441,10 @@ mod width {
             .slave
             .spawn_command(cmd)
             .expect("spawn proc in the pty");
-        drop(pair.slave);
+        // Our copy of the child's end stays open until everything is read:
+        // when the last copy closes, macOS and NetBSD throw away output not
+        // yet read (terminal.rs, `finish_reading`)
+        let slave = pair.slave;
 
         let mut reader = pair.master.try_clone_reader().expect("pty reader");
         let captured = Arc::new(Mutex::new(Vec::<u8>::new()));
@@ -468,8 +471,24 @@ mod width {
             }
             std::thread::sleep(Duration::from_millis(10));
         };
-        // Whatever it printed last is still in the pipe: let the reader reach the end
+        // Whatever it printed last is still in the pipe: wait until the reader
+        // has taken it all, then close our copy so the reader reaches the end
         let drained = Instant::now() + Duration::from_secs(2);
+        let fd = pair.master.as_raw_fd().expect("the pty's descriptor");
+        let unread = || {
+            let mut waiting: libc::c_int = 0;
+            // SAFETY: FIONREAD writes one int, into `waiting`
+            let ok = unsafe { libc::ioctl(fd, libc::FIONREAD as _, &mut waiting) } == 0;
+            if ok {
+                waiting
+            } else {
+                0
+            }
+        };
+        while unread() > 0 && Instant::now() < drained {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        drop(slave);
         while !reading.is_finished() && Instant::now() < drained {
             std::thread::sleep(Duration::from_millis(5));
         }
