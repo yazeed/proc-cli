@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - 'v*'
+  # A dry run (RELEASE.md, step 1): every build and package job and the
+  # release files, from the branch it is started on, and nothing published.
+  # Started this way the version checks print instead of failing, since a
+  # branch build is a -dev build
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -79,6 +84,10 @@ jobs:
         shell: bash
         run: |
           bin=target/${{ matrix.target }}/release/proc${{ runner.os == 'Windows' && '.exe' || '' }}
+          if [ "$GITHUB_EVENT_NAME" != push ]; then
+            echo "dry run: $("$bin" --version 2>/dev/null | head -1 | tr -d '\r' || echo "$bin can't run here")"
+            exit 0
+          fi
           if LC_ALL=C grep -a -q -- '-dev (' "$bin"; then
             echo "::error::$bin is labelled as a dev build; the tag must be v<Cargo.toml version>"
             exit 1
@@ -160,7 +169,12 @@ jobs:
 
       - name: Build the packages
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          # A dry run has no tag: the version comes from Cargo.toml
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n1)
+          fi
           pkg/nfpm/build.sh "$VERSION" amd64 linux/proc-linux-x86_64 docs-out packages
           pkg/nfpm/build.sh "$VERSION" arm64 linux/proc-linux-aarch64 docs-out packages
           ls -la packages
@@ -200,7 +214,9 @@ jobs:
             cd "$GITHUB_WORKSPACE"
             export CARGO_TARGET_DIR="$HOME/proc-target"
             rustc --version
-            sh scripts/bsd-build.sh proc-freebsd-x86_64 "proc ${GITHUB_REF_NAME#v}"
+            # a dry run expects no version (GITHUB_* reach the VM)
+            want=""; [ "$GITHUB_EVENT_NAME" = push ] && want="proc ${GITHUB_REF_NAME#v}"
+            sh scripts/bsd-build.sh proc-freebsd-x86_64 "$want"
 
       - name: Build on NetBSD
         if: matrix.os == 'netbsd'
@@ -214,7 +230,8 @@ jobs:
             cd "$GITHUB_WORKSPACE"
             export CARGO_TARGET_DIR="$HOME/proc-target"
             rustc --version
-            sh scripts/bsd-build.sh proc-netbsd-x86_64 "proc ${GITHUB_REF_NAME#v}"
+            want=""; [ "$GITHUB_EVENT_NAME" = push ] && want="proc ${GITHUB_REF_NAME#v}"
+            sh scripts/bsd-build.sh proc-netbsd-x86_64 "$want"
 
       - name: Create tarball
         run: tar -czvf proc-${{ matrix.os }}-x86_64.tar.gz proc-${{ matrix.os }}-x86_64
@@ -256,6 +273,7 @@ jobs:
           cat checksums.txt
 
       - name: Create GitHub Release
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: release/*
@@ -265,6 +283,7 @@ jobs:
   publish-crate:
     name: Publish to crates.io
     needs: create-release
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -303,6 +322,7 @@ jobs:
   publish-npm:
     name: Publish to npm
     needs: create-release
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -347,6 +367,7 @@ jobs:
   update-homebrew:
     name: Update Homebrew Tap
     needs: create-release
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout homebrew-proc tap
@@ -424,6 +445,7 @@ jobs:
   update-scoop:
     name: Update Scoop Bucket
     needs: create-release
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout scoop-bucket-proc
