@@ -298,14 +298,28 @@ fn poll_hangup(fd: i32, span: Duration) -> bool {
     }
 }
 
-/// One `poll` of `fd` until `deadline`: what it returned, the events it
-/// reported and the time that was left when it started. `None` if a signal
-/// interrupted it.
+/// The longest one `poll` waits. NetBSD's poll doesn't wake when a pipe's
+/// reader closes during the wait: a reader that closed 1 s into a 5 s poll
+/// left it waiting the whole 5 s, while one already closed is reported at
+/// once. So there it looks again every 100 ms; elsewhere one poll waits it all
+#[cfg(target_os = "netbsd")]
+const POLL_SLICE: Duration = Duration::from_millis(100);
+#[cfg(all(unix, not(target_os = "netbsd")))]
+const POLL_SLICE: Duration = Duration::MAX;
+
+/// One `poll` of `fd` until `deadline` (at most [`POLL_SLICE`]): what it
+/// returned, the events it reported and the time that was left when it
+/// started. `None` if a signal interrupted it, or the slice ended before the
+/// deadline with nothing to report: look again.
 #[cfg(unix)]
 fn poll_once(fd: i32, deadline: std::time::Instant) -> Option<(i32, i16, Duration)> {
     let left = deadline.saturating_duration_since(std::time::Instant::now());
     // Round up, so a wait of under a millisecond does not become a spin
-    let millis = left.as_micros().div_ceil(1000).min(i32::MAX as u128) as i32;
+    let millis = left
+        .min(POLL_SLICE)
+        .as_micros()
+        .div_ceil(1000)
+        .min(i32::MAX as u128) as i32;
     // Linux reports a pipe whose reader left (POLLERR) whatever is asked
     // for; macOS reports nothing unless POLLHUP is asked for
     let mut watched = libc::pollfd {
@@ -316,7 +330,8 @@ fn poll_once(fd: i32, deadline: std::time::Instant) -> Option<(i32, i16, Duratio
     // SAFETY: one valid pollfd, and a count of one
     let ready = unsafe { libc::poll(&mut watched, 1, millis) };
     let interrupted = ready < 0 && io::Error::last_os_error().kind() == ErrorKind::Interrupted;
-    (!interrupted).then_some((ready, watched.revents, left))
+    let slice_ended = ready == 0 && std::time::Instant::now() < deadline;
+    (!interrupted && !slice_ended).then_some((ready, watched.revents, left))
 }
 
 /// Settle the result of a write whose failure is already recorded on its
