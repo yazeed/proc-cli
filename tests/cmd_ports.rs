@@ -79,17 +79,37 @@ fn nobody() -> String {
 /// starts at 32768, macOS and Windows at 49152), so a listener another test
 /// binds to port 0 can never be handed it. A port the OS just handed out and
 /// took back could be: on CI a parallel test's listener got one between the
-/// lookup and proc's run
+/// lookup and proc's run. A bind alone doesn't show the port is free: on macOS
+/// binding 0.0.0.0 succeeds while another process listens on 127.0.0.1 there
+/// (std sets SO_REUSEADDR; measured), so nothing may answer on loopback either
 fn unused_port() -> u16 {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let start = 20_000 + std::process::id() as usize % 10_000;
     loop {
         let port = start + NEXT.fetch_add(1, Ordering::SeqCst);
         assert!(port < 32_768, "no unused port below the ephemeral range");
-        if TcpListener::bind(("0.0.0.0", port as u16)).is_ok() {
-            return port as u16;
+        let port = port as u16;
+        if TcpListener::bind(("0.0.0.0", port)).is_ok() && !answers_on_loopback(port) {
+            return port;
         }
     }
+}
+
+/// Whether something accepts a connection on 127.0.0.1 or [::1] at `port`
+fn answers_on_loopback(port: u16) -> bool {
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
+    [
+        IpAddr::V4(Ipv4Addr::LOCALHOST),
+        IpAddr::V6(Ipv6Addr::LOCALHOST),
+    ]
+    .into_iter()
+    .any(|host| {
+        TcpStream::connect_timeout(
+            &SocketAddr::new(host, port),
+            std::time::Duration::from_millis(500),
+        )
+        .is_ok()
+    })
 }
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
