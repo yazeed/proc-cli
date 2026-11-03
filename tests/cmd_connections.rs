@@ -73,6 +73,10 @@ fn connect(address: &str, port: u16, n: usize) -> Vec<TcpStream> {
 }
 
 #[test]
+#[cfg_attr(
+    any(target_os = "freebsd", target_os = "netbsd"),
+    ignore = "the BSDs read no connections"
+)]
 fn connections_count_each_client_once() {
     let holder = Holder::start(&[]);
     let clients = connect("127.0.0.1", holder.port, 3);
@@ -107,6 +111,10 @@ fn connections_count_each_client_once() {
 }
 
 #[test]
+#[cfg_attr(
+    any(target_os = "freebsd", target_os = "netbsd"),
+    ignore = "the BSDs read no connections"
+)]
 fn sixty_clients_cap_the_peers() {
     let holder = Holder::start(&[]);
     let clients = connect("127.0.0.1", holder.port, 60);
@@ -120,6 +128,10 @@ fn sixty_clients_cap_the_peers() {
 }
 
 #[test]
+#[cfg_attr(
+    any(target_os = "freebsd", target_os = "netbsd"),
+    ignore = "the BSDs read no connections"
+)]
 fn ipv4_and_ipv6_holders_of_one_port_each_get_their_own_connections() {
     if let Err(e) = std::net::TcpListener::bind("[::1]:0") {
         proc_cli::err_println!("skipped: no IPv6 loopback on this machine ({e})");
@@ -177,4 +189,17 @@ fn a_listener_with_no_clients_has_no_connections() {
     let holder = Holder::start(&[]);
     let c = connections_to(holder.port, &[holder.pid()], 50).unwrap();
     assert_eq!(c, Connections::default());
+}
+
+/// FreeBSD and NetBSD give no connection states proc can read (their
+/// `sockstat` has none, or none with a known format), so a port held there has
+/// no connections to report, even with clients
+#[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+#[test]
+fn the_bsds_read_no_connections() {
+    let holder = Holder::start(&[]);
+    let clients = connect("127.0.0.1", holder.port, 3);
+    let c = connections_to(holder.port, &[holder.pid()], 50).unwrap();
+    assert_eq!(c, Connections::default());
+    drop(clients);
 }
