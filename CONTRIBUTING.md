@@ -197,7 +197,7 @@ Line coverage says a line ran, not that its behaviour is pinned. A change that a
 - **JSON:** one document, `action`, `success`, exit codes and `reason` (`cli_json.rs`, and the checker in `tests/contract/` that runs on every JSON document a test reads); `not_found` for targets that match nothing (`cmd_not_found.rs`)
 - **Bad input:** missing or bad values, unknown flags, empty arguments (`parser_errors.rs`, generated from the CLI definition), and inputs that used to look like an answer (`silent_failures.rs`)
 - **Pipes and closed output:** stdout or stderr that can't take the bytes, a reader that stops early (`hostile_io.rs`)
-- **A terminal, or none:** confirmation prompts and the `watch` screen through a pseudo-terminal (`terminal.rs`); the same command without a terminal must exit 4, not ask
+- **A terminal, or none:** confirmation prompts and the `watch` screen through a pseudo-terminal (`terminal.rs`); the same command without a terminal must exit 4, not ask. On Unix proc runs there as a shell's foreground job, through `examples/session`, so its exit doesn't revoke the terminal before the test has read it (FreeBSD and NetBSD drop unread output then)
 - **Ordering and several holders:** stable output order (`order.rs`), a port held over IPv4 and IPv6 at once (`cmd_port_holders.rs`)
 - **Anything that waits:** `timing.rs`, so a timeout or a wait that never returns fails fast
 - **Docs:** examples never pair `--yes` with a name (`doc_examples.rs`)

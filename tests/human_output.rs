@@ -18,6 +18,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[cfg(unix)]
+mod session;
+
 const ESC: &str = "\u{1b}";
 
 /// proc with the colour variables cleared, so each test says what it wants
@@ -416,7 +419,7 @@ fn a_dry_run_shows_the_table_then_the_summary() {
 #[cfg(unix)]
 mod width {
     use super::*;
-    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+    use portable_pty::{native_pty_system, PtySize};
     use std::io::Read;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
@@ -441,8 +444,11 @@ mod width {
                 pixel_height: 0,
             })
             .expect("open a pseudo-terminal");
-        let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_proc"));
-        cmd.args(args);
+        // Through `examples/session`, which holds the terminal's session so
+        // that proc's exit doesn't revoke it before its output is read
+        // (terminal.rs, `finish_reading`)
+        let session = super::session::Session::new();
+        let mut cmd = session.command(env!("CARGO_BIN_EXE_proc"), args);
         cmd.env("TERM", "xterm-256color");
         cmd.env_remove("NO_COLOR");
         let mut child = pair
@@ -470,13 +476,14 @@ mod width {
         });
         let text = || String::from_utf8_lossy(&captured.lock().unwrap()).into_owned();
         let finished = loop {
-            if let Some(status) = child.try_wait().expect("poll the child") {
-                break Some(status);
+            if session.ended().is_some() {
+                break true;
             }
             if Instant::now() >= deadline {
+                session.abandon();
                 let _ = child.kill();
                 let _ = child.wait();
-                break None;
+                break false;
             }
             std::thread::sleep(Duration::from_millis(10));
         };
@@ -503,13 +510,23 @@ mod width {
         while unread() > 0 && Instant::now() < drained {
             std::thread::sleep(Duration::from_millis(5));
         }
+        // All of it is read: the session may end now, the way proc did
+        session.release();
+        let status = loop {
+            match child.try_wait().expect("poll the session") {
+                Some(status) => break Some(status),
+                None if Instant::now() >= drained => break None,
+                None => std::thread::sleep(Duration::from_millis(5)),
+            }
+        };
         drop(slave);
         while !reading.is_finished() && Instant::now() < drained {
             std::thread::sleep(Duration::from_millis(5));
         }
         let shown = text();
+        assert!(finished, "proc did not exit; it printed:\n{shown:?}");
         let status =
-            finished.unwrap_or_else(|| panic!("proc did not exit; it printed:\n{shown:?}"));
+            status.unwrap_or_else(|| panic!("the session did not end; proc printed:\n{shown:?}"));
         assert_eq!(status.exit_code(), 0, "{shown:?}");
         strip_colours(&shown).replace("\r\n", "\n")
     }

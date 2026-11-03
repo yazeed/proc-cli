@@ -14,13 +14,18 @@
 //! signals (`freeze`, `thaw`), a real orphan (Windows has no PID 1 to adopt
 //! one), exact escape sequences, or a resize stay Unix only.
 
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+#[cfg(windows)]
+use portable_pty::CommandBuilder;
+use portable_pty::{native_pty_system, PtySize};
 use proc_cli::core::filters::strip_verbatim_prefix;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
+
+#[cfg(unix)]
+mod session;
 
 #[cfg(unix)]
 const LEAVE_ALT_SCREEN: &str = "\x1b[?1049l";
@@ -110,18 +115,24 @@ fn unread(master: &dyn portable_pty::MasterPty) -> libc::c_int {
     waiting
 }
 
-/// Unix: once the child has exited, read what it printed to the very end.
-/// All of it is in the terminal's queue: wait until the reader has taken it
-/// (nothing unread), then close our copy of the child's end, so the reader
-/// stores its last chunk and then sees end-of-file. Bounded, like the session
+/// Unix: once the program has ended, read what it printed to the very end.
+/// The session still holds the terminal, so all of it is in the terminal's
+/// queue: wait until the reader has taken it (nothing unread), let the session
+/// end, then close our copy of the child's end, so the reader stores its last
+/// chunk and then sees end-of-file. Bounded, like the session
 #[cfg(unix)]
 fn finish_reading(
     master: &dyn portable_pty::MasterPty,
     slave: &mut Option<Box<dyn portable_pty::SlavePty + Send>>,
     reading: &std::thread::JoinHandle<()>,
+    guard: &mut ChildGuard,
 ) {
     let until = Instant::now() + Duration::from_secs(5);
     while unread(master) > 0 && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    guard.1.release();
+    while guard.0.try_wait().expect("poll the session").is_none() && Instant::now() < until {
         std::thread::sleep(Duration::from_millis(5));
     }
     drop(slave.take());
@@ -143,11 +154,17 @@ static SPAWNING: Mutex<()> = Mutex::new(());
 const SESSION_LIMIT: Duration = Duration::from_secs(20);
 
 /// Kills and reaps the child on every path out of a session, including a
-/// failed assertion or a timeout
-struct ChildGuard(Box<dyn portable_pty::Child + Send + Sync>);
+/// failed assertion or a timeout. On Unix the child is `examples/session`, and
+/// the program it runs is killed too.
+struct ChildGuard(
+    Box<dyn portable_pty::Child + Send + Sync>,
+    #[cfg(unix)] session::Session,
+);
 
 impl Drop for ChildGuard {
     fn drop(&mut self) {
+        #[cfg(unix)]
+        self.1.abandon();
         let _ = self.0.kill();
         let _ = self.0.wait();
     }
@@ -261,7 +278,15 @@ fn try_run_program_in_pty(program: &str, args: &[&str], script: &[Step]) -> Resu
         })
         .expect("open a pseudo-terminal");
 
+    // Unix: through `examples/session`, which holds the terminal's session so
+    // that proc's exit doesn't revoke it before its output is read
+    #[cfg(unix)]
+    let session = session::Session::new();
+    #[cfg(unix)]
+    let mut cmd = session.command(program, args);
+    #[cfg(windows)]
     let mut cmd = CommandBuilder::new(program);
+    #[cfg(windows)]
     cmd.args(args);
     cmd.env("TERM", "xterm-256color");
     cmd.env_remove("NO_COLOR");
@@ -281,6 +306,9 @@ fn try_run_program_in_pty(program: &str, args: &[&str], script: &[Step]) -> Resu
     drop(pair.slave);
     #[cfg(unix)]
     let mut slave = Some(pair.slave);
+    #[cfg(unix)]
+    let mut guard = ChildGuard(child, session);
+    #[cfg(windows)]
     let mut guard = ChildGuard(child);
 
     let mut writer = pair.master.take_writer().expect("pty writer");
@@ -326,6 +354,7 @@ fn try_run_program_in_pty(program: &str, args: &[&str], script: &[Step]) -> Resu
             #[cfg(unix)]
             Step::Signal(signal) => {
                 mode_at_signal = local_flags(&*pair.master);
+                // `examples/session` sends it on to proc
                 let pid = guard.0.process_id().expect("the child's PID");
                 // SAFETY: signalling the child this session started and has not reaped
                 unsafe {
@@ -359,10 +388,13 @@ fn try_run_program_in_pty(program: &str, args: &[&str], script: &[Step]) -> Resu
                 answer(&mut writer);
                 // Read before looking: if proc had ended and its output had
                 // been read to the end by now, `seen` is all it will ever print
+                #[cfg(unix)]
+                let exited = guard.1.ended().is_some();
+                #[cfg(windows)]
                 let exited = guard.0.try_wait().expect("poll the child").is_some();
                 #[cfg(unix)]
                 if exited {
-                    finish_reading(&*pair.master, &mut slave, &reading);
+                    finish_reading(&*pair.master, &mut slave, &reading, &mut guard);
                 }
                 let over = exited && reading.is_finished();
                 let seen = text();
@@ -385,8 +417,8 @@ fn try_run_program_in_pty(program: &str, args: &[&str], script: &[Step]) -> Resu
         }
     }
 
+    #[cfg(windows)]
     let status = loop {
-        #[cfg(windows)]
         answer(&mut writer);
         match guard.0.try_wait().expect("poll the child") {
             Some(status) => break status,
@@ -400,6 +432,17 @@ fn try_run_program_in_pty(program: &str, args: &[&str], script: &[Step]) -> Resu
             }
         }
     };
+    // Unix: proc has ended once the session says so; the session itself ends
+    // after its output is read (`finish_reading`), the way proc did
+    #[cfg(unix)]
+    while guard.1.ended().is_none() {
+        assert!(
+            Instant::now() < deadline,
+            "proc did not exit in {SESSION_LIMIT:?}; it printed:\n{:?}",
+            text()
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
     #[cfg(unix)]
     let mode_at_end = local_flags(&*pair.master);
     // Whatever it printed last is still in the pipe: let the reader reach the end.
@@ -414,7 +457,13 @@ fn try_run_program_in_pty(program: &str, args: &[&str], script: &[Step]) -> Resu
         std::thread::spawn(move || drop(master));
     }
     #[cfg(unix)]
-    finish_reading(&*pair.master, &mut slave, &reading);
+    finish_reading(&*pair.master, &mut slave, &reading, &mut guard);
+    #[cfg(unix)]
+    let status = guard
+        .0
+        .try_wait()
+        .expect("poll the session")
+        .expect("the session ends once released");
     let drained = Instant::now() + Duration::from_secs(5);
     while !reading.is_finished() && Instant::now() < drained {
         std::thread::sleep(Duration::from_millis(5));

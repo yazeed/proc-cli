@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The terminal tests read all of proc's output on FreeBSD and NetBSD.** They failed now and then in CI on the BSDs: a key typed after proc had already exited (NetBSD, EIO), or proc's last lines missing (FreeBSD). The cause: the tests ran proc as the leader of its terminal's session, and when a session leader exits both kernels revoke the terminal, which drops what the test had not read yet (measured with a probe, 3 runs of 3 on each; a process that was not the leader kept all of it). The tests now start proc through `examples/session`, which holds the session and runs proc as its foreground job, as a shell does, and ends the way proc did once the output is read; and they answer a prompt with the key alone, as the prompt needs no Enter. Nothing changed in proc
 - **The README names the AUR's current packages.** The Arch install rows said `yay -S proc-bin` and `yay -S proc`; with 2.2.0 the AUR packages moved to `proc-cli-bin` (the release binary) and `proc-cli` (built from source), and the old names stayed at 2.1.1 with no maintainer
 
 ## [2.2.0] - 2026-11-01
