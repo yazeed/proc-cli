@@ -10,8 +10,10 @@
 //!
 //! Commas still work (`proc why :3000,:8080`) but are deprecated.
 
-use super::held::{card_options, measure_with_known_ports, write_process_card};
+use super::held::{card_options, measure_with_known_ports_from, write_process_card};
+use crate::core::port::SocketReading;
 use crate::core::process::ProcessDetails;
+use crate::core::target::resolve_target_in;
 use crate::core::{
     flatten_targets, parse_target, resolve_target, NameMatch, PortInfo, Process, ProcessStatus,
     Protocol, TargetType,
@@ -23,6 +25,11 @@ use clap::Args;
 use colored::*;
 use serde::Serialize;
 use std::collections::HashMap;
+
+/// The socket tables if a port target read them
+fn read_if_done(reading: &std::cell::OnceCell<Option<SocketReading>>) -> Option<&SocketReading> {
+    reading.get().and_then(Option::as_ref)
+}
 
 /// Trace why a port is busy or show process ancestry
 #[derive(Args, Debug)]
@@ -60,8 +67,12 @@ impl WhyCommand {
         let mut found_any = false;
         let mut first_error: Option<ProcError> = None;
         let mut not_found: Vec<String> = Vec::new();
-        // Read once for every port target and every process shown in the JSON
-        let listening = std::cell::OnceCell::new();
+        // The socket tables, read once for every port target, every process
+        // shown in the JSON and the cards: a port target needs them first, a
+        // PID or a name reads them while the cards wait for the CPU. `None`
+        // when they could not be read.
+        let reading: std::cell::OnceCell<Option<SocketReading>> = std::cell::OnceCell::new();
+        let read = || reading.get_or_init(|| SocketReading::read().ok()).as_ref();
 
         // What the human view prints for each target, once all are resolved: the
         // cards of every target are measured and their ports read together
@@ -72,20 +83,22 @@ impl WhyCommand {
 
             // Collect port context for port targets; every holder of the port is
             // traced below, the context is the port they share
-            let port_context: Option<PortInfo> = if let TargetType::Port(port) = &parsed {
-                // The table is sorted by port then PID: the first row of the
-                // port is its first holder
-                listening
-                    .get_or_init(|| PortInfo::get_all_listening().unwrap_or_default())
-                    .iter()
-                    .find(|p| p.port == *port)
-                    .cloned()
-            } else {
-                None
+            let for_port = matches!(parsed, TargetType::Port(_)).then(read).flatten();
+            let port_context: Option<PortInfo> = match (&parsed, for_port) {
+                (TargetType::Port(port), Some(reading)) => {
+                    // The table is sorted by port then PID: the first row of the
+                    // port is its first holder
+                    reading.ports.iter().find(|p| p.port == *port).cloned()
+                }
+                _ => None,
             };
 
-            // Resolve to processes
-            let target_processes = match found_processes(target_str, |t| resolve_target(t, mode)) {
+            // Resolve to processes, a port from the table already read
+            let resolve = |t: &str| match for_port {
+                Some(reading) => resolve_target_in(t, mode, &reading.ports),
+                None => resolve_target(t, mode),
+            };
+            let target_processes = match found_processes(target_str, resolve) {
                 Ok(procs) => procs,
                 Err((error, warning)) => {
                     printer.warning(&warning);
@@ -100,8 +113,9 @@ impl WhyCommand {
             if self.json {
                 json_results.extend(target_processes.iter().map(|proc| {
                     let chain = self.build_ancestry_chain(proc, &pid_map);
-                    let ports = listening
-                        .get_or_init(|| PortInfo::get_all_listening().unwrap_or_default())
+                    let ports = read()
+                        .map(|reading| reading.ports.as_slice())
+                        .unwrap_or_default()
                         .iter()
                         .filter(|p| p.pid == proc.pid)
                         .cloned()
@@ -136,7 +150,7 @@ impl WhyCommand {
         }
 
         if !self.json {
-            self.print_targets(&shown, &pid_map);
+            self.print_targets(&shown, &pid_map, read_if_done(&reading));
         }
 
         if !found_any {
@@ -168,13 +182,24 @@ impl WhyCommand {
     /// Prints each target that was found: its header, then for each of its
     /// processes the ancestry and the card. The processes of all the targets
     /// are measured and their ports read in one wait.
-    fn print_targets(&self, shown: &[Option<Shown>], pid_map: &HashMap<u32, &Process>) {
+    fn print_targets(
+        &self,
+        shown: &[Option<Shown>],
+        pid_map: &HashMap<u32, &Process>,
+        read: Option<&SocketReading>,
+    ) {
         let mut all: Vec<Process> = shown
             .iter()
             .flatten()
             .flat_map(|target| target.processes.iter().cloned())
             .collect();
-        let mut held = measure_with_known_ports(&mut all, usize::MAX).into_iter();
+        // the tables a port target read, else read while the CPU is measured
+        let read = read.cloned();
+        let table = move || match read {
+            Some(reading) => Ok(reading),
+            None => SocketReading::read(),
+        };
+        let mut held = measure_with_known_ports_from(table, &mut all, usize::MAX).into_iter();
         let mut processes = all.into_iter();
         let opts = card_options(self.verbose);
 
