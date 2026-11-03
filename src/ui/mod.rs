@@ -2,6 +2,7 @@
 //!
 //! Handles output formatting, colors, and interactive prompts.
 
+pub mod card;
 pub mod format;
 pub mod interrupt;
 pub mod out;
