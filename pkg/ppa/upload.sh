@@ -25,6 +25,9 @@ pool=https://ppa.launchpadcontent.net/yazeedaloyoun/proc-cli/ubuntu/pool/main/p/
 
 digest() { openssl dgst "-$1" -r "$2" | cut -d' ' -f1; }
 
+# sign FILE OUTPUT, with the key on this machine (gpg asks for its passphrase)
+sign() { gpg --local-user "$key" --clearsign --output "$2" "$1"; }
+
 for changes in "$dir"/*_source.changes; do
     if [ -e "$changes.uploaded" ]; then
         echo "sent already: $(basename "$changes")"
@@ -47,7 +50,7 @@ for changes in "$dir"/*_source.changes; do
     fi
 
     if ! grep -q 'BEGIN PGP SIGNED MESSAGE' "$dir/$dsc"; then
-        gpg --local-user "$key" --clearsign --output "$dir/$dsc.signed" "$dir/$dsc"
+        sign "$dir/$dsc" "$dir/$dsc.signed"
         mv "$dir/$dsc.signed" "$dir/$dsc"
     fi
 
@@ -66,7 +69,7 @@ for changes in "$dir"/*_source.changes; do
             }
             { print }' "$changes" > "$changes.new"
         mv "$changes.new" "$changes"
-        gpg --local-user "$key" --clearsign --output "$changes.signed" "$changes"
+        sign "$changes" "$changes.signed"
         mv "$changes.signed" "$changes"
     fi
     if [ "$sign_only" = --sign-only ]; then

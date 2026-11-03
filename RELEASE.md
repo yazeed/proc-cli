@@ -145,6 +145,16 @@ nixpkgs builds proc from the tag, with its tests, as `proc-cli`. `pkg/nixpkgs/pa
 2. Commit `pkg/nixpkgs/package.nix` to `main`.
 3. Bring it to nixpkgs, after the maintainer has seen the commit and the pull request text. Until the package is merged, the pull request on NixOS/nixpkgs (from the maintainer's fork) carries two commits, `maintainers: add yazeed` and `proc-cli: init at X.Y.Z`; each release updates it to the new version. Once it is merged, nixpkgs' update bot opens `proc-cli: A -> B` after a release: check its hashes match step 1 and its build passes, and approve it as the package's maintainer. nixpkgs asks commits written with an AI assistant to say so with an `Assisted-by:` trailer.
 
+### After the tag: Ubuntu PPA
+
+`ppa:yazeedaloyoun/proc-cli` builds proc for Ubuntu 22.04, 24.04, 26.04 and 26.10 (amd64 and arm64) from source packages signed with the maintainer's key. The key stays on the maintainer's Mac and is never given to CI, so this step runs there, as one command, once the tag is pushed:
+
+```bash
+pkg/ppa/release.sh X.Y.Z      # builds the source packages in Docker, signs and uploads them
+```
+
+It builds in an `ubuntu:26.04` container (`pkg/ppa/build-source.sh`), signs with the maintainer's key (gpg asks for its passphrase unless the agent or the macOS keychain has it) and uploads by FTP (`pkg/ppa/upload.sh`). The first release's upload carries the two tarballs; the script then waits for Launchpad to publish them, usually within the hour, and sends the other three. It ends once Launchpad has accepted all four, and fails, naming the version, if one is not accepted within an hour (Launchpad emails why). Launchpad's FTP times out often: uploads retry, and running the command again sends only what has not gone. It stops before building if Docker is not running or the tag has no GitHub release, and a build that stops halfway is never reused. A packaging fix to a released version is `pkg/ppa/release.sh X.Y.Z 2`. A new Ubuntu release joins the list in `build-source.sh`; check its Rust is at least proc's `rust-version`. Step 7 checks the builds.
+
 ## 6. Verify CI
 
 After tag push, monitor GitHub Actions:
@@ -157,6 +167,9 @@ After tag push, monitor GitHub Actions:
 - [ ] Homebrew tap updated
 - [ ] Scoop bucket updated
 - [ ] Docker image pushed
+- [ ] "Update the apt repository" passed: https://proc-cli.com/apt/dists/stable/main/binary-amd64/Packages lists the new version
+- [ ] "Update winget" opened the pull request for the new version on microsoft/winget-pkgs (until the first version is merged it skips, with a notice)
+- [ ] The PPA's builds for the new version succeeded on every release and both architectures (https://launchpad.net/~yazeedaloyoun/+archive/ubuntu/proc-cli/+packages)
 
 ## 7. Post-Release Verification
 
@@ -266,6 +279,8 @@ On tag push, GitHub Actions handles:
 6. **Homebrew**: Update yazeed/homebrew-proc tap
 7. **Scoop**: Update yazeed/scoop-bucket-proc bucket
 8. **Docker**: Push to yazeed/proc-cli on Docker Hub, and the same build to yazeed/proc (the image's original name). A separate workflow (`docker.yml`) with its own tag check: it stops if the tag isn't `v` + Cargo.toml's version
+9. **apt repository**: `update-apt` runs `pages.yml`, which deploys proc-cli.com with `/apt` rebuilt from the `.deb` files of the last three releases and signed with `APT_SIGNING_KEY` (`pkg/apt/build-repo.sh`)
+10. **winget**: `update-winget` opens the pull request for the new version on microsoft/winget-pkgs from the `yazeed/winget-pkgs` fork, with `WINGET_TOKEN` (winget-releaser; the fork must keep that name). It skips, with a notice, until a first version of `yazeed.proc-cli` is in winget-pkgs
 
 Nix has nothing to publish: the flake lives in the repository, so `nix run github:yazeed/proc-cli/vX.Y.Z` works as soon as the tag is pushed, and CI's Nix jobs have already built and tested the flake on main. The nixpkgs package (`nix run nixpkgs#proc-cli`) is moved to each release by hand until it is merged, and by the nixpkgs update bot after (see "After the tag: nixpkgs").
 
@@ -283,6 +298,10 @@ Configure in GitHub repo settings → Secrets:
 | `SCOOP_BUCKET_TOKEN` | PAT for scoop-bucket-proc repo |
 | `DOCKERHUB_USERNAME` | Docker Hub username |
 | `DOCKERHUB_TOKEN` | Docker Hub access token |
+| `APT_SIGNING_KEY` | The apt repository's signing key (`proc-cli apt repository`, fingerprint `19AD 1FFA 67E9 0A13 9579 7473 DC42 B7C2 51B0 33F3`), armored, no passphrase; used only for `/apt` |
+| `WINGET_TOKEN` | Classic PAT with `public_repo` and `workflow`, for the winget pull requests |
+
+The PPA's signing key is not a secret here: it stays on the maintainer's Mac (see "After the tag: Ubuntu PPA").
 
 npm and crates.io need no secret. Both publish through **Trusted Publishing (OIDC)**:
 - **npm:** configured on npmjs.com under `proc-cli` → Settings → Trusted Publisher: GitHub Actions, `yazeed` / `proc-cli`, workflow `release.yml`, no environment, **Allow npm publish** checked. The `publish-npm` job needs `id-token: write` and npm 11.5.1 or newer.
