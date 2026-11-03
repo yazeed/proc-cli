@@ -194,7 +194,7 @@ impl PortInfo {
     /// process name can't send escape sequences to the terminal, and the name is
     /// read as bytes, so a "\x" before a multi-byte character can't panic.
     #[cfg(any(target_os = "macos", test))]
-    fn unescape_lsof(name: &str) -> String {
+    pub(crate) fn unescape_lsof(name: &str) -> String {
         fn hex(b: u8) -> Option<u8> {
             (b as char).to_digit(16).map(|d| d as u8)
         }
@@ -267,23 +267,12 @@ impl PortInfo {
     #[cfg(target_os = "linux")]
     fn listening_from(net: &Path, procs: &Path) -> Result<Vec<PortInfo>> {
         let mut sockets = Vec::new();
-        let mut read_any = false;
-        for (table, v6) in [("tcp", false), ("tcp6", true)] {
-            // tcp6 is missing when IPv6 is disabled
-            let Ok(text) = std::fs::read_to_string(net.join(table)) else {
-                continue;
-            };
-            read_any = true;
+        for (text, v6) in Self::proc_net_tables(net)? {
             sockets.extend(
                 text.lines()
                     .skip(1)
                     .filter_map(|line| Self::parse_proc_net_line(line, v6)),
             );
-        }
-        if !read_any {
-            return Err(ProcError::SystemError(
-                "Can't read /proc/net/tcp to look up ports".to_string(),
-            ));
         }
 
         let wanted: std::collections::HashSet<u64> = sockets.iter().map(|s| s.0).collect();
@@ -321,6 +310,25 @@ impl PortInfo {
         Ok(ports)
     }
 
+    /// The text of /proc/net/tcp and tcp6 (in `net`), each with whether it is
+    /// the IPv6 table. An error when neither can be read; tcp6 is missing when
+    /// IPv6 is disabled
+    #[cfg(target_os = "linux")]
+    pub(crate) fn proc_net_tables(net: &Path) -> Result<Vec<(String, bool)>> {
+        let mut tables = Vec::new();
+        for (table, v6) in [("tcp", false), ("tcp6", true)] {
+            if let Ok(text) = std::fs::read_to_string(net.join(table)) {
+                tables.push((text, v6));
+            }
+        }
+        if tables.is_empty() {
+            return Err(ProcError::SystemError(
+                "Can't read /proc/net/tcp to look up ports".to_string(),
+            ));
+        }
+        Ok(tables)
+    }
+
     /// Parse a line of /proc/net/tcp or tcp6 into (socket inode, port, address),
     /// keeping only listening sockets. Addresses are hex in the kernel's byte
     /// order: 0100007F:1F90 is 127.0.0.1:8080.
@@ -332,9 +340,19 @@ impl PortInfo {
         if *state != LISTEN {
             return None;
         }
-        let (addr_hex, port_hex) = local.split_once(':')?;
-        let port = u16::from_str_radix(port_hex, 16).ok()?;
         let inode: u64 = inode.parse().ok()?;
+        let (address, port) = Self::parse_proc_net_endpoint(local, v6)?;
+        Some((inode, port, address))
+    }
+
+    /// An `ADDRESS:PORT` pair of /proc/net/tcp or tcp6, both in hex, as
+    /// (address, port). The kernel prints each 32-bit word of the address as a
+    /// number in host byte order, so 0100007F:1F90 is 127.0.0.1:8080. An
+    /// address of the wrong length for its table gives `None`
+    #[cfg(any(target_os = "linux", test))]
+    pub(crate) fn parse_proc_net_endpoint(endpoint: &str, v6: bool) -> Option<(String, u16)> {
+        let (addr_hex, port_hex) = endpoint.split_once(':')?;
+        let port = u16::from_str_radix(port_hex, 16).ok()?;
 
         // Each 32-bit word is printed as a number in host byte order
         let word = |i: usize| -> Option<[u8; 4]> {
@@ -356,13 +374,13 @@ impl PortInfo {
             }
             std::net::Ipv4Addr::from(word(0)?).to_string()
         };
-        Some((inode, port, address))
+        Some((address, port))
     }
 
     /// Map socket inodes to the PIDs that have them open, by reading the
     /// "socket:[inode]" links in /proc/<pid>/fd. Unreadable processes are skipped.
     #[cfg(target_os = "linux")]
-    fn socket_owners(
+    pub(crate) fn socket_owners(
         wanted: &std::collections::HashSet<u64>,
         procs: &Path,
     ) -> std::collections::HashMap<u64, Vec<u32>> {
@@ -407,13 +425,24 @@ impl PortInfo {
 
     #[cfg(target_os = "windows")]
     fn get_listening_windows() -> Result<Vec<PortInfo>> {
+        let [v4, v6] = Self::netstat_tables()?;
+
+        // netstat gives no names; `get_all_listening` names every socket's
+        // process from one process-list lookup (a `tasklist` per socket made
+        // each reading take seconds, and `proc ports --in` run past a minute)
+        Ok(Self::parse_netstat_output(&[&v4, &v6], |_| None))
+    }
+
+    /// What `netstat -ano` prints for TCP: the IPv4 table and the IPv6 table
+    #[cfg(target_os = "windows")]
+    pub(crate) fn netstat_tables() -> Result<[String; 2]> {
         // `netstat -p TCP` lists IPv4 sockets only; IPv6 ones need `-p TCPv6`
         let v4 = Command::new("netstat")
             .args(["-ano", "-p", "TCP"])
             .output()
             .map_err(|e| ProcError::SystemError(format!("Failed to run netstat: {}", e)))?;
         // A machine without IPv6 may refuse the second call; that leaves the
-        // IPv4 listeners, not an error
+        // IPv4 sockets, not an error
         let v6 = Command::new("netstat")
             .args(["-ano", "-p", "TCPv6"])
             .output()
@@ -421,14 +450,7 @@ impl PortInfo {
             .filter(|o| o.status.success())
             .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
             .unwrap_or_default();
-
-        // netstat gives no names; `get_all_listening` names every socket's
-        // process from one process-list lookup (a `tasklist` per socket made
-        // each reading take seconds, and `proc ports --in` run past a minute)
-        Ok(Self::parse_netstat_output(
-            &[&String::from_utf8_lossy(&v4.stdout), &v6],
-            |_| None,
-        ))
+        Ok([String::from_utf8_lossy(&v4.stdout).into_owned(), v6])
     }
 
     /// The listening ports in the outputs of netstat, one per protocol
@@ -532,7 +554,7 @@ fn holders_in(listening: Vec<PortInfo>, port: u16) -> Vec<PortInfo> {
     target_os = "netbsd",
     test
 ))]
-fn split_listen_address(local: &str) -> Option<(String, u16)> {
+pub(crate) fn split_listen_address(local: &str) -> Option<(String, u16)> {
     let (host, port) = local.rsplit_once(':')?;
     let port = port.parse().ok()?;
     let host = host
