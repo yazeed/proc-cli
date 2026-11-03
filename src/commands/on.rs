@@ -13,28 +13,25 @@
 //!
 //! Commas still work (`proc on :3000,:8080`) but are deprecated.
 
-use crate::core::connections::{connections_for, Connections, Peer};
+use super::held::{
+    card_options, measure_with_ports, write_process, write_process_card, ConnectionReader, HeldPort,
+};
+use crate::core::connections::Connections;
 use crate::core::{
     flatten_targets, parse_target, resolve_in_dir, resolve_target, ruled_out_by, Exposure, Guards,
     NameMatch, PortInfo, Process, TargetType,
 };
 use crate::error::{ExitCode, ProcError, Result};
 use crate::out_println;
-use crate::ui::card::{write_card, CardOptions, CardPort};
-use crate::ui::output::terminal_width;
+use crate::ui::card::CardOptions;
 use crate::ui::{out, Printer};
 use clap::Args;
 use colored::*;
-use serde::{Serialize, Serializer};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use serde::Serialize;
 use std::io::Write;
-use std::panic::resume_unwind;
 
 /// Peers the JSON of a port lists at most (`peers_truncated` says it cut)
 const JSON_PEER_LIMIT: usize = 50;
-/// Whether this OS reads connections; the BSDs read none, and a card there
-/// says nothing about them rather than that there are none
-const READS_CONNECTIONS: bool = cfg!(not(any(target_os = "freebsd", target_os = "netbsd")));
 
 /// Show what's on a port, or what a process is and what ports it is on, as one card
 #[derive(Args, Debug, Clone)]
@@ -273,17 +270,6 @@ impl OnCommand {
         }
     }
 
-    /// The card's options: the terminal as it is now
-    fn card_options(&self) -> CardOptions {
-        CardOptions {
-            verbose: self.verbose,
-            width: terminal_width(),
-            now_secs: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |since| since.as_secs()),
-        }
-    }
-
     /// Show what process is on a specific port
     fn show_process_on_port(&self, port: u16) -> Result<()> {
         if self.json {
@@ -329,7 +315,7 @@ impl OnCommand {
                 &mut out::stdout(),
                 port,
                 &holders,
-                &self.card_options(),
+                &card_options(self.verbose),
             ));
         }
 
@@ -350,13 +336,9 @@ impl OnCommand {
         }
 
         // Real CPU reading for what's shown, while the connections are read
-        let mut reader =
-            ConnectionReader::new(PortInfo::get_all_listening()?, self.peer_limit(), true);
-        let ports = reader.ports_of(pid);
-        reader.read_during(&ports, || {
-            Process::measure_cpu(std::slice::from_mut(&mut process))
-        });
-        let held = reader.held_by(pid);
+        let held = measure_with_ports(std::slice::from_mut(&mut process), self.peer_limit())?
+            .pop()
+            .unwrap_or_default();
         Ok((process, held))
     }
 
@@ -381,11 +363,11 @@ impl OnCommand {
             };
             printer.print_json(&output);
         } else {
-            out::recorded(self.print_process(
+            out::recorded(write_process(
                 &mut out::stdout(),
                 &process,
                 &ports,
-                &self.card_options(),
+                &card_options(self.verbose),
             ));
         }
 
@@ -409,23 +391,11 @@ impl OnCommand {
             }
         }
 
-        // One reading of the port table for all of them, then real CPU
+        // One reading of the port table for all of them, and real CPU
         // readings for what's shown, one wait for all of them, while the
         // connections are read
-        let mut reader =
-            ConnectionReader::new(PortInfo::get_all_listening()?, self.peer_limit(), true);
-        let ports: Vec<u16> = processes
-            .iter()
-            .flat_map(|process| reader.ports_of(process.pid))
-            .collect();
-        reader.read_during(&ports, || Process::measure_cpu(&mut processes));
-        Ok(processes
-            .into_iter()
-            .map(|process| {
-                let held = reader.held_by(process.pid);
-                (process, held)
-            })
-            .collect())
+        let held = measure_with_ports(&mut processes, self.peer_limit())?;
+        Ok(processes.into_iter().zip(held).collect())
     }
 
     /// Show what ports processes with a given name are listening on
@@ -453,7 +423,7 @@ impl OnCommand {
                 &mut out::stdout(),
                 name,
                 &all_results,
-                &self.card_options(),
+                &card_options(self.verbose),
             ));
         }
 
@@ -487,25 +457,6 @@ impl OnCommand {
             }
         }
         Ok(())
-    }
-
-    /// What a process is: its name, then its card with the ports it listens on
-    fn print_process(
-        &self,
-        out: &mut impl Write,
-        process: &Process,
-        ports: &[HeldPort],
-        opts: &CardOptions,
-    ) -> std::io::Result<()> {
-        writeln!(
-            out,
-            "{} {} (PID {})",
-            "✓".green().bold(),
-            process.name.white().bold(),
-            process.pid.to_string().cyan().bold()
-        )?;
-        writeln!(out)?;
-        write_process_card(out, process, ports, opts)
     }
 
     /// The processes a name matched: how many, then a card for each
@@ -560,30 +511,6 @@ fn exposure_suffix(holders: &[(HeldPort, Option<Process>)]) -> &'static str {
     }
 }
 
-/// A process's card, then a blank line. The ports on the card are `held`; a
-/// port number held on two addresses lists its connections once.
-fn write_process_card(
-    out: &mut impl Write,
-    process: &Process,
-    held: &[HeldPort],
-    opts: &CardOptions,
-) -> std::io::Result<()> {
-    let mut seen = HashSet::new();
-    let ports: Vec<CardPort> = held
-        .iter()
-        .map(|entry| CardPort {
-            port: &entry.port,
-            connections: if seen.insert(entry.port.port) {
-                entry.connections.as_ref()
-            } else {
-                None
-            },
-        })
-        .collect();
-    write_card(out, process, &ports, opts)?;
-    writeln!(out)
-}
-
 /// A holder whose process ended after its port was listed: the two things the
 /// port table knows, laid out as the card lays them
 fn write_ended(out: &mut impl Write, held: &HeldPort) -> std::io::Result<()> {
@@ -614,218 +541,6 @@ struct PortHolders {
     kept: Vec<(PortInfo, Option<Process>)>,
     /// Holds every holder of the port, kept or not, and its connections
     reader: ConnectionReader,
-}
-
-/// A listening port of a process with the connections that came in on the
-/// process's own sockets; `None` where the OS reads none or the reading failed
-#[derive(Debug, Clone)]
-struct HeldPort {
-    port: PortInfo,
-    connections: Option<Connections>,
-}
-
-/// The counts of `Connections`, as a port of `on <pid>` or a name carries them:
-/// no peers
-#[derive(Serialize)]
-struct Counts<'a> {
-    total: usize,
-    by_state: &'a BTreeMap<String, usize>,
-}
-
-/// A port as JSON: the port, then its connection counts
-impl Serialize for HeldPort {
-    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
-        #[derive(Serialize)]
-        struct Json<'a> {
-            #[serde(flatten)]
-            port: &'a PortInfo,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            connections: Option<Counts<'a>>,
-        }
-        Json {
-            port: &self.port,
-            connections: self.connections.as_ref().map(|found| Counts {
-                total: found.total,
-                by_state: &found.by_state,
-            }),
-        }
-        .serialize(serializer)
-    }
-}
-
-/// The connections to each of `jobs` (a port with all its holders), from one
-/// reading of the socket table; `None` for each where the OS reads none or the
-/// reading failed (the answer is the process, not them)
-fn read_connections(
-    jobs: &[(u16, Vec<u32>)],
-    peer_limit: usize,
-) -> Vec<(u16, Option<Connections>)> {
-    let ports: Vec<(u16, &[u32])> = jobs
-        .iter()
-        .map(|(port, holders)| (*port, holders.as_slice()))
-        .collect();
-    let found = READS_CONNECTIONS
-        .then(|| connections_for(&ports, peer_limit).ok())
-        .flatten()
-        .unwrap_or_default();
-    jobs.iter()
-        .map(|(port, _)| {
-            let own = found.iter().find(|(read, _)| read == port);
-            (*port, own.map(|(_, connections)| connections.clone()))
-        })
-        .collect()
-}
-
-/// The connections that came in on the sockets of `pid`, of the port-wide
-/// `all` (which lists every peer)
-fn held_by(all: &Connections, pid: u32) -> Connections {
-    let peers: Vec<Peer> = all
-        .peers
-        .iter()
-        .filter(|peer| peer.holder_pid == pid)
-        .cloned()
-        .collect();
-    let mut by_state = BTreeMap::new();
-    for peer in &peers {
-        *by_state.entry(peer.state.clone()).or_default() += 1;
-    }
-    Connections {
-        total: peers.len(),
-        by_state,
-        peers,
-        peers_truncated: false,
-    }
-}
-
-/// Reads the connections to the ports of one lookup, each port once, and gives
-/// each holder its own share. `table` is every listening socket of the ports
-/// asked about: its PIDs are the holders a port's connections are read with
-/// (with a subset, a `0.0.0.0` holder would take another holder's connections).
-struct ConnectionReader {
-    table: Vec<PortInfo>,
-    /// How many peers to list: none for the counts alone, all for a card
-    limit: usize,
-    /// Each holder gets its own share of a port's connections, which takes
-    /// every peer when the port has several holders. Without it a port keeps
-    /// the connections of all its holders, `limit` peers of them.
-    split: bool,
-    read: HashMap<u16, Option<Connections>>,
-}
-
-impl ConnectionReader {
-    fn new(table: Vec<PortInfo>, limit: usize, split: bool) -> Self {
-        ConnectionReader {
-            table,
-            limit,
-            split,
-            read: HashMap::new(),
-        }
-    }
-
-    /// Every process holding `port`, once, PID ascending
-    fn holders(&self, port: u16) -> Vec<u32> {
-        let mut pids: Vec<u32> = self
-            .table
-            .iter()
-            .filter(|entry| entry.port == port)
-            .map(|entry| entry.pid)
-            .collect();
-        pids.sort_unstable();
-        pids.dedup();
-        pids
-    }
-
-    /// How `port` is read: with every holder, and as many peers as the share
-    /// of each holder needs
-    fn plan(&self, port: u16) -> (Vec<u32>, usize) {
-        let holders = self.holders(port);
-        let limit = if self.split && holders.len() > 1 {
-            usize::MAX
-        } else {
-            self.limit
-        };
-        (holders, limit)
-    }
-
-    /// Runs `work` while the connections to `ports` are read, all in one
-    /// reading of the socket table, in the background: the wait for the CPU
-    /// reading hides it
-    fn read_during<T>(&mut self, ports: &[u16], work: impl FnOnce() -> T) -> T {
-        let mut wanted: Vec<u16> = ports
-            .iter()
-            .copied()
-            .filter(|port| !self.read.contains_key(port))
-            .collect();
-        wanted.sort_unstable();
-        wanted.dedup();
-        let plans: Vec<(u16, Vec<u32>, usize)> = wanted
-            .into_iter()
-            .map(|port| {
-                let (holders, limit) = self.plan(port);
-                (port, holders, limit)
-            })
-            .collect();
-        // one limit for the reading: a port that wanted fewer peers gets more
-        let limit = plans.iter().map(|(_, _, limit)| *limit).max().unwrap_or(0);
-        let jobs: Vec<(u16, Vec<u32>)> = plans
-            .into_iter()
-            .map(|(port, holders, _)| (port, holders))
-            .collect();
-        let (done, result) = std::thread::scope(|scope| {
-            let reading = scope.spawn(|| read_connections(&jobs, limit));
-            let result = work();
-            let done = reading.join().unwrap_or_else(|e| resume_unwind(e));
-            (done, result)
-        });
-        self.read.extend(done);
-        result
-    }
-
-    /// The connections to `port` of every holder, read now if they were not
-    fn of_port(&mut self, port: u16) -> Option<Connections> {
-        if !self.read.contains_key(&port) {
-            let (holders, limit) = self.plan(port);
-            self.read
-                .extend(read_connections(&[(port, holders)], limit));
-        }
-        self.read[&port].clone()
-    }
-
-    /// The connections that came in on `pid`'s sockets of `port`
-    fn of_holder(&mut self, port: u16, pid: u32) -> Option<Connections> {
-        let all = self.of_port(port)?;
-        Some(if self.holders(port).len() > 1 {
-            held_by(&all, pid)
-        } else {
-            all
-        })
-    }
-
-    /// The ports `pid` listens on, each with its connections
-    fn held_by(&mut self, pid: u32) -> Vec<HeldPort> {
-        let ports: Vec<PortInfo> = self
-            .table
-            .iter()
-            .filter(|entry| entry.pid == pid)
-            .cloned()
-            .collect();
-        ports
-            .into_iter()
-            .map(|port| {
-                let connections = self.of_holder(port.port, pid);
-                HeldPort { port, connections }
-            })
-            .collect()
-    }
-
-    /// The port numbers `pid` listens on
-    fn ports_of(&self, pid: u32) -> Vec<u16> {
-        self.table
-            .iter()
-            .filter(|entry| entry.pid == pid)
-            .map(|entry| entry.port)
-            .collect()
-    }
 }
 
 /// What a port lookup contributes to the multi-target JSON: each holder's
@@ -903,6 +618,7 @@ struct MultiProcessPortsOutput<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::held::connections_of;
     use crate::core::{ProcessStatus, Protocol};
     use crate::test_support::assert_stops_at_a_failed_write;
 
@@ -1030,28 +746,6 @@ mod tests {
         }
     }
 
-    /// `n` established connections held by `holder`
-    fn connections_of(holder: u32, n: u16) -> Connections {
-        let peers: Vec<Peer> = (0..n)
-            .map(|i| Peer {
-                holder_pid: holder,
-                state: "established".to_string(),
-                remote_address: "127.0.0.1".to_string(),
-                remote_port: 50_000 + i,
-                peer: None,
-            })
-            .collect();
-        held_by(
-            &Connections {
-                total: peers.len(),
-                by_state: BTreeMap::new(),
-                peers,
-                peers_truncated: false,
-            },
-            holder,
-        )
-    }
-
     #[test]
     fn a_port_whose_process_ended_adds_nothing_to_the_json_results() {
         let found = |kept| PortHolders {
@@ -1173,35 +867,6 @@ mod tests {
     }
 
     #[test]
-    fn a_process_lists_every_port_and_a_shared_port_number_once() {
-        // 4000 on two addresses, then 4001
-        let mut other = bound(1, "127.0.0.1");
-        other.port = 4001;
-        let ports = [
-            held(bound(1, "127.0.0.1"), Some(connections_of(1, 1))),
-            held(bound(1, "::1"), Some(connections_of(1, 1))),
-            held(other, Some(Connections::default())),
-        ];
-        let out = printed(|w| command(None).print_process(w, &detailed(), &ports, &opts()));
-        assert!(out.starts_with("✓ x (PID 1)\n\n  Process:"), "{out}");
-        assert_eq!(out.matches("Listening:").count(), 1, "{out}");
-        assert!(out.contains(":4000 TCP on 127.0.0.1"), "{out}");
-        assert!(out.contains(":4000 TCP on ::1"), "{out}");
-        assert!(out.contains(":4001 TCP on 127.0.0.1"), "{out}");
-        // the second address of 4000 repeats nothing; 4001 has none
-        assert_eq!(out.matches("Connections:").count(), 1, "{out}");
-        assert!(out.ends_with("\n\n"), "{out}");
-    }
-
-    #[test]
-    fn a_process_listening_on_nothing_says_none() {
-        let out = printed(|w| command(None).print_process(w, &without_cwd(), &[], &opts()));
-        assert!(out.contains("Listening:   none\n"), "{out}");
-        assert!(!out.contains("is listening on"), "{out}");
-        assert!(!out.contains("Connections:"), "{out}");
-    }
-
-    #[test]
     fn a_name_says_how_many_processes_matched() {
         let results = |n: usize| -> Vec<(Process, Vec<HeldPort>)> {
             (0..n).map(|_| (without_cwd(), Vec::new())).collect()
@@ -1211,10 +876,10 @@ mod tests {
             c.cmd = cmd;
             printed(|w| c.print_processes_named(w, "x", &results(n), &opts()))
         };
+        let one = named(false, 1);
         assert!(
-            named(false, 1).starts_with("✓ 1 process named 'x'\n\n  Process:"),
-            "{}",
-            named(false, 1)
+            one.starts_with("✓ 1 process named 'x'\n\n  Process:"),
+            "{one}"
         );
         let two = named(false, 2);
         assert!(two.starts_with("✓ 2 processes named 'x'\n\n"), "{two}");
@@ -1223,122 +888,6 @@ mod tests {
             named(true, 2).starts_with("✓ 2 processes matching 'x'\n\n"),
             "--cmd matches the command line too"
         );
-    }
-
-    #[test]
-    fn the_connections_of_a_holder_are_the_peers_that_came_in_on_its_sockets() {
-        let mut all = connections_of(1, 3);
-        all.peers.extend(connections_of(2, 2).peers);
-        all.peers[4].state = "close_wait".to_string();
-        all.total = 5;
-
-        let first = held_by(&all, 1);
-        assert_eq!(first.total, 3);
-        assert_eq!(first.by_state.get("established"), Some(&3));
-        assert_eq!(first.peers.len(), 3);
-        let second = held_by(&all, 2);
-        assert_eq!(second.total, 2);
-        assert_eq!(second.by_state.get("established"), Some(&1));
-        assert_eq!(second.by_state.get("close_wait"), Some(&1));
-        assert!(!second.peers_truncated);
-        assert_eq!(held_by(&all, 3), Connections::default());
-    }
-
-    #[test]
-    fn a_reader_gives_each_holder_its_own_share_and_a_lone_holder_the_whole() {
-        let table = vec![
-            bound(1, "127.0.0.1"),
-            bound(2, "::1"),
-            bound(2, "127.0.0.1"),
-        ];
-        let mut reader = ConnectionReader::new(table, 0, true);
-        assert_eq!(reader.holders(4000), vec![1, 2], "once each, ascending");
-        assert!(reader.holders(4001).is_empty());
-        // several holders: every peer, to tell their shares apart
-        assert_eq!(reader.plan(4000), (vec![1, 2], usize::MAX));
-
-        let mut all = connections_of(1, 2);
-        all.peers.extend(connections_of(2, 1).peers);
-        all.total = 3;
-        reader.read.insert(4000, Some(all.clone()));
-        assert_eq!(reader.of_holder(4000, 1).unwrap().total, 2);
-        assert_eq!(reader.of_holder(4000, 2).unwrap().total, 1);
-        assert_eq!(reader.of_port(4000), Some(all.clone()));
-        let held = reader.held_by(2);
-        assert_eq!(held.len(), 2, "both of its addresses");
-        assert!(held
-            .iter()
-            .all(|h| h.connections.as_ref().unwrap().total == 1));
-        assert_eq!(reader.ports_of(2), vec![4000, 4000]);
-
-        // a lone holder keeps the port's connections as read, peers cut or not
-        let mut lone = ConnectionReader::new(vec![bound(1, "127.0.0.1")], 50, false);
-        assert_eq!(lone.plan(4000), (vec![1], 50));
-        lone.read.insert(4000, Some(all.clone()));
-        assert_eq!(lone.of_holder(4000, 1), Some(all));
-        // a port whose connections the OS gave none of
-        lone.read.insert(4001, None);
-        assert_eq!(lone.of_holder(4001, 1), None);
-    }
-
-    #[test]
-    fn a_reader_reads_a_port_it_was_not_told_to_prefetch() {
-        // nothing listens on 4000 here: no connections, or none read at all
-        let mut reader = ConnectionReader::new(vec![listener()], 0, true);
-        assert_eq!(reader.of_port(4000).is_some(), READS_CONNECTIONS);
-        // read once: the second call is the first one's answer
-        assert!(reader.read.contains_key(&4000));
-        assert_eq!(reader.of_port(4000).is_some(), READS_CONNECTIONS);
-    }
-
-    #[test]
-    fn a_reader_reads_while_the_work_runs() {
-        let table: Vec<PortInfo> = (0..6)
-            .map(|i| {
-                let mut port = listener();
-                port.port = 4000 + i;
-                port
-            })
-            .collect();
-        let ports: Vec<u16> = table.iter().map(|p| p.port).collect();
-        let mut reader = ConnectionReader::new(table, 0, true);
-        // the work's answer comes back, and every port is read, in one reading
-        let answer = reader.read_during(&ports, || 42);
-        assert_eq!(answer, 42);
-        assert_eq!(reader.read.len(), ports.len());
-        // nothing left to read: the work still runs
-        assert_eq!(reader.read_during(&ports, || "done"), "done");
-        assert_eq!(reader.read_during(&[], || 1), 1);
-    }
-
-    #[test]
-    fn a_ports_counts_are_json_without_the_peers() {
-        let port = held(bound(1, "127.0.0.1"), Some(connections_of(1, 2)));
-        let json = serde_json::to_value(&port).unwrap();
-        assert_eq!(json["port"], 4000);
-        assert_eq!(json["exposure"], "local");
-        assert_eq!(json["connections"]["total"], 2);
-        assert_eq!(json["connections"]["by_state"]["established"], 2);
-        assert!(json["connections"].get("peers").is_none(), "{json}");
-
-        // where the OS gives none the key is absent, never null
-        let json = serde_json::to_value(held(bound(1, "127.0.0.1"), None)).unwrap();
-        assert!(json.get("connections").is_none(), "{json}");
-    }
-
-    #[test]
-    fn the_card_options_read_the_flag_the_terminal_and_the_clock() {
-        let mut cmd = command(None);
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let plain = cmd.card_options();
-        assert!(!plain.verbose);
-        assert_eq!(plain.width, terminal_width());
-        assert!(plain.now_secs >= now && plain.now_secs <= now + 5);
-        cmd.verbose = true;
-        assert!(cmd.card_options().verbose);
     }
 
     #[test]
@@ -1374,13 +923,10 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_write_ends_the_process_and_name_lookups() {
+    fn a_failed_write_ends_the_name_lookup() {
         let cmd = command(None);
-        let p = detailed();
-        let ports = [held(bound(1, "127.0.0.1"), Some(connections_of(1, 2)))];
-        assert_stops_at_a_failed_write(|w| cmd.print_process(w, &p, &ports, &opts()));
-        assert_stops_at_a_failed_write(|w| cmd.print_process(w, &p, &[], &opts()));
-        let results = [(p.clone(), ports.to_vec())];
+        let ports = vec![held(bound(1, "127.0.0.1"), Some(connections_of(1, 2)))];
+        let results = [(detailed(), ports)];
         assert_stops_at_a_failed_write(|w| cmd.print_processes_named(w, "x", &results, &opts()));
     }
 }

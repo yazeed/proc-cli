@@ -10,13 +10,14 @@
 //!
 //! Commas still work (`proc why :3000,:8080`) but are deprecated.
 
+use super::held::{card_options, measure_with_ports, write_process_card};
 use crate::core::{
     flatten_targets, parse_target, resolve_target, NameMatch, PortInfo, Process, ProcessStatus,
     Protocol, TargetType,
 };
 use crate::error::{ExitCode, ProcError, Result};
 use crate::out_println;
-use crate::ui::{uptime_label, Printer};
+use crate::ui::{out, uptime_label, Printer};
 use clap::Args;
 use colored::*;
 use serde::Serialize;
@@ -37,7 +38,7 @@ pub struct WhyCommand {
     #[arg(long, short = 'j')]
     pub json: bool,
 
-    /// Show verbose output
+    /// Print every value whole and every connection (default: cut to the terminal width, 5 peers)
     #[arg(long, short = 'v')]
     pub verbose: bool,
 }
@@ -79,15 +80,16 @@ impl WhyCommand {
             };
 
             // Resolve to processes
-            let target_processes = match found_processes(target_str, |t| resolve_target(t, mode)) {
-                Ok(procs) => procs,
-                Err((error, warning)) => {
-                    printer.warning(&warning);
-                    first_error.get_or_insert(error);
-                    not_found.push(target_str.clone());
-                    continue;
-                }
-            };
+            let mut target_processes =
+                match found_processes(target_str, |t| resolve_target(t, mode)) {
+                    Ok(procs) => procs,
+                    Err((error, warning)) => {
+                        printer.warning(&warning);
+                        first_error.get_or_insert(error);
+                        not_found.push(target_str.clone());
+                        continue;
+                    }
+                };
             found_any = true;
 
             if self.json {
@@ -133,9 +135,15 @@ impl WhyCommand {
                 }
                 out_println!();
 
-                for proc in &target_processes {
+                // Real CPU readings for the cards, while the ports the targets
+                // listen on and the connections to them are read
+                let held = measure_with_ports(&mut target_processes, usize::MAX)?;
+                let opts = card_options(self.verbose);
+                for (proc, ports) in target_processes.iter().zip(&held) {
                     self.print_ancestry_with_context(proc, &pid_map);
                     out_println!();
+                    // A failed write is recorded by `out`, which decides the exit code
+                    out::recorded(write_process_card(&mut out::stdout(), proc, ports, &opts));
                 }
             }
         }

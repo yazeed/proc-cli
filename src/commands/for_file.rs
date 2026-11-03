@@ -7,12 +7,14 @@
 //!   proc for ~/bin/myapp         # Tilde expansion
 //!   proc for app.log --by node   # Only the process named node (--cmd: node anywhere in the command line)
 
+use super::held::{card_options, held_during, write_process_card, HeldPort};
 use crate::core::{
     resolve_in_dir, sort_processes, with_ports, NameMatch, PortInfo, Process, SortKey, StatusFilter,
 };
 use crate::error::{ProcError, Result};
 use crate::out_println;
-use crate::ui::{format_duration, format_memory, Printer};
+use crate::ui::card::CardOptions;
+use crate::ui::{out, Printer};
 use clap::Args;
 use colored::*;
 use serde::Serialize;
@@ -58,7 +60,7 @@ pub struct ForCommand {
     #[arg(long, short = 'j')]
     pub json: bool,
 
-    /// Show verbose output
+    /// Print every value whole and every connection (default: cut to the terminal width, 5 peers)
     #[arg(long, short = 'v')]
     pub verbose: bool,
 
@@ -116,10 +118,23 @@ impl ForCommand {
             return Err(ProcError::ProcessNotFound(self.file.clone()));
         }
 
-        // 9. For each process, get ports
-        let results = with_ports(processes)?;
+        // 9. Output. One hit in a terminal is the card, with its ports and
+        // their connections; the JSON and a list carry the ports alone.
+        if !self.json && processes.len() == 1 {
+            let (held, ()) = held_during(&[processes[0].pid], usize::MAX, || ())?;
+            let ports = held.into_iter().next().unwrap_or_default();
+            // A failed write is recorded by `out`, which decides the exit code
+            out::recorded(self.print_one(
+                &mut out::stdout(),
+                &processes[0],
+                &ports,
+                &card_options(self.verbose),
+            ));
+            return Ok(());
+        }
 
-        // 10. Output
+        // For each process, get ports
+        let results = with_ports(processes)?;
         if self.json {
             self.print_json(&results)?;
         } else {
@@ -229,86 +244,51 @@ impl ForCommand {
         Ok(())
     }
 
+    /// The one process that has the file: the line saying so, then its card
+    fn print_one(
+        &self,
+        out: &mut impl std::io::Write,
+        process: &Process,
+        ports: &[HeldPort],
+        opts: &CardOptions,
+    ) -> std::io::Result<()> {
+        writeln!(
+            out,
+            "{} Found 1 process for {}",
+            "✓".green().bold(),
+            self.file.cyan().bold()
+        )?;
+        writeln!(out)?;
+        write_process_card(out, process, ports, opts)
+    }
+
+    /// Several processes: the standard process table, then who listens where
     fn print_human(&self, results: &[(Process, Vec<PortInfo>)]) {
-        let count = results.len();
         let file_display = &self.file;
+        let processes: Vec<Process> = results.iter().map(|(p, _)| p.clone()).collect();
+        Printer::from_flags(false, self.verbose)
+            .wide(self.wide)
+            .print_processes_as("for", &processes, Some(&format!("for {}", file_display)));
 
-        if count == 1 {
-            // Single process - detailed view (like `on` command)
-            let (proc, ports) = &results[0];
-
-            out_println!(
-                "{} Found 1 process for {}",
-                "✓".green().bold(),
-                file_display.cyan().bold()
-            );
-            out_println!();
-
-            // Same labels and order as `proc on :port`
-            out_println!(
-                "  {} {} (PID {})",
-                "Process:".bright_black(),
-                proc.name.white().bold(),
-                proc.pid.to_string().cyan()
-            );
-            if let Some(ref cwd) = proc.cwd {
-                out_println!("  {} {}", "Directory:".bright_black(), cwd);
-            }
-            if let Some(ref path) = proc.exe_path {
-                out_println!("  {} {}", "Path:".bright_black(), path.bright_black());
-            }
-            for port_info in ports {
+        let listening: Vec<_> = results
+            .iter()
+            .flat_map(|(proc, ports)| ports.iter().map(move |p| (proc, p)))
+            .collect();
+        if !listening.is_empty() {
+            out_println!("  {}", "Listening:".bright_black());
+            for (proc, port_info) in listening {
                 let addr = port_info.address.as_deref().unwrap_or("*");
                 out_println!(
-                    "  {} :{} ({} on {})",
-                    "Listening:".bright_black(),
+                    "    {} :{} ({} on {})  {} [PID {}]",
+                    "→".bright_black(),
                     port_info.port.to_string().cyan(),
                     format!("{:?}", port_info.protocol).to_uppercase(),
-                    addr
+                    addr,
+                    proc.name.white(),
+                    proc.pid.to_string().cyan()
                 );
             }
-            out_println!(
-                "  {} {:.1}% CPU, {}",
-                "Resources:".bright_black(),
-                proc.cpu_percent,
-                format_memory(proc.memory_mb)
-            );
-            if let Some(uptime) = proc.uptime_secs {
-                out_println!("  {} {}", "Uptime:".bright_black(), format_duration(uptime));
-            }
-            if self.verbose {
-                if let Some(ref cmd) = proc.command {
-                    out_println!("  {} {}", "Command:".bright_black(), cmd.bright_black());
-                }
-            }
             out_println!();
-        } else {
-            // Multiple processes: the standard process table, then who listens where
-            let processes: Vec<Process> = results.iter().map(|(p, _)| p.clone()).collect();
-            Printer::from_flags(false, self.verbose)
-                .wide(self.wide)
-                .print_processes_as("for", &processes, Some(&format!("for {}", file_display)));
-
-            let listening: Vec<_> = results
-                .iter()
-                .flat_map(|(proc, ports)| ports.iter().map(move |p| (proc, p)))
-                .collect();
-            if !listening.is_empty() {
-                out_println!("  {}", "Listening:".bright_black());
-                for (proc, port_info) in listening {
-                    let addr = port_info.address.as_deref().unwrap_or("*");
-                    out_println!(
-                        "    {} :{} ({} on {})  {} [PID {}]",
-                        "→".bright_black(),
-                        port_info.port.to_string().cyan(),
-                        format!("{:?}", port_info.protocol).to_uppercase(),
-                        addr,
-                        proc.name.white(),
-                        proc.pid.to_string().cyan()
-                    );
-                }
-                out_println!();
-            }
         }
     }
 

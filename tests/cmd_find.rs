@@ -549,18 +549,49 @@ fn by_parent_keeps_only_children_of_that_pid() {
 
 // ---- for ----
 
+/// The value of the card line labelled `label`
+fn card_field(out: &str, label: &str) -> String {
+    let prefix = format!("  {label:<13}");
+    out.lines()
+        .find_map(|line| line.strip_prefix(&prefix))
+        .unwrap_or_else(|| panic!("no {label} line in:\n{out}"))
+        .to_string()
+}
+
 #[test]
-fn for_a_single_process_shows_its_details_and_port() {
+#[cfg_attr(
+    any(target_os = "freebsd", target_os = "netbsd"),
+    ignore = "the BSDs read no connections"
+)]
+fn for_one_hit_shows_the_card() {
     let p = Owned::listener();
     let (out, code) = run_text(&["for", &p.exe()]);
     assert_eq!(code, 0, "{out}");
-    assert!(out.contains("Found 1 process for"), "{out}");
-    assert!(out.contains(&format!("(PID {})", p.pid())), "{out}");
-    assert!(out.contains(&format!("Directory: {}", p.dir())), "{out}");
-    assert!(out.contains(&format!("Listening: :{}", p.port)), "{out}");
-    assert!(out.contains("Resources:"), "{out}");
-    assert!(out.contains("Uptime:"), "{out}");
-    assert!(!out.contains("Command:"), "only with --verbose: {out}");
+    let head = format!("✓ Found 1 process for {}\n\n  Process:     ", p.exe());
+    assert!(out.starts_with(&head), "{out}");
+    let file_name = Path::new(&p.exe())
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(
+        card_field(&out, "Process:"),
+        format!("{file_name} (PID {})", p.pid())
+    );
+    // `-v` for the directory whole: a long one is cut to the terminal otherwise
+    let (verbose, _) = run_text(&["for", &p.exe(), "-v"]);
+    assert_eq!(card_field(&verbose, "Directory:"), p.dir(), "{verbose}");
+    assert!(
+        card_field(&out, "Listening:").starts_with(&format!(":{} TCP", p.port)),
+        "{out}"
+    );
+    assert!(card_field(&out, "Resources:").contains("% CPU, "), "{out}");
+    assert!(card_field(&out, "Started:").contains("(up "), "{out}");
+    assert!(!card_field(&out, "Command:").is_empty(), "{out}");
+    assert!(out.contains("  Connections: "), "{out}");
+    assert!(out.ends_with("\n\n"), "{out:?}");
+    // the old labels went with the old layout
+    assert!(!out.contains("Uptime:"), "{out}");
 }
 
 #[test]
@@ -574,11 +605,16 @@ fn for_status_keeps_a_process_in_that_state() {
 }
 
 #[test]
-fn for_verbose_adds_the_command_line() {
-    let p = Owned::listener();
+fn for_verbose_prints_the_card_values_whole() {
+    let long = "x".repeat(300);
+    let p = Owned::with_args(&[&long]);
+    let (out, code) = run_text(&["for", &p.exe()]);
+    assert_eq!(code, 0, "{out}");
+    let command = card_field(&out, "Command:");
+    assert!(command.ends_with('…'), "cut to the terminal: {command}");
     let (out, code) = run_text(&["for", &p.exe(), "--verbose"]);
     assert_eq!(code, 0, "{out}");
-    assert!(out.contains("Command:"), "{out}");
+    assert!(card_field(&out, "Command:").ends_with(&long), "{out}");
 }
 
 #[test]

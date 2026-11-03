@@ -122,7 +122,7 @@
 - q: How do I find out what started a process?
   id: what-started-a-process
   a: |
-    `proc why` traces the chain of parent processes, with how long each has been running, so you can see whether a server came from an old terminal tab, a tmux session or your editor:
+    `proc why` traces the chain of parent processes, with how long each has been running, so you can see whether a server came from an old terminal tab, a tmux session or your editor. Under the chain, the process itself gets the same card as `proc on`:
 
     ```bash
     proc why :3000

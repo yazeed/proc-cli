@@ -64,7 +64,7 @@ Give several targets as separate arguments: `proc stop <pid> <pid> :<port> --dry
 |------|---------|
 | What is on a port? | `proc on :<port> --json` (`processes` lists every holder; `exposure` and `connections` say who can reach it and who is connected) |
 | All listening ports (TCP) | `proc ports --json`, `proc ports --range <from>-<to> --json` |
-| What does a PID use or hold? | `proc info <pid> --json`, `proc on <pid> --json` (its ports, each with `exposure` and a connection count) |
+| What does a PID use or hold? | `proc info <pid> --json`, `proc on <pid> --json` (each lists its ports, each with `exposure` and a connection count) |
 | What runs in a directory? | `proc in <dir> --json`, add `--by <name>` |
 | What has this file open? | `proc for <file> --json` |
 | Where did it come from? | `proc why :<port> --json`, `proc tree <pid> --ancestors --json` |

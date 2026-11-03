@@ -221,7 +221,7 @@ The same machine gives the same order on every run, so a list can be compared wi
 
 `address` is `0.0.0.0` or `::` for all addresses (a `*` bind reads `0.0.0.0`) and `127.0.0.1` or `::1` for loopback, with IPv6 unbracketed on every OS. Add brackets yourself to build a URL (`http://[::1]:3000`). Only TCP listeners appear: a UDP socket is invisible to `ports` and `on`.
 
-`exposure` says whether the port is reachable from the network: `"local"` when it is bound to loopback only (`127.0.0.1`, `::1`), `"exposed"` for all interfaces (`0.0.0.0`, `::`, `*`), any other address, or no known address. It is derived from `address`, so the two always agree. `on :port` has it at the top level, next to `address` (the first holder's, as `address` is); `on <pid>`, names and `ports` give it on each port object.
+`exposure` says whether the port is reachable from the network: `"local"` when it is bound to loopback only (`127.0.0.1`, `::1`), `"exposed"` for all interfaces (`0.0.0.0`, `::`, `*`), any other address, or no known address. It is derived from `address`, so the two always agree. `on :port` has it at the top level, next to `address` (the first holder's, as `address` is); `on <pid>`, `info`, names and `ports` give it on each port object.
 
 ## Output shapes
 
@@ -232,8 +232,10 @@ The same machine gives the same order on every run, so a list can be compared wi
 ### info
 
 ```json
-{ "action": "info", "success": true, "found_count": 1, "not_found_count": 0, "processes": [<Process>, ...], "not_found": [] }
+{ "action": "info", "success": true, "found_count": 1, "not_found_count": 0, "processes": [<Process> + "ports": [<Port>, ...], ...], "not_found": [] }
 ```
+
+Each process object has the process's keys and, beside them, `ports`: the ports it listens on (an empty list for none), each with `exposure` and `connections` (`total` and `by_state` only, no `peers`; absent where the OS reads none, as on FreeBSD and NetBSD), as for `on <pid>`.
 
 No target found: `success: false`, exit 2. Some found: `success: true`, the rest in `not_found`.
 

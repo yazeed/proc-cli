@@ -418,6 +418,50 @@ fn why_a_pid_names_the_process_and_not_a_port() {
 }
 
 #[test]
+fn why_shows_the_targets_ports() {
+    let owned = Owned::listener();
+    let (out, _, code) = run_text(&["why", &owned.pid_arg()]);
+    assert_eq!(code, 0, "{out}");
+    // the ancestry is drawn as before, then the target's card
+    assert!(
+        out.starts_with(&format!("✓ Ancestry for '{}':\n\n", owned.pid())),
+        "{out}"
+    );
+    let target = target_line(&out);
+    let card = out.split_once(&format!("{target}\n")).unwrap().1;
+    assert!(
+        card.contains(&format!(
+            "\n  Process:     {} (PID {})\n",
+            owned.file_name(),
+            owned.pid()
+        )),
+        "{out}"
+    );
+    let listening = card_field(&out, "Listening:");
+    assert!(
+        listening.starts_with(&format!(":{} TCP", owned.port)),
+        "{listening}"
+    );
+    assert!(
+        out.contains(&format!("  Process:     {} (PID", owned.file_name())),
+        "{out}"
+    );
+    assert!(out.ends_with("\n\n"), "{out:?}");
+
+    // by port, the header names the port and the card names the same process
+    let (out, _, code) = run_text(&["why", &owned.port_arg()]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.starts_with(&format!("✓ Port {} (TCP):\n\n", owned.port)),
+        "{out}"
+    );
+    assert!(
+        card_field(&out, "Process:").ends_with(&format!("(PID {})", owned.pid())),
+        "{out}"
+    );
+}
+
+#[test]
 fn why_a_name_traces_every_process_with_that_name() {
     let owned = Owned::listener();
     let (out, _, code) = run_text(&["why", &owned.name]);
@@ -761,55 +805,160 @@ fn why_json_with_every_target_missing_is_the_first_error() {
 
 // --- info --------------------------------------------------------------------
 
+/// The value of the card line labelled `label`
+fn card_field(out: &str, label: &str) -> String {
+    let prefix = format!("  {label:<13}");
+    out.lines()
+        .find_map(|line| line.strip_prefix(&prefix))
+        .unwrap_or_else(|| panic!("no {label} line in:\n{out}"))
+        .to_string()
+}
+
 #[test]
-fn info_prints_what_is_known_about_the_process() {
+#[cfg_attr(
+    any(target_os = "freebsd", target_os = "netbsd"),
+    ignore = "the BSDs read no connections"
+)]
+fn info_shows_the_card_with_the_ports_it_listens_on() {
     let owned = Owned::listener();
     let (json, _) = run_json(&["info", &owned.pid_arg(), "--json"]);
     let known = &json["processes"][0];
     let (out, stderr, code) = run_text(&["info", &owned.pid_arg()]);
     assert_eq!(code, 0, "{stderr}");
     assert_eq!(stderr, "");
-    let field = |label: &str| {
-        line_with(&out, label)
-            .trim()
-            .strip_prefix(label)
-            .unwrap()
-            .trim()
-            .to_string()
-    };
     assert_eq!(
-        out.lines().next().unwrap(),
-        format!("✓ Process {}", owned.pid())
+        card_field(&out, "Process:"),
+        format!("{} (PID {})", owned.file_name(), owned.pid())
     );
-    assert_eq!(field("Name:"), owned.file_name());
-    assert_eq!(field("PID:"), owned.pid_arg());
+    // `-v` for the paths whole: a long one is cut to the terminal otherwise
+    let (verbose, _, _) = run_text(&["info", &owned.pid_arg(), "-v"]);
     assert!(
-        same_place(&field("Directory:"), &owned.dir()),
-        "{out}\n{}",
+        same_place(&card_field(&verbose, "Directory:"), &owned.dir()),
+        "{verbose}\n{}",
         owned.what_proc_saw()
     );
-    assert!(same_place(&field("Path:"), &owned.exe()), "{out}");
-    assert_eq!(field("Parent PID:"), std::process::id().to_string());
+    assert!(
+        same_place(&card_field(&verbose, "Path:"), &owned.exe()),
+        "{verbose}"
+    );
+    let parent = card_field(&out, "Parent:");
+    assert!(
+        parent.ends_with(&format!("(PID {})", std::process::id())),
+        "{parent}"
+    );
     if let Some(user) = known["user"].as_str() {
-        assert_eq!(field("User:"), user);
+        assert_eq!(card_field(&out, "User:"), user);
     }
-    assert!(field("CPU:").ends_with('%'), "{out}");
-    assert!(!field("Memory:").is_empty());
-    assert!(!field("Uptime:").is_empty());
-    assert!(!field("Status:").is_empty());
-    // The command line is for --verbose
-    assert!(!out.contains("Command:"), "{out}");
+    assert_eq!(card_field(&out, "Status:"), known["status"]);
+    assert!(card_field(&out, "Resources:").contains("% CPU, "), "{out}");
+    assert!(card_field(&out, "Started:").contains("(up "), "{out}");
+    assert!(!card_field(&out, "Command:").is_empty());
+    // the port it listens on, with who may reach it
+    let listening = card_field(&out, "Listening:");
+    assert!(
+        listening.starts_with(&format!(":{} TCP", owned.port)),
+        "{listening}"
+    );
+    assert!(listening.contains('('), "{listening}");
+    // a listener has connections to report (none yet, but the line is there)
+    assert!(out.contains("  Connections: "), "{out}");
     assert!(out.ends_with("\n\n"), "{out:?}");
+    // the old labels went with the old layout
+    assert!(!out.contains("Parent PID:"), "{out}");
+    assert!(!out.contains("  Name:"), "{out}");
 }
 
 #[test]
-fn info_verbose_adds_the_command_line() {
+fn info_headline_names_the_process() {
     let owned = Owned::listener();
+    let (out, _, code) = run_text(&["info", &owned.pid_arg()]);
+    assert_eq!(code, 0);
+    assert_eq!(
+        out.lines().next().unwrap(),
+        format!("✓ {} (PID {})", owned.file_name(), owned.pid())
+    );
+    assert_eq!(out.lines().nth(1), Some(""), "{out}");
+}
+
+#[test]
+fn info_leaves_out_connections_for_a_process_that_listens_on_nothing() {
+    // the test's own listener is the process; a shell it runs sleeps and listens on nothing
+    let child = std::process::Command::new(if cfg!(windows) { "ping" } else { "sleep" })
+        .args(if cfg!(windows) {
+            vec!["-n", "300", "127.0.0.1"]
+        } else {
+            vec!["300"]
+        })
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut child = ChildGuard(child);
+    let (out, _, code) = run_text(&["info", &child.0.id().to_string()]);
+    assert_eq!(code, 0, "{out}");
+    assert_eq!(card_field(&out, "Listening:"), "none");
+    assert!(!out.contains("Connections:"), "{out}");
+    let (json, _) = run_json(&["info", &child.0.id().to_string(), "--json"]);
+    assert_eq!(json["processes"][0]["ports"], serde_json::json!([]));
+    let _ = child.0.kill();
+    let _ = child.0.wait();
+}
+
+/// Kills and reaps its child when dropped
+struct ChildGuard(Child);
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+#[test]
+fn info_json_lists_each_port_with_its_exposure_and_connection_counts() {
+    let owned = Owned::listener();
+    let (json, _) = run_json(&["info", &owned.pid_arg(), "--json"]);
+    let process = &json["processes"][0];
+    // every key it had is still there
+    assert_eq!(process["pid"], owned.pid());
+    assert!(process["name"].is_string());
+    assert!(process["status"].is_string());
+    let ports = process["ports"].as_array().unwrap();
+    let mine = ports
+        .iter()
+        .find(|p| p["port"] == owned.port)
+        .unwrap_or_else(|| panic!("no port {} in {json}", owned.port));
+    assert_eq!(mine["pid"], owned.pid());
+    assert_eq!(mine["protocol"], "tcp");
+    assert!(
+        matches!(mine["exposure"].as_str(), Some("local" | "exposed")),
+        "{mine}"
+    );
+    if cfg!(not(any(target_os = "freebsd", target_os = "netbsd"))) {
+        assert!(mine["connections"]["total"].is_u64(), "{mine}");
+        assert!(mine["connections"]["by_state"].is_object(), "{mine}");
+        // counts, not peers
+        assert!(mine["connections"].get("peers").is_none(), "{mine}");
+    } else {
+        // the BSDs read none: the key is absent, never null
+        assert!(mine.get("connections").is_none(), "{mine}");
+    }
+}
+
+#[test]
+fn info_verbose_prints_every_value_whole() {
+    let long = "x".repeat(300);
+    let owned = Owned::listener_with_args(&[&long]);
+    let (out, _, code) = run_text(&["info", &owned.pid_arg()]);
+    assert_eq!(code, 0);
+    let command = card_field(&out, "Command:");
+    assert!(command.ends_with('…'), "cut to the terminal: {command}");
+    assert!(command.chars().count() < long.len(), "{command}");
     for flag in ["-v", "--verbose"] {
         let (out, _, code) = run_text(&["info", &owned.pid_arg(), flag]);
         assert_eq!(code, 0);
-        let command = line_with(&out, "Command:");
-        assert!(command.contains(&owned.file_name()), "{flag}: {command}");
+        let command = card_field(&out, "Command:");
+        assert!(command.ends_with(&long), "{flag}: {command}");
     }
 }
 
@@ -818,7 +967,7 @@ fn info_a_port_and_its_pid_show_the_process_once() {
     let owned = Owned::listener();
     let (out, _, code) = run_text(&["info", &owned.port_arg(), &owned.pid_arg()]);
     assert_eq!(code, 0);
-    assert_eq!(out.matches("✓ Process").count(), 1, "{out}");
+    assert_eq!(out.matches("  Process:").count(), 1, "{out}");
     let (json, _) = run_json(&["info", &owned.port_arg(), &owned.pid_arg(), "--json"]);
     assert_eq!(json["found_count"], 1);
     assert_eq!(json["not_found_count"], 0);
@@ -834,7 +983,7 @@ fn info_warns_about_the_targets_it_did_not_find_and_still_shows_the_rest() {
     // the comma list is the one thing stderr says
     assert_eq!(stderr.lines().count(), 1, "{stderr}");
     assert!(stderr.starts_with("note: comma-separated targets are deprecated"));
-    assert_eq!(out.matches("✓ Process").count(), 1, "{out}");
+    assert_eq!(out.matches("  Process:").count(), 1, "{out}");
     assert!(
         out.trim_end()
             .ends_with(&format!("⚠ Not found: {MISSING_PID}, :{gone}")),
@@ -861,7 +1010,7 @@ fn info_takes_several_targets_as_separate_arguments() {
 
     let (out, stderr, code) = run_text(&["info", &a, &b, MISSING_PID, &missing_port]);
     assert_eq!(code, 0, "{stderr}");
-    assert_eq!(out.matches("✓ Process").count(), 2, "{out}");
+    assert_eq!(out.matches("  Process:").count(), 2, "{out}");
     assert!(
         out.trim_end()
             .ends_with(&format!("⚠ Not found: {MISSING_PID}, :{gone}")),
@@ -933,7 +1082,7 @@ fn info_in_keeps_a_process_running_in_the_directory_and_drops_one_that_is_not() 
     // The directory as a user types it, which is not always how the OS reports it
     let (out, _, code) = run_text(&["info", &owned.pid_arg(), "--in", &owned.raw_dir()]);
     assert_eq!(code, 0, "{out}\n{}", owned.what_proc_saw());
-    assert_eq!(out.matches("✓ Process").count(), 1, "{out}");
+    assert_eq!(out.matches("  Process:").count(), 1, "{out}");
 
     let elsewhere = tempfile::tempdir().unwrap();
     let (out, _, code) = run_text(&[
@@ -943,7 +1092,7 @@ fn info_in_keeps_a_process_running_in_the_directory_and_drops_one_that_is_not() 
         elsewhere.path().to_str().unwrap(),
     ]);
     assert_eq!(code, 2, "{out}");
-    assert!(!out.contains("✓ Process"), "{out}");
+    assert!(!out.contains("  Process:"), "{out}");
 }
 
 #[test]
@@ -994,7 +1143,7 @@ fn info_by_keeps_a_process_with_that_name_and_drops_one_without() {
     let owned = Owned::listener();
     let (out, _, code) = run_text(&["info", &owned.pid_arg(), "--by", &owned.name]);
     assert_eq!(code, 0);
-    assert_eq!(out.matches("✓ Process").count(), 1, "{out}");
+    assert_eq!(out.matches("  Process:").count(), 1, "{out}");
 
     // --by is the whole name too; --cmd makes it any part of the name
     let part = &owned.name[..owned.name.len() - 1];
@@ -1002,7 +1151,7 @@ fn info_by_keeps_a_process_with_that_name_and_drops_one_without() {
     assert_eq!(code, 2);
     let (out, _, code) = run_text(&["info", &owned.pid_arg(), "--by", part, "--cmd"]);
     assert_eq!(code, 0, "{out}");
-    assert_eq!(out.matches("✓ Process").count(), 1, "{out}");
+    assert_eq!(out.matches("  Process:").count(), 1, "{out}");
 
     let nobody = nobody();
     let (json, code) = run_json(&["info", &owned.pid_arg(), "-b", &nobody, "--json"]);

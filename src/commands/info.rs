@@ -1,5 +1,7 @@
 //! Info command - Get detailed process information
 //!
+//! Every process is the card (see `ui::card`), with the ports it listens on.
+//!
 //! Usage:
 //!   proc info 1234              # Info for PID
 //!   proc info :3000             # Info for process on port 3000
@@ -10,16 +12,14 @@
 //!
 //! Commas still work (`proc info :3000,:8080`) but are deprecated.
 
+use super::held::{card_options, measure_with_ports, write_process, HeldPort};
 use crate::core::{
     flatten_targets, guard_targets, resolve_target, Guards, NameMatch, Process, Resolved,
 };
 use crate::error::{ExitCode, ProcError, Result};
-use crate::out_print;
-use crate::ui::{colorize_status, format_duration, format_memory, Printer};
+use crate::ui::{out, Printer};
 use clap::Args;
-use colored::*;
 use serde::Serialize;
-use std::fmt::Write;
 
 /// Show detailed process information
 #[derive(Args, Debug)]
@@ -32,7 +32,7 @@ pub struct InfoCommand {
     #[arg(long, short = 'j')]
     json: bool,
 
-    /// Show extra details
+    /// Print every value whole and every connection (default: cut to the terminal width, 5 peers)
     #[arg(long, short = 'v')]
     verbose: bool,
 
@@ -76,21 +76,31 @@ impl InfoCommand {
         let guards = Guards::new(&self.in_dir, &self.by_name, self.start_time);
         guard_targets(&mut found, &self.targets, &guards, mode)?;
 
-        // Real CPU readings for what's shown
-        Process::measure_cpu(&mut found);
+        // Real CPU readings for what's shown, while the ports they listen on
+        // and the connections to them are read: the card lists the peers, the
+        // JSON carries the counts
+        let peer_limit = if self.json { 0 } else { usize::MAX };
+        let held = measure_with_ports(&mut found, peer_limit)?;
 
         if self.json {
+            let processes: Vec<InfoProcess> = found
+                .iter()
+                .zip(&held)
+                .map(|(process, ports)| InfoProcess { process, ports })
+                .collect();
             printer.print_json(&InfoOutput {
                 action: "info",
                 success: !found.is_empty(),
                 found_count: found.len(),
                 not_found_count: not_found.len(),
-                processes: &found,
+                processes: &processes,
                 not_found: &not_found,
             });
         } else {
-            for proc in &found {
-                self.print_process_info(proc);
+            let opts = card_options(self.verbose);
+            for (process, ports) in found.iter().zip(&held) {
+                // A failed write is recorded by `out`, which decides the exit code
+                out::recorded(write_process(&mut out::stdout(), process, ports, &opts));
             }
 
             if let Some(warning) = warning {
@@ -107,92 +117,6 @@ impl InfoCommand {
 
         Ok(())
     }
-
-    fn print_process_info(&self, proc: &Process) {
-        let now_secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        out_print!("{}", render_process_info(proc, self.verbose, now_secs));
-    }
-}
-
-/// The block `info` prints for one process: one line per fact that is known
-/// (`now_secs` is the time since the Unix epoch, for the uptime).
-fn render_process_info(proc: &Process, verbose: bool, now_secs: u64) -> String {
-    // Writing to a String can't fail
-    let mut out = String::new();
-    let _ = writeln!(
-        out,
-        "{} Process {}",
-        "✓".green().bold(),
-        proc.pid.to_string().cyan().bold()
-    );
-    let _ = writeln!(out);
-    let _ = writeln!(
-        out,
-        "  {} {}",
-        "Name:".bright_black(),
-        proc.name.white().bold()
-    );
-    let _ = writeln!(
-        out,
-        "  {} {}",
-        "PID:".bright_black(),
-        proc.pid.to_string().cyan()
-    );
-
-    if let Some(ref cwd) = proc.cwd {
-        let _ = writeln!(out, "  {} {}", "Directory:".bright_black(), cwd);
-    }
-
-    if let Some(ref path) = proc.exe_path {
-        let _ = writeln!(out, "  {} {}", "Path:".bright_black(), path);
-    }
-
-    if let Some(ref user) = proc.user {
-        let _ = writeln!(out, "  {} {}", "User:".bright_black(), user);
-    }
-
-    if let Some(ppid) = proc.parent_pid {
-        let _ = writeln!(
-            out,
-            "  {} {}",
-            "Parent PID:".bright_black(),
-            ppid.to_string().cyan()
-        );
-    }
-
-    let status_str = format!("{:?}", proc.status);
-    let status_colored = colorize_status(&proc.status, &status_str);
-    let _ = writeln!(out, "  {} {}", "Status:".bright_black(), status_colored);
-
-    let _ = writeln!(out, "  {} {:.1}%", "CPU:".bright_black(), proc.cpu_percent);
-    let _ = writeln!(
-        out,
-        "  {} {}",
-        "Memory:".bright_black(),
-        format_memory(proc.memory_mb)
-    );
-
-    if let Some(start_time) = proc.start_time {
-        let uptime = format_duration(now_secs.saturating_sub(start_time));
-        let _ = writeln!(out, "  {} {}", "Uptime:".bright_black(), uptime);
-    }
-
-    if verbose {
-        if let Some(ref cmd) = proc.command {
-            let _ = writeln!(
-                out,
-                "  {} {}",
-                "Command:".bright_black(),
-                cmd.bright_black()
-            );
-        }
-    }
-
-    let _ = writeln!(out);
-    out
 }
 
 /// Resolve every target. Returns the processes found, each once however many
@@ -231,13 +155,21 @@ fn resolve_all(targets: &[String], resolve: impl Fn(&str) -> Result<Vec<Process>
     }
 }
 
+/// A process as `info` lists it: the process, then the ports it listens on
+#[derive(Serialize)]
+struct InfoProcess<'a> {
+    #[serde(flatten)]
+    process: &'a Process,
+    ports: &'a [HeldPort],
+}
+
 #[derive(Serialize)]
 struct InfoOutput<'a> {
     action: &'static str,
     success: bool,
     found_count: usize,
     not_found_count: usize,
-    processes: &'a [Process],
+    processes: &'a [InfoProcess<'a>],
     not_found: &'a [String],
 }
 
@@ -320,65 +252,36 @@ mod tests {
         assert_eq!(resolved.warning(), None);
     }
 
-    fn bare(pid: u32) -> Process {
-        Process {
-            name: "worker".to_string(),
-            ..process(pid)
-        }
-    }
-
-    fn render(proc: &Process, verbose: bool, now_secs: u64) -> String {
-        colored::control::set_override(false);
-        render_process_info(proc, verbose, now_secs)
-    }
-
     #[test]
-    fn a_process_with_nothing_known_shows_only_what_always_is() {
-        let out = render(&bare(7), true, 1_000);
-        assert_eq!(
-            out,
-            "✓ Process 7\n\n  Name: worker\n  PID: 7\n  Status: Sleeping\n  CPU: 0.0%\n  Memory: 0KB\n\n"
-        );
-    }
+    fn a_process_is_listed_with_its_ports_beside_its_own_keys() {
+        let ports = [HeldPort {
+            port: crate::core::PortInfo {
+                port: 4000,
+                protocol: crate::core::Protocol::Tcp,
+                pid: 7,
+                process_name: "p7".to_string(),
+                address: Some("127.0.0.1".to_string()),
+            },
+            connections: None,
+        }];
+        let proc = process(7);
+        let json = serde_json::to_value(InfoProcess {
+            process: &proc,
+            ports: &ports,
+        })
+        .unwrap();
+        assert_eq!(json["pid"], 7);
+        assert_eq!(json["ports"][0]["port"], 4000);
+        assert_eq!(json["ports"][0]["exposure"], "local");
+        // where the OS gives no connections the key is absent, never null
+        assert!(json["ports"][0].get("connections").is_none(), "{json}");
 
-    #[test]
-    fn every_known_fact_gets_a_line() {
-        let proc = Process {
-            cwd: Some("/work".to_string()),
-            exe_path: Some("/bin/worker".to_string()),
-            user: Some("zee".to_string()),
-            parent_pid: Some(1),
-            command: Some("/bin/worker --flag".to_string()),
-            start_time: Some(940),
-            ..bare(7)
-        };
-        let out = render(&proc, false, 1_000);
-        for line in [
-            "  Directory: /work\n",
-            "  Path: /bin/worker\n",
-            "  User: zee\n",
-            "  Parent PID: 1\n",
-            "  Uptime: 1m 0s\n",
-        ] {
-            assert!(out.contains(line), "{line:?} missing from\n{out}");
-        }
-        // The command line is for --verbose
-        assert!(!out.contains("Command:"), "{out}");
-        let verbose = render(&proc, true, 1_000);
-        assert!(
-            verbose.contains("  Command: /bin/worker --flag\n"),
-            "{verbose}"
-        );
-    }
-
-    #[test]
-    fn a_start_time_in_the_future_reads_as_no_time_at_all() {
-        // A clock behind the process's start must not underflow
-        let proc = Process {
-            start_time: Some(5_000),
-            ..bare(7)
-        };
-        let out = render(&proc, false, 1_000);
-        assert!(out.contains("  Uptime: 0s\n"), "{out}");
+        // a process that listens on nothing has an empty list
+        let json = serde_json::to_value(InfoProcess {
+            process: &proc,
+            ports: &[],
+        })
+        .unwrap();
+        assert_eq!(json["ports"], serde_json::json!([]));
     }
 }

@@ -18,13 +18,15 @@ Several targets are separate arguments. Comma-separated lists (`:3000,1234`) sti
 
 Each step of the chain shows how long that process has been running (`up 2d 4h`), so a long-lived parent such as a forgotten `tmux` session stands out; `--json` includes `uptime_secs`.
 
+Under the chain, the target gets the same card as `proc on`: its command line, directory, path, user, parent, status, resources, start time, children, the ports it listens on and the connections to them. The chain, the `← target` line and the JSON are unchanged.
+
 ## Options
 
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--cmd` | | Match name targets as a substring of the process name or full command line (like `pkill -f`) |
 | `--json` | `-j` | Output as JSON |
-| `--verbose` | `-v` | Show extra details |
+| `--verbose` | `-v` | Print every value whole and every connection (default: cut to the terminal width, 5 peers) |
 
 ## Examples
 

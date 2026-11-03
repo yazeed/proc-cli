@@ -10,6 +10,7 @@ pub mod find_in;
 pub mod for_file;
 pub mod free;
 pub mod freeze;
+pub(crate) mod held;
 pub mod info;
 pub mod kill;
 pub mod list;
