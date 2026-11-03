@@ -782,12 +782,12 @@ fn ask(args: &[&str], script: &[Step]) -> PtyRun {
     }
 }
 
-/// Ask, answer `y`: the command acts
+/// Ask, answer `y`: the command acts. The prompt takes `y` or `n` as one key,
+/// with no Enter, and an Enter typed after it can find proc gone: where the
+/// kernel revokes the terminal when its session leader exits (NetBSD), that
+/// write fails with EIO. So a session answers with the key alone.
 fn answers_y(args: &[&str], prompt: &'static str) -> PtyRun {
-    ask(
-        args,
-        &[Step::Expect(prompt), Step::Send("y"), Step::Send("\r")],
-    )
+    ask(args, &[Step::Expect(prompt), Step::Send("y")])
 }
 
 /// Ask, answer `n`: nothing happens, and the command says `declined`
@@ -797,7 +797,6 @@ fn answers_n(args: &[&str], prompt: &'static str, declined: &'static str) -> Pty
         &[
             Step::Expect(prompt),
             Step::Send("n"),
-            Step::Send("\r"),
             Step::Expect(declined),
         ],
     );
@@ -1433,7 +1432,6 @@ fn kill_shows_its_list_on_the_terminal_when_stdout_is_a_file() {
             Step::Expect("Found 1 process to kill"),
             Step::Expect("Kill 1 process"),
             Step::Send("n"),
-            Step::Send("\r"),
         ],
     );
     assert_ok(&run);
@@ -1456,7 +1454,6 @@ fn kill_shows_its_list_when_the_reader_of_stdout_has_left() {
             Step::Expect("Found 1 process to kill"),
             Step::Expect("Kill 1 process"),
             Step::Send("n"),
-            Step::Send("\r"),
         ],
     );
     assert_ok(&run);
@@ -1479,7 +1476,6 @@ fn free_shows_its_list_on_the_terminal_when_stdout_is_a_file() {
             Step::Expect("Found 1 process to free"),
             Step::Expect("Kill 1 process to free 1 port"),
             Step::Send("n"),
-            Step::Send("\r"),
         ],
     );
     assert_ok(&run);
@@ -1507,7 +1503,6 @@ fn unstick_shows_its_list_on_the_terminal_when_stdout_is_a_file() {
             Step::Expect("Found stuck 1 process"),
             Step::Expect("Unstick 1 process"),
             Step::Send("n"),
-            Step::Send("\r"),
         ],
     );
     assert_ok(&run);
@@ -1530,7 +1525,6 @@ fn stuck_shows_its_list_on_the_terminal_when_stdout_is_a_file() {
             Step::Expect("CPU%"),
             Step::Expect("Kill 1 stuck process"),
             Step::Send("n"),
-            Step::Send("\r"),
         ],
     );
     assert_ok(&run);
@@ -1553,7 +1547,6 @@ fn orphans_shows_its_list_on_the_terminal_when_stdout_is_a_file() {
             Step::Expect("CPU%"),
             Step::Expect("Kill 1 orphaned process"),
             Step::Send("n"),
-            Step::Send("\r"),
         ],
     );
     assert_ok(&run);
