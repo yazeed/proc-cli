@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Long lines in the website's code blocks show that they continue.** A command wider than its block ran off the edge with no sign of the rest, since macOS hides scrollbars until you scroll. A soft glow now marks the side a line continues on (and goes once you reach that end), and a thin scrollbar stays visible; it is CSS only. The install page's `.deb`/`.rpm` and Nix examples now fit at desktop width, with their comments on their own lines
+
 ### Fixed
 
 - **The README names the AUR's current packages.** The Arch install rows said `yay -S proc-bin` and `yay -S proc`; with 2.2.0 the AUR packages moved to `proc-cli-bin` (the release binary) and `proc-cli` (built from source), and the old names stayed at 2.1.1 with no maintainer

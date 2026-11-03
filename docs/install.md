@@ -36,10 +36,10 @@ Homebrew on Linux works too: `brew install yazeed/proc/proc`.
 Each release has `.deb` and `.rpm` files for x86_64 (amd64) and ARM64 on the [releases page](https://github.com/yazeed/proc-cli/releases/latest). They install `proc`, its man page and its bash, zsh and fish completions, and need no other package. The file names carry the version, so put the version you downloaded in the command:
 
 ```bash
-# Debian, Ubuntu (amd64; the ARM64 file ends in _arm64.deb)
+# Debian, Ubuntu (ARM64: proc-cli_X.Y.Z_arm64.deb)
 sudo apt install ./proc-cli_X.Y.Z_amd64.deb
 
-# Fedora, RHEL and others that use dnf (x86_64; the ARM64 file ends in .aarch64.rpm)
+# Fedora, RHEL (ARM64: proc-cli-X.Y.Z-1.aarch64.rpm)
 sudo dnf install ./proc-cli-X.Y.Z-1.x86_64.rpm
 ```
 
@@ -89,8 +89,10 @@ cargo binstall proc-cli
 ### Nix
 
 ```bash
-nix profile install github:yazeed/proc-cli    # with the man page and shell completions
-nix run github:yazeed/proc-cli -- on :3000    # or run it once without installing
+# install, with the man page and shell completions
+nix profile install github:yazeed/proc-cli
+# or run it once without installing
+nix run github:yazeed/proc-cli -- on :3000
 ```
 
 ### Docker

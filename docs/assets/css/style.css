@@ -375,7 +375,16 @@ h2:hover .heading-anchor, h3:hover .heading-anchor, .heading-anchor:focus { opac
 pre {
   margin: 0;
   padding: 1.05rem 1.25rem;
-  background: var(--term);
+  /* A line that runs past the edge shows a glow on the side it continues:
+     the glows stay at the edges (scroll), and covers in the background
+     colour travel with the text (local) and hide each glow once its end of
+     the line is reached. No script; every browser. */
+  background:
+    linear-gradient(to right, var(--term) 50%, transparent) left / 4rem 100% no-repeat local,
+    linear-gradient(to left, var(--term) 50%, transparent) right / 4rem 100% no-repeat local,
+    linear-gradient(to right, color-mix(in srgb, var(--term-text) 18%, transparent), transparent) left / 2rem 100% no-repeat scroll,
+    linear-gradient(to left, color-mix(in srgb, var(--term-text) 18%, transparent), transparent) right / 2rem 100% no-repeat scroll,
+    var(--term);
   color: var(--term-text);
   border: 1px solid var(--term-edge);
   border-radius: var(--radius);
@@ -383,7 +392,14 @@ pre {
   line-height: 1.65;
   overflow-x: auto;
   tab-size: 2;
+  /* A visible scrollbar, where macOS would hide it until a scroll */
+  scrollbar-width: thin;
+  scrollbar-color: var(--term-edge) transparent;
 }
+
+pre::-webkit-scrollbar { height: 8px; }
+pre::-webkit-scrollbar-track { background: transparent; }
+pre::-webkit-scrollbar-thumb { background: var(--term-edge); border-radius: 4px; }
 
 pre code {
   font-size: inherit;
