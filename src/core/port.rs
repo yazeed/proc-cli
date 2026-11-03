@@ -3,13 +3,17 @@
 //! Provides cross-platform utilities for discovering which processes
 //! are listening on network ports.
 
-use crate::core::{escape_control, Process};
+use crate::core::Process;
+// the socket-table parsers and the Linux comm read escape names; Windows
+// takes its names from the process list instead
+#[cfg(any(not(windows), test))]
+use crate::core::escape_control;
 use crate::error::{ProcError, Result};
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "linux")]
 use std::path::Path;
-// lsof on macOS, sockstat on FreeBSD and NetBSD, netstat and tasklist on
-// Windows; Linux reads /proc instead
+// lsof on macOS, sockstat on FreeBSD and NetBSD, netstat on Windows; Linux
+// reads /proc instead
 #[cfg(not(target_os = "linux"))]
 use std::process::Command;
 
