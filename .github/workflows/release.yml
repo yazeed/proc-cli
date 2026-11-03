@@ -307,10 +307,16 @@ jobs:
             bad "APT_SIGNING_KEY does not import as an OpenPGP key"
           fi
 
-          # COPR: the custom webhook address (it never expires)
+          # COPR: the custom webhook address (it never expires). Each refusal
+          # names what is wrong without printing the address
+          webhook=https://copr.fedorainfracloud.org/webhooks/custom/
           case "$COPR_WEBHOOK" in
-            https://copr.fedorainfracloud.org/webhooks/custom/*/proc-cli/) echo "COPR_WEBHOOK: set" ;;
-            *) bad "COPR_WEBHOOK is not the project's custom webhook address ending in /proc-cli/" ;;
+            *[[:space:]]*) bad "COPR_WEBHOOK has a space or a line break in it: set it to the address alone" ;;
+            *'<'*|*'>'*) bad "COPR_WEBHOOK still has COPR's <PACKAGE_NAME> placeholder: put proc-cli in its place" ;;
+            "$webhook"*/proc-cli/) echo "COPR_WEBHOOK: set" ;;
+            "$webhook"*/proc-cli) bad "COPR_WEBHOOK needs the slash after proc-cli at the end" ;;
+            "$webhook"*) bad "COPR_WEBHOOK names another package: it should end in /proc-cli/" ;;
+            *) bad "COPR_WEBHOOK is not a COPR custom webhook address (it starts with $webhook)" ;;
           esac
           exit "$failed"
 
