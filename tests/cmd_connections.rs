@@ -92,7 +92,7 @@ fn connections_count_each_client_once() {
             .as_ref()
             .expect("the test process owns the client");
         assert_eq!(process.pid, std::process::id(), "{c:?}");
-        assert!(!process.name.is_empty());
+        assert!(process.name.as_deref().is_some_and(|n| !n.is_empty()));
     }
     // the remote ports are the clients' own
     let mut ports: Vec<u16> = c.peers.iter().map(|p| p.remote_port).collect();

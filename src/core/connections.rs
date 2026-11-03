@@ -13,7 +13,8 @@
 //! appear twice (once per end), or once (a client on another machine; on macOS
 //! the server's end while the server has not accepted it, because `lsof` lists
 //! only sockets some process has open), and is counted once. Its state is the
-//! server's end when that is listed.
+//! server's end when that is listed; when only the client's end is seen, the
+//! server's state is read from it (`server_state`).
 
 // the BSDs read no sockets, so nothing there parses a table
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows", test))]
@@ -65,8 +66,10 @@ pub struct Peer {
 pub struct PeerProcess {
     /// Its PID
     pub pid: u32,
-    /// Its name, as everywhere else in proc
-    pub name: String,
+    /// Its name, as everywhere else in proc; absent when the process is gone
+    /// and the table gave no name either
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 /// An address and a port, the address as `normal_address` writes it
@@ -132,7 +135,8 @@ fn read_socks(port: u16) -> Result<Vec<Sock>> {
     // no state filter: the rows of both ends of a connection, and the listeners
     // that say whose a connection nobody has accepted is
     let output = crate::ui::interrupt::unblocked_in_child(&mut Command::new("lsof"))
-        .args(["-nP", &format!("-iTCP:{port}")])
+        // `+c 0`: the whole command name, as the listing call has it
+        .args(["+c", "0", "-nP", &format!("-iTCP:{port}")])
         .output()
         .map_err(|e| ProcError::SystemError(format!("Failed to run lsof: {}", e)))?;
     Ok(parse_lsof_connections(&String::from_utf8_lossy(
@@ -150,9 +154,12 @@ fn read_socks(port: u16) -> Result<Vec<Sock>> {
 }
 
 #[cfg(target_os = "windows")]
-fn read_socks(_port: u16) -> Result<Vec<Sock>> {
+fn read_socks(port: u16) -> Result<Vec<Sock>> {
     let [v4, v6] = PortInfo::netstat_tables()?;
-    Ok(parse_netstat_connections(&[&v4, &v6]))
+    let mut socks = parse_netstat_connections(&[&v4, &v6]);
+    // both ends of a connection to the port, and its listeners
+    socks.retain(|s| s.local.1 == port || s.remote.1 == port);
+    Ok(socks)
 }
 
 #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
@@ -199,6 +206,21 @@ fn state_name(raw: &str) -> String {
         "CLOSE" | "CLOSED" => "closed".to_string(),
         other => other.to_ascii_lowercase(),
     }
+}
+
+/// The state of a connection's server end, read from the state of the client's
+/// end: the two ends of a TCP connection are in mirrored states. A state with
+/// no mirror here keeps the client's name.
+fn server_state(client: &str) -> String {
+    match client {
+        "syn_sent" => "syn_recv",
+        "fin_wait1" | "fin_wait2" => "close_wait",
+        "close_wait" => "fin_wait2",
+        "last_ack" => "time_wait",
+        "time_wait" => "last_ack",
+        other => other,
+    }
+    .to_string()
 }
 
 /// An address as every table compares it: an IPv4 address that an IPv6 socket
@@ -366,7 +388,7 @@ fn assemble(
             found
                 .entry((sock.remote.clone(), sock.local.clone()))
                 .or_insert_with(|| Found {
-                    state: sock.state.clone(),
+                    state: server_state(&sock.state),
                     server_pids: Vec::new(),
                 });
         }
@@ -452,16 +474,16 @@ fn assemble(
             remote_address: row.client.0.clone(),
             remote_port: row.client.1,
             // the process list's name; the table's own for a process that is
-            // gone; without either, nobody to name
-            peer: row.peer.and_then(|pid| {
+            // gone; without either, the pid alone
+            peer: row.peer.map(|pid| {
                 let name = live
                     .get(&pid)
                     .map(String::as_str)
-                    .or_else(|| process_names.get(&pid).copied())?;
-                Some(PeerProcess {
+                    .or_else(|| process_names.get(&pid).copied());
+                PeerProcess {
                     pid,
-                    name: name.to_string(),
-                })
+                    name: name.map(str::to_string),
+                }
             }),
         })
         .collect();
@@ -550,7 +572,7 @@ python3.1 41819  zee    4u  IPv4 0x2598174675ad3f6c      0t0  TCP 127.0.0.1:6207
             ]
         );
         assert_eq!(
-            c.peers[0].peer.as_ref().map(|p| p.name.as_str()),
+            c.peers[0].peer.as_ref().and_then(|p| p.name.as_deref()),
             Some("proc37292")
         );
     }
@@ -591,7 +613,7 @@ python3.1 41819  zee    4u  IPv4 0x2598174675ad3f6c      0t0  TCP 127.0.0.1:6207
         // the process list no longer has the client: lsof's own name stands
         let c = assemble(&socks, 62065, &[41782], 50, |_| HashMap::new());
         assert_eq!(
-            c.peers[0].peer.as_ref().map(|p| p.name.as_str()),
+            c.peers[0].peer.as_ref().and_then(|p| p.name.as_deref()),
             Some("python3.1")
         );
         // and a server's end that never showed a name leaves the peer out
@@ -714,14 +736,18 @@ evil\\x1b[2J 8 zee 9u IPv4 0xe 0t0 TCP 127.0.0.1:50001->127.0.0.1:3000 (ESTABLIS
         // nginx's master and worker both hold port 80
         let c = assemble(&socks, 80, &[1, 31], 50, names);
         assert_eq!(c.total, 5);
-        assert_eq!(states(&c), vec![("established", 3), ("time_wait", 2)]);
+        assert_eq!(
+            states(&c),
+            vec![("established", 3), ("last_ack", 1), ("time_wait", 1)]
+        );
         assert_eq!(
             rows(&c),
             vec![
                 // no owner for a TIME_WAIT socket: the listener's address says
                 // whose it is (both wildcards, so the lower pid), and nobody is
                 // named
-                (1, "time_wait", "127.0.0.1", 0xC342, None),
+                // only the client's end, in TIME_WAIT: the server's is the mirror
+                (1, "last_ack", "127.0.0.1", 0xC342, None),
                 (1, "time_wait", "::1", 0xD178, None),
                 // the worker holds the accepted sockets; the clients hold theirs
                 (31, "established", "127.0.0.1", 0xA455, Some(88)),
@@ -889,6 +915,42 @@ Active Connections
     }
 
     #[test]
+    fn a_client_only_connection_has_the_servers_state() {
+        for (client, server) in [
+            ("established", "established"),
+            ("syn_sent", "syn_recv"),
+            ("fin_wait1", "close_wait"),
+            ("fin_wait2", "close_wait"),
+            ("close_wait", "fin_wait2"),
+            ("last_ack", "time_wait"),
+            ("time_wait", "last_ack"),
+            ("closing", "closing"),
+            ("idle", "idle"),
+        ] {
+            assert_eq!(server_state(client), server, "{client}");
+        }
+        // read through a client row alone
+        let out = "\
+COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME
+python3 7 zee 3u IPv4 0xa 0t0 TCP 127.0.0.1:50000->127.0.0.1:3000 (CLOSE_WAIT)
+node 9 zee 4u IPv4 0xb 0t0 TCP 127.0.0.1:3000 (LISTEN)
+";
+        let c = assemble(&parse_lsof_connections(out), 3000, &[9], 50, names);
+        assert_eq!(states(&c), vec![("fin_wait2", 1)]);
+    }
+
+    #[test]
+    fn a_peer_with_no_name_keeps_its_pid() {
+        let socks = parse_netstat_connections(&[NETSTAT_V4, NETSTAT_V6]);
+        // the process list knows no one and netstat names no one
+        let c = assemble(&socks, 8080, &[4242], 50, |_| HashMap::new());
+        let peer = c.peers[0].peer.as_ref().unwrap();
+        assert_eq!((peer.pid, peer.name.as_deref()), (5000, None));
+        let json = serde_json::to_value(&c).unwrap();
+        assert_eq!(json["peers"][0]["peer"], serde_json::json!({ "pid": 5000 }));
+    }
+
+    #[test]
     fn states_have_one_name_on_every_os() {
         for (raw, name) in [
             ("ESTABLISHED", "established"),
@@ -967,7 +1029,10 @@ Active Connections
         let socks = super::linux_socks(&dir.path().join("net"), dir.path(), 80).unwrap();
         let c = assemble(&socks, 80, &[1, 31], 50, names);
         assert_eq!(c.total, 5);
-        assert_eq!(states(&c), vec![("established", 3), ("time_wait", 2)]);
+        assert_eq!(
+            states(&c),
+            vec![("established", 3), ("last_ack", 1), ("time_wait", 1)]
+        );
         assert_eq!(c.peers[2].peer.as_ref().map(|p| p.pid), Some(88));
         // a port nothing has a socket on
         let none = super::linux_socks(&dir.path().join("net"), dir.path(), 81).unwrap();
