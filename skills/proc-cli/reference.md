@@ -80,7 +80,7 @@ Every error carries `reason`, one fixed word: branch on it, never on the text of
 | Exit | `reason` | Meaning | What to do |
 |------|----------|---------|------------|
 | 1 | `system_error` | proc itself could not do its part, such as reading the process or port table. | Report it; retrying may work. |
-| 2 | `not_found` | No process holds that PID, name or port (any more). `info` prints its own document for this, without `reason` (see info). | It is gone, or never was. |
+| 2 | `not_found` | No process holds that PID, name or port (any more). `info` keeps its `found_count` document and adds `reason` to it (see info). | It is gone, or never was. |
 | 2 | `command_line_only` | No process has that name, but some have it in their command line. | Add `--cmd` if a command-line match is what you meant. |
 | 2 | `ruled_out` | A process holds the target, but a guard rules it out. `ruled_out_by` lists the guards' flags (`["--start-time"]`, or several: `["--by", "--start-time"]`), and `error` names them with their values. Branch on these fields; the text is for the user. | `--start-time` among them: your process is gone and a new one has the PID. `--by` or `--in` alone: check the PID with `proc info` before treating it as gone. |
 | 3 | `permission_denied` | proc itself got an I/O permission error. | Ask the user. |
@@ -237,7 +237,7 @@ The same machine gives the same order on every run, so a list can be compared wi
 
 Each process object has the process's keys and, beside them, `ports`: the ports it listens on (an empty list for none; the key is absent when the OS gave no port table, for example macOS without `lsof` on the PATH), each with `exposure` and `connections` (`total` and `by_state` only, no `peers`; absent where the OS reads none, as on FreeBSD and NetBSD), as for `on <pid>`.
 
-No target found: exit 2 with `success: false`, `found_count: 0`, `not_found_count` and `processes: []`, the targets in `not_found`. Unlike the other commands, `info` prints this document and no `error` or `reason` when nothing matched a PID or name (a PID that a guard rules out is still the `ruled_out` error). Some found: `success: true`, the rest in `not_found`.
+No target found: exit 2 with `success: false`, `found_count: 0`, `not_found_count` and `processes: []`, the targets in `not_found`. The same document carries `error` (`Not found: 99999999`), `exit_code: 2` and `reason: "not_found"`, so it reads as the error the other commands print (a PID that a guard rules out is the `ruled_out` error). Some found: `success: true`, the rest in `not_found`.
 
 ### ports
 

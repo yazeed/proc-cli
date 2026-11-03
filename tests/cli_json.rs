@@ -279,6 +279,9 @@ fn info_not_found_exits_not_found() {
     assert_eq!(code, 2);
     assert_eq!(json["action"], "info");
     assert_eq!(json["success"], false);
+    assert_eq!(json["reason"], "not_found", "{json}");
+    assert_eq!(json["found_count"], 0, "{json}");
+    assert_eq!(json["not_found"][0], MISSING_PID, "{json}");
 }
 
 #[test]

@@ -35,6 +35,7 @@ src/
 ├── error.rs          # Error types and exit codes
 ├── commands/         # One file per command
 │   ├── mod.rs        # Exports all commands
+│   ├── held.rs       # What on, info, for and why share: listening ports, connections, write_process_card
 │   ├── kill.rs       # proc kill
 │   ├── stop.rs       # proc stop (supports --signal)
 │   ├── on.rs         # proc on (bidirectional port/process lookup)
@@ -57,6 +58,7 @@ src/
 ├── core/             # Shared logic
 │   ├── mod.rs        # Exports
 │   ├── apply.rs      # apply_to_each (run an action on each process)
+│   ├── connections.rs # Connections to a listening port: counts, TCP states, peers (connections_for)
 │   ├── filters.rs    # Shared filter utilities (resolve_in_dir)
 │   ├── name_match.rs # How a name target and --by match a process (exact by default, --cmd for substring)
 │   ├── target.rs     # Target parsing (:port, PID, name) and resolution
@@ -64,8 +66,10 @@ src/
 │   └── port.rs       # Port operations
 └── ui/               # Output formatting
     ├── mod.rs
+    ├── card.rs       # The process card on, info, for and why print (write_card)
     ├── format.rs     # Shared formatting (format_duration, truncate_*, colorize_status)
-    └── output.rs     # Printer, OutputFormat (Human/Json)
+    ├── output.rs     # Printer, OutputFormat (Human/Json)
+    └── table.rs      # The one process table and ports table (process_table, port_table)
 ```
 
 ## Code Style
@@ -161,6 +165,9 @@ Use the shared modules instead of writing local helpers:
 - **`crate::core::flatten_targets`** — splits target arguments (and deprecated comma lists) into one list
 - **`crate::core::NameMatch`** — exact name by default, `--cmd` for a part of the name or command line
 - **`crate::core::apply_to_each`** — runs an action on each process and returns `(succeeded, failed)`
+- **`crate::ui::card::write_card`** — the process card; `on`, `info`, `for` and `why` all print it, so a new detail view uses it rather than its own labels
+- **`crate::ui::table::process_table`** / **`port_table`** — the one table for every process list and for `ports`, with the shared columns and width policy
+- **`crate::core::connections::connections_for`** — the connections to a listening port, for the card and for JSON
 - **`printer.print_action_result(action, &succeeded, &failed)`** — unified result summary for destructive commands
 
 ### Error Handling

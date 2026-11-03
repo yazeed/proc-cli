@@ -84,6 +84,12 @@ impl InfoCommand {
         let held = measure_with_known_ports(&mut found, peer_limit);
 
         if self.json {
+            // Nothing matched: the document is also the error, as in every other command
+            let not_found_error = if found.is_empty() {
+                warning.clone()
+            } else {
+                None
+            };
             let processes: Vec<InfoProcess> = found
                 .iter()
                 .zip(&held)
@@ -99,6 +105,9 @@ impl InfoCommand {
                 not_found_count: not_found.len(),
                 processes: &processes,
                 not_found: &not_found,
+                error: not_found_error.as_deref(),
+                exit_code: not_found_error.is_some().then_some(2),
+                reason: not_found_error.is_some().then_some("not_found"),
             });
         } else {
             let opts = card_options(self.verbose);
@@ -182,6 +191,13 @@ struct InfoOutput<'a> {
     not_found_count: usize,
     processes: &'a [InfoProcess<'a>],
     not_found: &'a [String],
+    /// With `exit_code` and `reason`, only when no target matched, as in the error of every other command
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exit_code: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<&'static str>,
 }
 
 #[cfg(test)]

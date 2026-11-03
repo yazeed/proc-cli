@@ -285,15 +285,6 @@ impl WhyCommand {
                     uptime_label(proc.uptime_secs).bright_black(),
                     "← target".yellow()
                 );
-                // Show working directory for the target
-                if let Some(ref cwd) = proc.cwd {
-                    let dir_indent = "    ".repeat(i + 1);
-                    out_println!(
-                        "{}{}",
-                        dir_indent.bright_black(),
-                        format!("dir: {}", cwd).bright_black()
-                    );
-                }
             } else {
                 let cmd_part = if cmd_summary.is_empty() {
                     String::new()

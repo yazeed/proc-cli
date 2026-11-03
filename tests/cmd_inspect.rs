@@ -342,13 +342,6 @@ fn target_line(text: &str) -> &str {
         .unwrap_or_else(|| panic!("no target line in:\n{text}"))
 }
 
-/// The line right after `line`, which must be one of the lines of `text`
-fn line_after<'a>(text: &'a str, line: &str) -> &'a str {
-    let mut lines = text.lines();
-    lines.find(|l| *l == line);
-    lines.next().expect("a line after the target")
-}
-
 /// How many spaces a line starts with
 fn indent(line: &str) -> usize {
     line.len() - line.trim_start_matches(' ').len()
@@ -368,8 +361,7 @@ fn why_a_port_names_the_port_and_marks_the_process_holding_it() {
         (out, stderr, code) = run_text(&["why", &owned.port_arg()]);
         let has_dir = out
             .lines()
-            .zip(out.lines().skip(1))
-            .any(|(t, d)| t.ends_with("← target") && d.trim_start().starts_with("dir: "));
+            .any(|l| l.trim_start().starts_with("Directory:"));
         if out.starts_with(&header) && has_dir {
             break;
         }
@@ -393,15 +385,24 @@ fn why_a_port_names_the_port_and_marks_the_process_holding_it() {
             || after_pid.trim_start().starts_with("up "),
         "{target}"
     );
-    // The directory it runs in sits one level below the target
-    let dir_line = line_after(&out, target);
-    assert_eq!(indent(dir_line), indent(target) + 4, "{out}");
-    let dir = dir_line.trim().strip_prefix("dir: ").unwrap();
+    // The directory it runs in is the card's, and the chain has no line of its own for it
     assert!(
-        same_place(dir, &owned.dir()),
-        "{dir}\n{}",
-        owned.what_proc_saw()
+        !out.lines().any(|l| l.trim_start().starts_with("dir: ")),
+        "{out}"
     );
+    let dir_line = out
+        .lines()
+        .find(|l| l.trim_start().starts_with("Directory:"))
+        .unwrap_or_else(|| panic!("no Directory: in:\n{out}"));
+    let dir = dir_line.trim().strip_prefix("Directory:").unwrap().trim();
+    // The card cuts a long path in the middle, so the last part must be the directory's
+    let owned_dir = owned.dir();
+    let last = Path::new(&owned_dir)
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    assert!(dir.ends_with(&last), "{dir}\n{}", owned.what_proc_saw());
 }
 
 #[test]
