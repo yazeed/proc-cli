@@ -3,6 +3,10 @@
 # tarball and the source RPM for a version. There is no check section: the
 # tests start servers, terminals and child processes, which the build
 # sandbox does not allow; CI runs them on every commit instead.
+#
+# Amazon Linux has a new enough Rust but an older generation of Fedora's Rust
+# RPM macros (rust-packaging 21, without cargo-rpm-macros 25), so there proc
+# builds with cargo directly, from the same vendored crates.
 Name:           proc-cli
 Version:        2.2.0
 Release:        1%{?dist}
@@ -14,7 +18,14 @@ URL:            https://proc-cli.com
 Source0:        https://github.com/yazeed/proc-cli/archive/refs/tags/v%{version}/%{name}-%{version}.tar.gz
 Source1:        %{name}-%{version}-vendor.tar.xz
 
+%if 0%{?amzn}
+BuildRequires:  cargo
+%global debug_package %{nil}
+%global procbin target/release/proc
+%else
 BuildRequires:  cargo-rpm-macros >= 25
+%global procbin target/rpm/proc
+%endif
 BuildRequires:  rust >= 1.88
 BuildRequires:  gcc
 
@@ -26,29 +37,46 @@ change and JSON output for scripts.
 
 %prep
 %autosetup -n proc-cli-%{version} -p1 -a1
+%if 0%{?amzn}
+cat >> .cargo/config.toml << 'END'
+
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"
+END
+%else
 %cargo_prep -v vendor
+%endif
 
 %build
+%if 0%{?amzn}
+cargo build --release --offline --locked
+%else
 %cargo_build
 %{cargo_license_summary}
 %{cargo_license} > LICENSE.dependencies
 %{cargo_vendor_manifest}
+%endif
 
 %install
-install -Dpm 0755 target/rpm/proc %{buildroot}%{_bindir}/proc
-target/rpm/proc manpage > proc.1
+install -Dpm 0755 %{procbin} %{buildroot}%{_bindir}/proc
+%{procbin} manpage > proc.1
 install -Dpm 0644 proc.1 %{buildroot}%{_mandir}/man1/proc.1
-target/rpm/proc completions bash > proc.bash
-target/rpm/proc completions zsh > _proc
-target/rpm/proc completions fish > proc.fish
+%{procbin} completions bash > proc.bash
+%{procbin} completions zsh > _proc
+%{procbin} completions fish > proc.fish
 install -Dpm 0644 proc.bash %{buildroot}%{bash_completions_dir}/proc
 install -Dpm 0644 _proc %{buildroot}%{zsh_completions_dir}/_proc
 install -Dpm 0644 proc.fish %{buildroot}%{fish_completions_dir}/proc.fish
 
 %files
 %license LICENSE
+%if ! 0%{?amzn}
 %license LICENSE.dependencies
 %license cargo-vendor.txt
+%endif
 %doc README.md CHANGELOG.md
 %{_bindir}/proc
 %{_mandir}/man1/proc.1*
