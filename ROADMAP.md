@@ -23,6 +23,8 @@ proc collects most of what a person wants to know about a process or port, but e
 
 `proc kill :3000,:8080` has been deprecated since 2.0.0 in favour of separate arguments (`proc kill :3000 :8080`), and prints a notice on stderr when used (human output only, so `--json` is unaffected). The next major release removes it, so there is one spelling for several targets.
 
+The same release removes `proc_cli::ui::process_table_budget` and `ProcessTableBudget`, deprecated since 2.3.0 (the process table no longer uses them).
+
 **Open:** what a comma does once removed: an error that shows the separate-argument form, or treating the whole word as one name.
 
 ## Decided: after the 2.1.0 tag

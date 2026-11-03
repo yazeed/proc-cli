@@ -986,6 +986,23 @@ mod tests {
     }
 
     #[test]
+    fn wide_characters_are_measured_in_columns_not_chars() {
+        use unicode_width::UnicodeWidthStr;
+        let mut p = known_process();
+        p.name = "日本語サーバー🚀".into();
+        p.command =
+            Some("日本語サーバー 🚀🚀🚀 ".to_string() + &"--listen-on-all-interfaces ".repeat(8));
+        for width in [80u16, 100, 120] {
+            let out =
+                written(|w| human().write_process_rows(w, screen(width), &[p.clone()], false));
+            for line in out.lines() {
+                assert!(line.width() <= width as usize, "{line:?} overflows {width}");
+            }
+            assert!(out.contains('…'), "{out}");
+        }
+    }
+
+    #[test]
     fn an_unknown_value_shows_a_dash() {
         let mut p = process(42, "node");
         p.user = Some(String::new());

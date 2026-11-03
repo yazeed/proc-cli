@@ -19,7 +19,7 @@ Several targets are separate arguments. Comma-separated lists (`:3000,:8080`) st
 
 Press `q`, `Esc`, or `Ctrl+C` to exit. The terminal is always restored cleanly: also when a signal ends watch (`kill`, closing the window) or when it panics. proc then ends by that same signal, so a shell shows 130 for `Ctrl+C`/SIGINT, 143 for SIGTERM, 129 for SIGHUP and 131 for SIGQUIT (130 for any Ctrl+C, Ctrl+Break or closing console on Windows).
 
-The table has the same columns as `proc list`: PID, NAME, USER, CPU%, MEM, UPTIME and COMMAND, with the directory second under `--in`. `--verbose` adds PPID, STATUS and DIR and cuts nothing. COMMAND is cut to the width of the terminal, which watch reads again on every refresh.
+The table has the same columns as `proc list`: PID, NAME, USER, CPU%, MEM, UPTIME and COMMAND, with the directory second under `--in`. `--verbose` adds PPID, STATUS and DIR and cuts nothing. COMMAND is cut to the width of the terminal, which watch reads again on every refresh. With `--verbose` a row can be longer than the terminal and wrap in the live view; the row cap counts processes, not screen lines.
 
 ## Options
 
