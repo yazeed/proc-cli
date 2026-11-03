@@ -298,6 +298,10 @@ fn lay_out(
     table
         .load_preset(NOTHING)
         .set_content_arrangement(ContentArrangement::Disabled);
+    follow_colour(
+        &mut table,
+        colored::control::SHOULD_COLORIZE.should_colorize(),
+    );
     table.set_header(heads.iter().map(|head| {
         Cell::new(head.title)
             .fg(Color::Blue)
@@ -320,6 +324,18 @@ fn lay_out(
         );
     }
     table.to_string()
+}
+
+/// Colour as the rest of proc's output does, by proc's own decision
+/// (`NO_COLOR`, `CLICOLOR_FORCE`, a terminal), not by comfy-table's look at
+/// stdout, which ignores `NO_COLOR` and says yes inside a build sandbox's
+/// pseudo-terminal
+fn follow_colour(table: &mut Table, colour: bool) {
+    if colour {
+        table.enforce_styling();
+    } else {
+        table.force_no_tty();
+    }
 }
 
 /// A listener with the process that holds it, for one row of the ports table.
@@ -509,6 +525,16 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn the_table_colours_by_procs_decision_not_by_stdout() {
+        for colour in [true, false] {
+            let mut table = Table::new();
+            follow_colour(&mut table, colour);
+            assert_eq!(table.should_style(), colour);
+        }
+        assert_eq!(plain("\x1b[34;1mPID\x1b[0m 1"), "PID 1");
     }
 
     fn listener(port: u16, address: Option<&str>, pid: u32, name: &str) -> PortInfo {

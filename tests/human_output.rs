@@ -439,8 +439,11 @@ fn in_puts_dir_second() {
         let header = out.lines().nth(2).unwrap();
         assert_eq!(cells(header), columns, "{args:?}: {out}");
         let row = row_of(&out, owned.pid());
+        // the directory as the process was started there: Windows may keep
+        // the short 8.3 form (`RUNNER~1`) the test's temp path had
+        let raw = owned.raw_dir.to_string_lossy();
         assert!(
-            is_dir_or_its_cut(row[1], &owned.printed_dir()),
+            is_dir_or_its_cut(row[1], &owned.printed_dir()) || is_dir_or_its_cut(row[1], &raw),
             "DIR second: {args:?}: {out}"
         );
     }
