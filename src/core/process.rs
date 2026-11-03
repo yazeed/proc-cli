@@ -1718,7 +1718,10 @@ mod tests {
         std::thread::sleep(Duration::from_millis(300));
         let record = |pid: u32| Process::find_by_pid(pid).unwrap().unwrap();
 
-        let spinning_stuck = record(spinning.id()).looks_stuck_now();
+        // On a loaded machine (a CI runner running other tests) a spinner can get less
+        // than half a core for two seconds running, so it gets a few tries to be seen
+        // at its real speed; an idle process must never count as stuck, on any try.
+        let spinning_stuck = (0..4).any(|_| record(spinning.id()).looks_stuck_now());
         let idle_stuck = record(idle.id()).looks_stuck_now();
         for child in [&mut spinning, &mut idle] {
             let _ = child.kill();

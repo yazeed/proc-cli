@@ -580,9 +580,15 @@ fn for_one_hit_shows_the_card() {
     );
     // `-v` for the directory whole: a long one is cut to the terminal otherwise
     let (verbose, _) = run_text(&["for", &p.exe(), "-v"]);
-    // shown as the OS gives it: Windows ends a working directory with `\`
+    // shown as the OS gives it: Windows ends a working directory with `\`, and may
+    // spell a parent in its 8.3 short form (RUNNER~1), so compare the places
     let shown = card_field(&verbose, "Directory:");
-    assert_eq!(shown.trim_end_matches('\\'), p.dir(), "{verbose}");
+    let shown = shown.trim_end_matches('\\');
+    let place = |d: &str| {
+        let path = std::fs::canonicalize(d).unwrap_or_else(|_| PathBuf::from(d));
+        strip_verbatim_prefix(&path.to_string_lossy()).to_string()
+    };
+    assert_eq!(place(shown), place(&p.dir()), "{verbose}");
     assert!(
         card_field(&out, "Listening:").starts_with(&format!(":{} TCP", p.port)),
         "{out}"

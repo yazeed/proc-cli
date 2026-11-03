@@ -394,7 +394,13 @@ fn why_a_port_names_the_port_and_marks_the_process_holding_it() {
         .lines()
         .find(|l| l.trim_start().starts_with("Directory:"))
         .unwrap_or_else(|| panic!("no Directory: in:\n{out}"));
-    let dir = dir_line.trim().strip_prefix("Directory:").unwrap().trim();
+    // Windows ends a working directory with `\`
+    let dir = dir_line
+        .trim()
+        .strip_prefix("Directory:")
+        .unwrap()
+        .trim()
+        .trim_end_matches(['\\', '/']);
     // The card cuts a long path in the middle, so the last part must be the directory's
     let owned_dir = owned.dir();
     let last = Path::new(&owned_dir)
