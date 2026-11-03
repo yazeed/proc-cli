@@ -1680,11 +1680,21 @@ fn another_users_process_shows_only_what_proc_could_read() {
         assert_eq!(on["ports"], serde_json::json!([]), "{on}");
 
         // the table: a dash where the OS gave no CPU and no memory
-        let (table, _, _) = run_text(&["by", "launchd"]);
-        let row = table
-            .lines()
-            .find(|l| l.split_whitespace().next() == Some("1"))
-            .unwrap_or_else(|| panic!("no row for PID 1:\n{table}"));
+        // (a machine under load can answer a name lookup with nothing now and then)
+        let mut table = String::new();
+        let mut row = None;
+        for _ in 0..20 {
+            table = run_text(&["by", "launchd"]).0;
+            row = table
+                .lines()
+                .find(|l| l.split_whitespace().next() == Some("1"))
+                .map(str::to_string);
+            if row.is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+        let row = row.unwrap_or_else(|| panic!("no row for PID 1:\n{table}"));
         assert!(!row.contains("0KB") && !row.contains("0.0"), "{row}");
     }
 }
