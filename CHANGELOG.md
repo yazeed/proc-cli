@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **An apt repository for Debian and Ubuntu, at https://proc-cli.com/apt.** The `.deb` files were only on the releases page, so `apt upgrade` never updated them. The repository holds the same files for x86_64 and ARM64, signed (key `19AD 1FFA 67E9 0A13 9579 7473 DC42 B7C2 51B0 33F3`), and every release adds itself, so after adding it once `apt upgrade` keeps proc current. https://proc-cli.com/apt/ gives the commands. The site and the repository now deploy together from `.github/workflows/pages.yml`, which builds the repository from the release files after checking them against `checksums.txt` (`pkg/apt/build-repo.sh`), so no binaries are kept in git. Tested in Debian 13 and Ubuntu 24.04: install, upgrade to a newer version, and refusing a tampered repository or a wrong key
+- **winget, `winget install yazeed.proc-cli`.** The first version is submitted (microsoft/winget-pkgs#469298) and has passed winget's validation, install test and antivirus scan; it waits for a moderator. Once it is merged, each release opens the pull request for its own version. The manifests are in `pkg/winget/`
+- **Packaging for a FreeBSD port and a Fedora COPR repository**, in `pkg/freebsd/` and `pkg/copr/`. The port (`sysutils/proc-cli`) builds, passes the ports tree's checks and runs from its package on FreeBSD 15.1; the COPR spec builds and installs on Fedora 44. Neither is published yet: the port goes through FreeBSD's review, and COPR needs the project's Fedora account
+
 ### Changed
 
 - **PHILOSOPHY.md says what fast means, and how habits fit "Easy to Remember".** "Fast" said proc answers right away, but a command that shows CPU waits about 0.2 s, because a CPU reading compares two samples. It now names two clocks: the machine's, where proc waits only when the answer needs time, and the human one, how long someone new takes to reach a correct answer. "Easy to Remember" now asks for one obvious spelling per intent, meaning the same in every command, with habits from other tools kept working. ROADMAP.md plans the guesses that still miss this as one convention
