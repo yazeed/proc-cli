@@ -12,7 +12,7 @@
 //!
 //! Commas still work (`proc info :3000,:8080`) but are deprecated.
 
-use super::held::{card_options, measure_with_ports, write_process, HeldPort};
+use super::held::{card_options, measure_with_known_ports, write_process, HeldPort};
 use crate::core::{
     flatten_targets, guard_targets, resolve_target, Guards, NameMatch, Process, Resolved,
 };
@@ -80,13 +80,17 @@ impl InfoCommand {
         // and the connections to them are read: the card lists the peers, the
         // JSON carries the counts
         let peer_limit = if self.json { 0 } else { usize::MAX };
-        let held = measure_with_ports(&mut found, peer_limit)?;
+        // (a port table that cannot be read leaves the ports out)
+        let held = measure_with_known_ports(&mut found, peer_limit);
 
         if self.json {
             let processes: Vec<InfoProcess> = found
                 .iter()
                 .zip(&held)
-                .map(|(process, ports)| InfoProcess { process, ports })
+                .map(|(process, ports)| InfoProcess {
+                    process,
+                    ports: ports.as_deref(),
+                })
                 .collect();
             printer.print_json(&InfoOutput {
                 action: "info",
@@ -100,7 +104,12 @@ impl InfoCommand {
             let opts = card_options(self.verbose);
             for (process, ports) in found.iter().zip(&held) {
                 // A failed write is recorded by `out`, which decides the exit code
-                out::recorded(write_process(&mut out::stdout(), process, ports, &opts));
+                out::recorded(write_process(
+                    &mut out::stdout(),
+                    process,
+                    ports.as_deref(),
+                    &opts,
+                ));
             }
 
             if let Some(warning) = warning {
@@ -160,7 +169,9 @@ fn resolve_all(targets: &[String], resolve: impl Fn(&str) -> Result<Vec<Process>
 struct InfoProcess<'a> {
     #[serde(flatten)]
     process: &'a Process,
-    ports: &'a [HeldPort],
+    /// Absent where the port table could not be read
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ports: Option<&'a [HeldPort]>,
 }
 
 #[derive(Serialize)]
@@ -267,7 +278,7 @@ mod tests {
         let proc = process(7);
         let json = serde_json::to_value(InfoProcess {
             process: &proc,
-            ports: &ports,
+            ports: Some(&ports),
         })
         .unwrap();
         assert_eq!(json["pid"], 7);
@@ -279,9 +290,18 @@ mod tests {
         // a process that listens on nothing has an empty list
         let json = serde_json::to_value(InfoProcess {
             process: &proc,
-            ports: &[],
+            ports: Some(&[]),
         })
         .unwrap();
         assert_eq!(json["ports"], serde_json::json!([]));
+
+        // a port table that could not be read: the key is absent, never null
+        let json = serde_json::to_value(InfoProcess {
+            process: &proc,
+            ports: None,
+        })
+        .unwrap();
+        assert_eq!(json["pid"], 7);
+        assert!(json.get("ports").is_none(), "{json}");
     }
 }

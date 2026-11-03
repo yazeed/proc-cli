@@ -59,6 +59,27 @@ pub fn write_card(
     ports: &[CardPort],
     opts: &CardOptions,
 ) -> io::Result<()> {
+    write_card_lines(out, process, Some(ports), opts)
+}
+
+/// Writes the card for `process` when the ports it listens on are not known
+/// (the OS gave no port table): no `Listening:` and no `Connections:`, since
+/// `Listening: none` would say the process listens on nothing
+pub fn write_card_without_ports(
+    out: &mut impl Write,
+    process: &Process,
+    opts: &CardOptions,
+) -> io::Result<()> {
+    write_card_lines(out, process, None, opts)
+}
+
+/// The card; `ports` is `None` where they are not known
+fn write_card_lines(
+    out: &mut impl Write,
+    process: &Process,
+    ports: Option<&[CardPort]>,
+    opts: &CardOptions,
+) -> io::Result<()> {
     let card = Card { opts };
     card.put(
         out,
@@ -103,8 +124,13 @@ pub fn write_card(
         Some(0) => card.put(out, "Children:", "none", truncate_string)?,
         Some(count) => card.put(out, "Children:", &count.to_string(), truncate_string)?,
     }
-    card.write_listening(out, ports)?;
-    card.write_connections(out, ports)
+    match ports {
+        Some(ports) => {
+            card.write_listening(out, ports)?;
+            card.write_connections(out, ports)
+        }
+        None => Ok(()),
+    }
 }
 
 /// Cuts `name (PID n)` in the name, so the PID stays whole; when even the PID

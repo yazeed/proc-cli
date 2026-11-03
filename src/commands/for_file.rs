@@ -7,7 +7,7 @@
 //!   proc for ~/bin/myapp         # Tilde expansion
 //!   proc for app.log --by node   # Only the process named node (--cmd: node anywhere in the command line)
 
-use super::held::{card_options, held_during, write_process_card, HeldPort};
+use super::held::{card_options, held_during, known, write_process_card, HeldPort};
 use crate::core::{
     resolve_in_dir, sort_processes, with_ports, NameMatch, PortInfo, Process, SortKey, StatusFilter,
 };
@@ -121,13 +121,14 @@ impl ForCommand {
         // 9. Output. One hit in a terminal is the card, with its ports and
         // their connections; the JSON and a list carry the ports alone.
         if !self.json && processes.len() == 1 {
-            let (held, ()) = held_during(&[processes[0].pid], usize::MAX, || ())?;
-            let ports = held.into_iter().next().unwrap_or_default();
+            // (a port table that cannot be read leaves the ports out)
+            let (held, ()) = held_during(&[processes[0].pid], usize::MAX, || ());
+            let ports = known(held, 1).pop().flatten();
             // A failed write is recorded by `out`, which decides the exit code
             out::recorded(self.print_one(
                 &mut out::stdout(),
                 &processes[0],
-                &ports,
+                ports.as_deref(),
                 &card_options(self.verbose),
             ));
             return Ok(());
@@ -249,7 +250,7 @@ impl ForCommand {
         &self,
         out: &mut impl std::io::Write,
         process: &Process,
-        ports: &[HeldPort],
+        ports: Option<&[HeldPort]>,
         opts: &CardOptions,
     ) -> std::io::Result<()> {
         writeln!(

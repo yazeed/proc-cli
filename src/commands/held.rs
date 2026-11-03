@@ -4,7 +4,7 @@
 
 use crate::core::connections::{connections_for, Connections, Peer};
 use crate::core::{PortInfo, Process};
-use crate::ui::card::{write_card, CardOptions, CardPort};
+use crate::ui::card::{write_card, write_card_without_ports, CardOptions, CardPort};
 use crate::ui::output::terminal_width;
 use colored::*;
 use serde::{Serialize, Serializer};
@@ -66,10 +66,11 @@ pub(crate) fn card_options(verbose: bool) -> CardOptions {
 }
 
 /// What a process is: its name, then its card with the ports it listens on
+/// (`None`: the port table could not be read, so the card says nothing of them)
 pub(crate) fn write_process(
     out: &mut impl Write,
     process: &Process,
-    ports: &[HeldPort],
+    ports: Option<&[HeldPort]>,
     opts: &CardOptions,
 ) -> std::io::Result<()> {
     writeln!(
@@ -84,13 +85,18 @@ pub(crate) fn write_process(
 }
 
 /// A process's card, then a blank line. The ports on the card are `held`; a
-/// port number held on two addresses lists its connections once.
+/// port number held on two addresses lists its connections once. `None`: the
+/// ports are not known, and the card leaves out `Listening:` and `Connections:`.
 pub(crate) fn write_process_card(
     out: &mut impl Write,
     process: &Process,
-    held: &[HeldPort],
+    held: Option<&[HeldPort]>,
     opts: &CardOptions,
 ) -> std::io::Result<()> {
+    let Some(held) = held else {
+        write_card_without_ports(out, process, opts)?;
+        return writeln!(out);
+    };
     let mut seen = HashSet::new();
     let ports: Vec<CardPort> = held
         .iter()
@@ -111,19 +117,29 @@ pub(crate) fn write_process_card(
 /// `work` runs: the listening table and the connections to the ports of all
 /// the `pids` are read once, in the background, and the wait for the CPU
 /// reading (the usual `work`) hides them. A process that listens on nothing
-/// reads no connections. `peer_limit` caps the peers listed per port.
+/// reads no connections. `peer_limit` caps the peers listed per port. The
+/// `work` runs whatever the reading did; its error is the table's.
 pub(crate) fn held_during<T>(
     pids: &[u32],
     peer_limit: usize,
     work: impl FnOnce() -> T,
-) -> crate::error::Result<(Vec<Vec<HeldPort>>, T)> {
+) -> (crate::error::Result<Vec<Vec<HeldPort>>>, T) {
+    held_during_with(PortInfo::get_all_listening, pids, peer_limit, work)
+}
+
+/// [`held_during`] with the listening table read by `table`
+fn held_during_with<T>(
+    table: impl FnOnce() -> crate::error::Result<Vec<PortInfo>> + Send,
+    pids: &[u32],
+    peer_limit: usize,
+    work: impl FnOnce() -> T,
+) -> (crate::error::Result<Vec<Vec<HeldPort>>>, T) {
     if pids.is_empty() {
-        return Ok((Vec::new(), work()));
+        return (Ok(Vec::new()), work());
     }
     let (reading, result) = std::thread::scope(|scope| {
         let reading = scope.spawn(|| -> crate::error::Result<ConnectionReader> {
-            let mut reader =
-                ConnectionReader::new(PortInfo::get_all_listening()?, peer_limit, true);
+            let mut reader = ConnectionReader::new(table()?, peer_limit, true);
             let ports: Vec<u16> = pids.iter().flat_map(|pid| reader.ports_of(*pid)).collect();
             reader.read_now(&ports);
             Ok(reader)
@@ -131,19 +147,42 @@ pub(crate) fn held_during<T>(
         let result = work();
         (reading.join().unwrap_or_else(|e| resume_unwind(e)), result)
     });
-    let mut reader = reading?;
-    let held = pids.iter().map(|pid| reader.held_by(*pid)).collect();
-    Ok((held, result))
+    let held = reading.map(|mut reader| pids.iter().map(|pid| reader.held_by(*pid)).collect());
+    (held, result)
 }
 
 /// Takes the real CPU reading of `processes` and returns the ports each
-/// listens on with their connections, all in one wait
+/// listens on with their connections, all in one wait; an unreadable port
+/// table is an error
 pub(crate) fn measure_with_ports(
     processes: &mut [Process],
     peer_limit: usize,
 ) -> crate::error::Result<Vec<Vec<HeldPort>>> {
     let pids: Vec<u32> = processes.iter().map(|p| p.pid).collect();
-    Ok(held_during(&pids, peer_limit, || Process::measure_cpu(processes))?.0)
+    held_during(&pids, peer_limit, || Process::measure_cpu(processes)).0
+}
+
+/// [`measure_with_ports`] for a view that does not need the ports: each
+/// process's ports are `None` when the port table could not be read
+pub(crate) fn measure_with_known_ports(
+    processes: &mut [Process],
+    peer_limit: usize,
+) -> Vec<Option<Vec<HeldPort>>> {
+    let count = processes.len();
+    known(measure_with_ports(processes, peer_limit), count)
+}
+
+/// The ports of `count` processes as a view shows them: each `Some` when the
+/// port table was read, each `None` when it was not (so a view can leave the
+/// ports out rather than say there are none)
+pub(crate) fn known(
+    held: crate::error::Result<Vec<Vec<HeldPort>>>,
+    count: usize,
+) -> Vec<Option<Vec<HeldPort>>> {
+    match held {
+        Ok(held) => held.into_iter().map(Some).collect(),
+        Err(_) => vec![None; count],
+    }
 }
 
 /// The connections to each of `jobs` (a port with all its holders), from one
@@ -446,7 +485,7 @@ mod tests {
             held(bound(1, "::1"), Some(connections_of(1, 1))),
             held(other, Some(Connections::default())),
         ];
-        let out = printed(|w| write_process(w, &detailed(), &ports, &opts()));
+        let out = printed(|w| write_process(w, &detailed(), Some(&ports), &opts()));
         assert!(out.starts_with("✓ x (PID 1)\n\n  Process:"), "{out}");
         assert_eq!(out.matches("Listening:").count(), 1, "{out}");
         assert!(out.contains(":4000 TCP on 127.0.0.1"), "{out}");
@@ -459,7 +498,7 @@ mod tests {
 
     #[test]
     fn a_process_listening_on_nothing_says_none() {
-        let out = printed(|w| write_process(w, &without_cwd(), &[], &opts()));
+        let out = printed(|w| write_process(w, &without_cwd(), Some(&[]), &opts()));
         assert!(out.contains("Listening:   none\n"), "{out}");
         assert!(!out.contains("is listening on"), "{out}");
         assert!(!out.contains("Connections:"), "{out}");
@@ -469,8 +508,10 @@ mod tests {
     fn a_failed_write_ends_the_process_view() {
         let p = detailed();
         let ports = [held(bound(1, "127.0.0.1"), Some(connections_of(1, 2)))];
-        assert_stops_at_a_failed_write(|w| write_process(w, &p, &ports, &opts()));
-        assert_stops_at_a_failed_write(|w| write_process(w, &p, &[], &opts()));
+        assert_stops_at_a_failed_write(|w| write_process(w, &p, Some(&ports), &opts()));
+        assert_stops_at_a_failed_write(|w| write_process(w, &p, Some(&[]), &opts()));
+        // ports not known
+        assert_stops_at_a_failed_write(|w| write_process(w, &p, None, &opts()));
     }
 
     #[test]
@@ -600,9 +641,49 @@ mod tests {
 
     #[test]
     fn no_process_has_no_ports_and_the_work_still_runs() {
-        let (held, answer) = held_during(&[], usize::MAX, || 7).unwrap();
-        assert!(held.is_empty());
+        let (held, answer) = held_during(&[], usize::MAX, || 7);
+        assert!(held.unwrap().is_empty());
         assert_eq!(answer, 7);
+    }
+
+    #[test]
+    fn a_port_table_that_cannot_be_read_is_an_error_and_the_work_still_runs() {
+        let (held, answer) = held_during_with(
+            || Err(crate::error::ProcError::SystemError("no lsof".to_string())),
+            &[1, 2],
+            usize::MAX,
+            || 7,
+        );
+        assert!(held.is_err());
+        assert_eq!(answer, 7);
+        // a view shows each process without ports, not with none
+        let shown = known(held, 2);
+        assert_eq!(shown.len(), 2);
+        assert!(shown.iter().all(Option::is_none));
+
+        // the same lookup with a table that reads
+        let (held, _) = held_during_with(|| Ok(vec![listener()]), &[1, 2], 0, || ());
+        let shown = known(held, 2);
+        assert_eq!(shown[0].as_ref().unwrap().len(), 1);
+        assert_eq!(shown[1].as_ref().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn a_card_without_known_ports_leaves_out_listening_and_connections() {
+        let out = printed(|w| write_process(w, &detailed(), None, &opts()));
+        assert!(out.starts_with("✓ x (PID 1)\n\n  Process:"), "{out}");
+        assert!(out.contains("  Status:      sleeping"), "{out}");
+        assert!(!out.contains("Listening:"), "{out}");
+        assert!(!out.contains("Connections:"), "{out}");
+        assert!(out.ends_with("\n\n"), "{out}");
+    }
+
+    #[test]
+    fn ports_whose_connections_could_not_be_read_keep_their_lines() {
+        let ports = [held(bound(1, "127.0.0.1"), None)];
+        let out = printed(|w| write_process(w, &detailed(), Some(&ports), &opts()));
+        assert!(out.contains("Listening:   :4000 TCP on 127.0.0.1"), "{out}");
+        assert!(!out.contains("Connections:"), "{out}");
     }
 
     #[test]

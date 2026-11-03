@@ -10,7 +10,7 @@
 //!
 //! Commas still work (`proc why :3000,:8080`) but are deprecated.
 
-use super::held::{card_options, measure_with_ports, write_process_card};
+use super::held::{card_options, measure_with_known_ports, write_process_card};
 use crate::core::{
     flatten_targets, parse_target, resolve_target, NameMatch, PortInfo, Process, ProcessStatus,
     Protocol, TargetType,
@@ -62,11 +62,11 @@ impl WhyCommand {
         // Read once for every process shown (see `with_ports`)
         let listening = std::cell::OnceCell::new();
 
-        for (i, target_str) in targets.iter().enumerate() {
-            if i > 0 && !self.json {
-                out_println!();
-            }
+        // What the human view prints for each target, once all are resolved: the
+        // cards of every target are measured and their ports read together
+        let mut shown: Vec<Option<Shown>> = Vec::new();
 
+        for target_str in &targets {
             let parsed = parse_target(target_str);
 
             // Collect port context for port targets; every holder of the port is
@@ -80,16 +80,16 @@ impl WhyCommand {
             };
 
             // Resolve to processes
-            let mut target_processes =
-                match found_processes(target_str, |t| resolve_target(t, mode)) {
-                    Ok(procs) => procs,
-                    Err((error, warning)) => {
-                        printer.warning(&warning);
-                        first_error.get_or_insert(error);
-                        not_found.push(target_str.clone());
-                        continue;
-                    }
-                };
+            let target_processes = match found_processes(target_str, |t| resolve_target(t, mode)) {
+                Ok(procs) => procs,
+                Err((error, warning)) => {
+                    printer.warning(&warning);
+                    first_error.get_or_insert(error);
+                    not_found.push(target_str.clone());
+                    shown.push(None);
+                    continue;
+                }
+            };
             found_any = true;
 
             if self.json {
@@ -117,35 +117,18 @@ impl WhyCommand {
                         ancestry: chain,
                     }
                 }));
+                shown.push(None);
             } else {
-                // Print port header if applicable
-                if let Some(ref port_info) = port_context {
-                    out_println!(
-                        "{} Port {} ({}):",
-                        "✓".green().bold(),
-                        port_info.port.to_string().cyan().bold(),
-                        format!("{:?}", port_info.protocol).to_uppercase()
-                    );
-                } else {
-                    out_println!(
-                        "{} Ancestry for '{}':",
-                        "✓".green().bold(),
-                        target_str.cyan()
-                    );
-                }
-                out_println!();
-
-                // Real CPU readings for the cards, while the ports the targets
-                // listen on and the connections to them are read
-                let held = measure_with_ports(&mut target_processes, usize::MAX)?;
-                let opts = card_options(self.verbose);
-                for (proc, ports) in target_processes.iter().zip(&held) {
-                    self.print_ancestry_with_context(proc, &pid_map);
-                    out_println!();
-                    // A failed write is recorded by `out`, which decides the exit code
-                    out::recorded(write_process_card(&mut out::stdout(), proc, ports, &opts));
-                }
+                shown.push(Some(Shown {
+                    target: target_str.clone(),
+                    port_context,
+                    processes: target_processes,
+                }));
             }
+        }
+
+        if !self.json {
+            self.print_targets(&shown, &pid_map);
         }
 
         if !found_any {
@@ -172,6 +155,61 @@ impl WhyCommand {
         }
 
         Ok(())
+    }
+
+    /// Prints each target that was found: its header, then for each of its
+    /// processes the ancestry and the card. The processes of all the targets
+    /// are measured and their ports read in one wait.
+    fn print_targets(&self, shown: &[Option<Shown>], pid_map: &HashMap<u32, &Process>) {
+        let mut all: Vec<Process> = shown
+            .iter()
+            .flatten()
+            .flat_map(|target| target.processes.iter().cloned())
+            .collect();
+        let mut held = measure_with_known_ports(&mut all, usize::MAX).into_iter();
+        let mut processes = all.into_iter();
+        let opts = card_options(self.verbose);
+
+        for (i, target) in shown.iter().enumerate() {
+            if i > 0 {
+                out_println!();
+            }
+            let Some(target) = target else {
+                continue;
+            };
+            // Print port header if applicable
+            if let Some(ref port_info) = target.port_context {
+                out_println!(
+                    "{} Port {} ({}):",
+                    "✓".green().bold(),
+                    port_info.port.to_string().cyan().bold(),
+                    format!("{:?}", port_info.protocol).to_uppercase()
+                );
+            } else {
+                out_println!(
+                    "{} Ancestry for '{}':",
+                    "✓".green().bold(),
+                    target.target.cyan()
+                );
+            }
+            out_println!();
+
+            for (proc, ports) in processes
+                .by_ref()
+                .take(target.processes.len())
+                .zip(held.by_ref())
+            {
+                self.print_ancestry_with_context(&proc, pid_map);
+                out_println!();
+                // A failed write is recorded by `out`, which decides the exit code
+                out::recorded(write_process_card(
+                    &mut out::stdout(),
+                    &proc,
+                    ports.as_deref(),
+                    &opts,
+                ));
+            }
+        }
     }
 
     /// Build the ancestor chain from root down to target
@@ -317,6 +355,14 @@ fn status_indicator(status: ProcessStatus) -> ColoredString {
         ProcessStatus::Zombie => "✗".red(),
         _ => "?".white(),
     }
+}
+
+/// A target that was found, for the human view
+struct Shown {
+    target: String,
+    /// The port a port target names
+    port_context: Option<PortInfo>,
+    processes: Vec<Process>,
 }
 
 #[derive(Serialize)]

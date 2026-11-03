@@ -366,7 +366,7 @@ impl OnCommand {
             out::recorded(write_process(
                 &mut out::stdout(),
                 &process,
-                &ports,
+                Some(&ports),
                 &card_options(self.verbose),
             ));
         }
@@ -451,7 +451,7 @@ impl OnCommand {
         for (held, process) in holders {
             match process {
                 Some(process) => {
-                    write_process_card(out, process, std::slice::from_ref(held), opts)?
+                    write_process_card(out, process, Some(std::slice::from_ref(held)), opts)?
                 }
                 None => write_ended(out, held)?,
             }
@@ -479,7 +479,7 @@ impl OnCommand {
         )?;
         writeln!(out)?;
         for (process, ports) in results {
-            write_process_card(out, process, ports, opts)?;
+            write_process_card(out, process, Some(ports), opts)?;
         }
         Ok(())
     }
