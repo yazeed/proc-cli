@@ -580,7 +580,9 @@ fn for_one_hit_shows_the_card() {
     );
     // `-v` for the directory whole: a long one is cut to the terminal otherwise
     let (verbose, _) = run_text(&["for", &p.exe(), "-v"]);
-    assert_eq!(card_field(&verbose, "Directory:"), p.dir(), "{verbose}");
+    // shown as the OS gives it: Windows ends a working directory with `\`
+    let shown = card_field(&verbose, "Directory:");
+    assert_eq!(shown.trim_end_matches('\\'), p.dir(), "{verbose}");
     assert!(
         card_field(&out, "Listening:").starts_with(&format!(":{} TCP", p.port)),
         "{out}"
