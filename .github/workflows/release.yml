@@ -502,3 +502,15 @@ jobs:
           git add bucket/proc.json
           git diff --staged --quiet || git commit -m "proc ${{ github.ref_name }}"
           git push
+
+  update-apt:
+    name: Update the apt repository
+    needs: create-release
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml
+    secrets:
+      APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}

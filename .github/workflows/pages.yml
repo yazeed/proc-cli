@@ -1,0 +1,82 @@
+name: Pages
+
+# proc-cli.com: the Jekyll site in docs/, plus the signed apt repository at
+# /apt, built from the .deb files of the last three releases that have them
+# (pkg/apt/build-repo.sh). Runs on changes to the site, and from release.yml
+# after each release, since a release made by the workflow's own token starts
+# no other workflow.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'pkg/apt/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+  workflow_call:
+    secrets:
+      APT_SIGNING_KEY:
+        required: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# one deploy at a time, and a running one finishes
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site and apt repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Build the site
+        uses: actions/jekyll-build-pages@44a6e6beabd48582f863aeeb6cb2151cc1716697 # v1.0.13
+        with:
+          source: ./docs
+          destination: ./_site
+
+      - name: Build the apt repository
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$APT_SIGNING_KEY" ]; then
+            echo "::warning::APT_SIGNING_KEY is not set, so the site deploys without /apt"
+            exit 0
+          fi
+          sudo apt-get install -y -qq apt-utils
+          printf '%s\n' "$APT_SIGNING_KEY" | gpg --batch --import
+          # $v is jq's variable, not the shell's
+          # shellcheck disable=SC2016
+          versions=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate -q '
+            .[] | select(.draft == false and .prerelease == false)
+            | (.tag_name | ltrimstr("v")) as $v
+            | select([.assets[].name] | index("proc-cli_\($v)_amd64.deb"))
+            | $v' | head -n 3)
+          echo "apt repository versions: $versions"
+          sudo chown -R "$(id -u)" _site
+          # shellcheck disable=SC2086
+          pkg/apt/build-repo.sh _site/apt $versions
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ./_site
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
