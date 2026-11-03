@@ -64,7 +64,7 @@ pub fn write_card(
         out,
         "Process:",
         &format!("{} (PID {})", process.name, process.pid),
-        truncate_string,
+        cut_keeping_pid,
     )?;
     if let Some(command) = known(&process.command) {
         card.put(out, "Command:", command, truncate_string)?;
@@ -83,7 +83,7 @@ pub fn write_card(
             Some(name) => format!("{name} (PID {pid})"),
             None => format!("PID {pid}"),
         };
-        card.put(out, "Parent:", &parent, cut_parent)?;
+        card.put(out, "Parent:", &parent, cut_keeping_pid)?;
     }
     let status = status_word(process.status);
     card.put_painted(out, "Status:", status, truncate_string, |shown| {
@@ -109,7 +109,7 @@ pub fn write_card(
 
 /// Cuts `name (PID n)` in the name, so the PID stays whole; when even the PID
 /// does not fit, the whole value is cut
-fn cut_parent(value: &str, room: usize) -> String {
+fn cut_keeping_pid(value: &str, room: usize) -> String {
     if value.width() <= room {
         return value.to_string();
     }
@@ -204,7 +204,7 @@ struct FileTime {
 /// A Windows calendar time
 #[cfg(windows)]
 #[repr(C)]
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 struct SystemTime {
     year: u16,
     month: u16,
@@ -237,18 +237,13 @@ fn local_offset(secs: u64) -> i64 {
         high: (ticks >> 32) as u32,
     };
     let mut universal = SystemTime::default();
-    let mut local = SystemTime::default();
     // SAFETY: each call reads one valid struct of ours and writes only into
     // another of ours, all `repr(C)` with the layout the API documents. A NULL
-    // zone means the current time zone. A failed call leaves the structs zeroed,
-    // which compare equal and read as UTC.
-    let read = unsafe {
-        FileTimeToSystemTime(&file_time, &mut universal) != 0
-            && SystemTimeToTzSpecificLocalTime(std::ptr::null(), &universal, &mut local) != 0
-    };
-    if !read {
-        return 0;
-    }
+    // zone means the current time zone. `local` starts as a copy of
+    // `universal`, so a call that fails leaves the two equal: offset 0, UTC
+    unsafe { FileTimeToSystemTime(&file_time, &mut universal) };
+    let mut local = universal;
+    unsafe { SystemTimeToTzSpecificLocalTime(std::ptr::null(), &universal, &mut local) };
     let seconds = |t: &SystemTime| {
         let (year, month, day) = (i64::from(t.year), i64::from(t.month), i64::from(t.day));
         (days_from_civil(year, month, day) * 86_400)
