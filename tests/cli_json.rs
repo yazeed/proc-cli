@@ -498,6 +498,48 @@ mod unix {
     }
 
     #[test]
+    fn every_process_object_has_the_full_fields() {
+        let sleeper = Sleeper::spawn();
+        let pid = sleeper.pid();
+        let full = |v: &Value, what: &str| {
+            for key in ["parent_pid", "user", "exe_path", "command"] {
+                assert!(v.get(key).is_some(), "{what} lacks {key}: {v}");
+            }
+        };
+
+        let (tree, _) = run_json(&["tree", &pid, "--json"]);
+        full(&tree["tree"][0], "tree node");
+
+        let (ancestors, _) = run_json(&["tree", &pid, "--ancestors", "--json"]);
+        let chain = ancestors["ancestry"][0]["chain"].as_array().unwrap();
+        let own = chain
+            .iter()
+            .find(|e| e["pid"].as_u64() == Some(u64::from(sleeper.0.id())))
+            .unwrap_or_else(|| panic!("sleeper not in chain: {chain:?}"));
+        full(own, "tree --ancestors chain entry");
+
+        let (why, _) = run_json(&["why", &pid, "--json"]);
+        full(&why["results"][0]["process"], "why process");
+        let ancestry = why["results"][0]["ancestry"].as_array().unwrap();
+        let own = ancestry
+            .iter()
+            .find(|e| e["pid"].as_u64() == Some(u64::from(sleeper.0.id())))
+            .unwrap_or_else(|| panic!("sleeper not in ancestry: {ancestry:?}"));
+        full(own, "why ancestry entry");
+
+        let (unstick, _) = run_json(&["unstick", &pid, "--dry-run", "--json"]);
+        full(&unstick["processes"][0], "unstick process");
+
+        let (wait, _) = run_json(&["wait", &pid, "--timeout", "1", "--json"]);
+        full(&wait["still_running"][0], "wait still-running process");
+
+        // a process that exits: the reading taken before it went
+        let exiting = Sleeper::exiting_after("1");
+        let (wait, _) = run_json(&["wait", &exiting.pid(), "--json"]);
+        full(&wait["exited"][0], "wait exited process");
+    }
+
+    #[test]
     fn on_multi_target_prints_one_document() {
         let first = Sleeper::spawn();
         let second = Sleeper::spawn();

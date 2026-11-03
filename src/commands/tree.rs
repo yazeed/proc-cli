@@ -9,6 +9,7 @@
 //!   proc tree --min-cpu 10 # Only processes using >10% CPU
 //!   proc tree 1234 -a      # Show ancestry (path UP to root)
 
+use crate::core::process::ProcessDetails;
 use crate::core::{
     classify, matches_by_filter, matches_in_filter, parse_target, resolve_in_dir, resolve_target,
     ruled_out_by, Guards, Hit, NameMatch, Process, ProcessStatus, StatusFilter, TargetType,
@@ -501,6 +502,9 @@ impl TreeCommand {
             status: proc.status,
             uptime_secs: proc.uptime_secs,
             children,
+            cwd: proc.cwd.clone(),
+            command: proc.command.clone(),
+            details: ProcessDetails::of(proc),
         }
     }
 
@@ -625,6 +629,9 @@ impl TreeCommand {
                 memory_mb: proc.memory_mb,
                 status: proc.status,
                 uptime_secs: proc.uptime_secs,
+                cwd: proc.cwd.clone(),
+                command: proc.command.clone(),
+                details: ProcessDetails::of(proc),
             })
             .collect();
 
@@ -696,6 +703,12 @@ struct ProcessInfo {
     status: ProcessStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     uptime_secs: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    command: Option<String>,
+    #[serde(flatten)]
+    details: ProcessDetails,
 }
 
 #[derive(Serialize)]
@@ -715,6 +728,12 @@ struct TreeNode {
     #[serde(skip_serializing_if = "Option::is_none")]
     uptime_secs: Option<u64>,
     children: Vec<TreeNode>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    command: Option<String>,
+    #[serde(flatten)]
+    details: ProcessDetails,
 }
 
 #[cfg(test)]

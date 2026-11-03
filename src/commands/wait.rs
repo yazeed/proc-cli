@@ -11,7 +11,10 @@
 //!
 //! Commas still work (`proc wait node,python`) but are deprecated.
 
-use crate::core::{flatten_targets, guard_targets, resolve_targets, Guards, NameMatch, Process};
+use crate::core::process::ProcessDetails;
+use crate::core::{
+    flatten_targets, guard_targets, resolve_targets, Guards, NameMatch, Process, ProcessStatus,
+};
 use crate::error::{ExitCode, ProcError, Result};
 use crate::out_println;
 use crate::ui::{format_duration, plural, Printer};
@@ -178,6 +181,7 @@ impl WaitCommand {
                         pid: p.pid,
                         name: p.name.clone(),
                         exited_after_seconds: t.unwrap(),
+                        last: LastReading::of(p),
                     })
                     .collect();
                 let still_running: Vec<RunningProcess> = tracking
@@ -186,6 +190,7 @@ impl WaitCommand {
                     .map(|(p, _)| RunningProcess {
                         pid: p.pid,
                         name: p.name.clone(),
+                        last: LastReading::of(p),
                     })
                     .collect();
 
@@ -261,6 +266,7 @@ impl WaitCommand {
                     pid: p.pid,
                     name: p.name.clone(),
                     exited_after_seconds: t.unwrap_or(elapsed),
+                    last: LastReading::of(p),
                 })
                 .collect();
             printer.print_json(&WaitOutput {
@@ -309,10 +315,46 @@ struct ExitedProcess {
     pid: u32,
     name: String,
     exited_after_seconds: u64,
+    #[serde(flatten)]
+    last: LastReading,
 }
 
 #[derive(Serialize, Clone)]
 struct RunningProcess {
     pid: u32,
     name: String,
+    #[serde(flatten)]
+    last: LastReading,
+}
+
+/// The fields of the last reading proc had of a process, before it exited
+/// (for a process still running, the reading taken when the wait began). A
+/// value that reading did not have is an absent key.
+#[derive(Serialize, Clone)]
+struct LastReading {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    command: Option<String>,
+    status: ProcessStatus,
+    cpu_percent: f32,
+    memory_mb: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    uptime_secs: Option<u64>,
+    #[serde(flatten)]
+    details: ProcessDetails,
+}
+
+impl LastReading {
+    fn of(p: &Process) -> Self {
+        Self {
+            cwd: p.cwd.clone(),
+            command: p.command.clone(),
+            status: p.status,
+            cpu_percent: p.cpu_percent,
+            memory_mb: p.memory_mb,
+            uptime_secs: p.uptime_secs,
+            details: ProcessDetails::of(p),
+        }
+    }
 }

@@ -331,7 +331,9 @@ There are no PIDs in the result: take them from the dry run. A port still in use
 }
 ```
 
-On timeout: `success: false`, `timed_out: true`, `still_running` lists `{"pid", "name"}`, exit 1. If no target exists at all, exit 2 at once.
+On timeout: `success: false`, `timed_out: true`, `still_running` lists the still-running processes, exit 1. If no target exists at all, exit 2 at once.
+
+Each `exited` entry is `pid`, `name`, `exited_after_seconds` and then the other fields of a process object (see Process and port objects) as the last reading proc had of it before it exited. `still_running` entries carry the same fields, as of the reading taken when `wait` began. A field that reading did not have is absent.
 
 ### unstick
 
@@ -340,9 +342,11 @@ On timeout: `success: false`, `timed_out: true`, `still_running` lists `{"pid", 
   "action": "unstick", "success": true, "dry_run": false, "force": false,
   "found": 1, "recovered": 1, "not_stuck": 0, "still_stuck": 0, "terminated": 0, "failed": 0,
   "not_found": [],
-  "processes": [{"pid": 1234, "name": "node", "uptime_secs": 3600, "outcome": "recovered"}]
+  "processes": [{"pid": 1234, "name": "node", "uptime_secs": 3600, "outcome": "recovered", "cwd": "/home/user/project", "command": "node server.js", "status": "running", "cpu_percent": 0.0, "memory_mb": 256.0, "exe_path": "/usr/local/bin/node", "user": "alice", "parent_pid": 1000, "start_time": 1700000000, "parent_name": "zsh", "cpu_time_secs": 42, "open_files": 23, "child_count": 2}]
 }
 ```
+
+Each `processes` entry has the same fields as a process object (see Process and port objects) after its own `pid`, `name`, `uptime_secs` and `outcome`; the fields of a process object that the OS does not give are absent.
 
 `outcome` is `recovered`, `terminated`, `still_stuck`, `not_stuck`, `failed: <reason>` or `would_attempt` (dry run). Any `still_stuck` or `failed` gives `success: false` and exit 1. SIGINT ends most programs, so `unstick` can end a busy process.
 
@@ -353,22 +357,22 @@ On timeout: `success: false`, `timed_out: true`, `still_running` lists `{"pid", 
   "action": "why", "success": true, "count": 1, "not_found": [],
   "results": [{
     "target": ":3000", "port": 3000, "protocol": "tcp",
-    "process": {"pid": 1234, "name": "node", "command": "node server.js", "cwd": "/home/user/project", "status": "running", "uptime_secs": 3600},
+    "process": {"pid": 1234, "name": "node", "command": "node server.js", "cwd": "/home/user/project", "status": "running", "uptime_secs": 3600, "cpu_percent": 12.5, "memory_mb": 256.0, "exe_path": "/usr/local/bin/node", "user": "alice", "parent_pid": 1000, "start_time": 1700000000, "parent_name": "zsh", "cpu_time_secs": 42, "open_files": 23, "child_count": 2},
     "ports": [<Port>, ...],
     "ancestry": [
-      {"pid": 1, "name": "launchd", "status": "running", "uptime_secs": 864000, "is_target": false},
-      {"pid": 1234, "name": "node", "command": "node server.js", "cwd": "/home/user/project", "status": "running", "uptime_secs": 3600, "is_target": true}
+      {"pid": 1, "name": "launchd", "status": "running", "uptime_secs": 864000, "is_target": false, "cpu_percent": 0.0, "memory_mb": 12.0, "exe_path": "/sbin/launchd", "user": "root", "parent_pid": 0, "start_time": 1699000000, "child_count": 40},
+      {"pid": 1234, "name": "node", "command": "node server.js", "cwd": "/home/user/project", "status": "running", "uptime_secs": 3600, "is_target": true, "cpu_percent": 12.5, "memory_mb": 256.0, "exe_path": "/usr/local/bin/node", "user": "alice", "parent_pid": 1000, "start_time": 1700000000, "parent_name": "zsh", "cpu_time_secs": 42, "open_files": 23, "child_count": 2}
     ]
   }]
 }
 ```
 
-A port with several holders gives one result per holder, with the same `target`. `ancestry` shows names only. Two agent sessions both read `claude`, so compare PIDs with your own `proc tree $$ --ancestors --json` to tell whose it is.
+`process` and each `ancestry` entry carry the fields of a process object (see Process and port objects): `command`, `cwd`, `status` and `uptime_secs` as before, then `cpu_percent`, `memory_mb` and the rest, with a field the OS does not give absent. `is_target` marks the target's own entry. A port with several holders gives one result per holder, with the same `target`. Two agent sessions both read `claude`, so compare PIDs with your own `proc tree $$ --ancestors --json` to tell whose it is.
 
 ### tree
 
-`{"action": "tree", "success": true, "tree": [{"pid", "name", "cpu_percent", "memory_mb", "status", "uptime_secs", "children": [...]}]}`.
-With `--ancestors`: `{"action": "tree", "success": true, "ancestry": [{"target_pid", "target_name", "depth", "chain": [{"pid", "name", "cpu_percent", "memory_mb", "status", "uptime_secs"}, ...]}]}`. `chain` runs from the top ancestor down to the target.
+`{"action": "tree", "success": true, "tree": [{"pid", "name", "cpu_percent", "memory_mb", "status", "uptime_secs", "children": [...], "cwd", "command", "exe_path", "user", "parent_pid", "start_time", "parent_name", "cpu_time_secs", "open_files", "child_count"}]}`. Each node is a process object (see Process and port objects): the keys before `children` are as before, and the fields a node lacks from the OS are absent.
+With `--ancestors`: `{"action": "tree", "success": true, "ancestry": [{"target_pid", "target_name", "depth", "chain": [{"pid", "name", "cpu_percent", "memory_mb", "status", "uptime_secs", "cwd", "command", "exe_path", "user", "parent_pid", "start_time", "parent_name", "cpu_time_secs", "open_files", "child_count"}, ...]}]}`. `chain` runs from the top ancestor down to the target, and each entry is a process object as in the tree.
 Without a target, `--in`, `--by` and the other filters narrow the view: an empty `tree` is exit 0, as in `list`, while `by <name>` with no match is exit 2. With a target, a name that matches nothing or a target the filters rule out is exit 2.
 
 ### for

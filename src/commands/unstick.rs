@@ -22,9 +22,10 @@
 //!
 //! Commas still work (`proc unstick :3000,1234`) but are deprecated.
 
+use crate::core::process::ProcessDetails;
 use crate::core::{
     apply_filters, flatten_targets, guard_targets, resolve_targets_excluding_self, Guards,
-    NameMatch, Process, Resolved,
+    NameMatch, Process, ProcessStatus, Resolved,
 };
 use crate::error::{ExitCode, ProcError, Result};
 use crate::ui::{format_duration, must_confirm, plural, prompt, Printer};
@@ -184,12 +185,7 @@ impl UnstickCommand {
                     not_found: &not_found,
                     processes: stuck
                         .iter()
-                        .map(|p| ProcessOutcome {
-                            pid: p.pid,
-                            name: p.name.clone(),
-                            uptime_secs: p.uptime_secs,
-                            outcome: "would_attempt".to_string(),
-                        })
+                        .map(|p| ProcessOutcome::of(p, "would_attempt".to_string()))
                         .collect(),
                 });
             } else {
@@ -293,12 +289,7 @@ impl UnstickCommand {
                 not_found: &not_found,
                 processes: outcomes
                     .iter()
-                    .map(|(p, o)| ProcessOutcome {
-                        pid: p.pid,
-                        name: p.name.clone(),
-                        uptime_secs: p.uptime_secs,
-                        outcome: outcome_label(o),
-                    })
+                    .map(|(p, o)| ProcessOutcome::of(p, outcome_label(o)))
                     .collect(),
             });
         } else {
@@ -615,6 +606,32 @@ struct ProcessOutcome {
     #[serde(skip_serializing_if = "Option::is_none")]
     uptime_secs: Option<u64>,
     outcome: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    command: Option<String>,
+    status: ProcessStatus,
+    cpu_percent: f32,
+    memory_mb: f64,
+    #[serde(flatten)]
+    details: ProcessDetails,
+}
+
+impl ProcessOutcome {
+    fn of(p: &Process, outcome: String) -> Self {
+        Self {
+            pid: p.pid,
+            name: p.name.clone(),
+            uptime_secs: p.uptime_secs,
+            outcome,
+            cwd: p.cwd.clone(),
+            command: p.command.clone(),
+            status: p.status,
+            cpu_percent: p.cpu_percent,
+            memory_mb: p.memory_mb,
+            details: ProcessDetails::of(p),
+        }
+    }
 }
 
 #[cfg(test)]

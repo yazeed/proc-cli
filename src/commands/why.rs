@@ -11,6 +11,7 @@
 //! Commas still work (`proc why :3000,:8080`) but are deprecated.
 
 use super::held::{card_options, measure_with_known_ports, write_process_card};
+use crate::core::process::ProcessDetails;
 use crate::core::{
     flatten_targets, parse_target, resolve_target, NameMatch, PortInfo, Process, ProcessStatus,
     Protocol, TargetType,
@@ -116,6 +117,9 @@ impl WhyCommand {
                             cwd: proc.cwd.clone(),
                             status: proc.status,
                             uptime_secs: proc.uptime_secs,
+                            cpu_percent: proc.cpu_percent,
+                            memory_mb: proc.memory_mb,
+                            details: ProcessDetails::of(proc),
                         },
                         ports,
                         ancestry: chain,
@@ -232,6 +236,9 @@ impl WhyCommand {
                 status: proc.status,
                 uptime_secs: proc.uptime_secs,
                 is_target: proc.pid == target.pid,
+                cpu_percent: proc.cpu_percent,
+                memory_mb: proc.memory_mb,
+                details: ProcessDetails::of(proc),
             })
             .collect()
     }
@@ -402,6 +409,10 @@ struct WhyProcessInfo {
     status: ProcessStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     uptime_secs: Option<u64>,
+    cpu_percent: f32,
+    memory_mb: f64,
+    #[serde(flatten)]
+    details: ProcessDetails,
 }
 
 #[derive(Serialize)]
@@ -416,6 +427,10 @@ struct AncestryEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     uptime_secs: Option<u64>,
     is_target: bool,
+    cpu_percent: f32,
+    memory_mb: f64,
+    #[serde(flatten)]
+    details: ProcessDetails,
 }
 
 #[cfg(test)]

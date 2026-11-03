@@ -642,6 +642,46 @@ pub struct Process {
     pub child_count: Option<u32>,
 }
 
+/// The fields of a [`Process`] that the cut-down JSON objects of `tree`, `why`,
+/// `wait` and `unstick` do not carry under their own keys. Each of those
+/// objects flattens this in after its own keys, so the names, types and
+/// absent-when-unknown rule are the same in all four.
+#[derive(Serialize, Clone)]
+pub(crate) struct ProcessDetails {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exe_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_pid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_time_secs: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub open_files: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub child_count: Option<u32>,
+}
+
+impl ProcessDetails {
+    /// The fields of `p` that a cut-down object does not carry
+    pub(crate) fn of(p: &Process) -> Self {
+        Self {
+            exe_path: p.exe_path.clone(),
+            user: p.user.clone(),
+            parent_pid: p.parent_pid,
+            start_time: p.start_time,
+            parent_name: p.parent_name.clone(),
+            cpu_time_secs: p.cpu_time_secs,
+            open_files: p.open_files,
+            child_count: p.child_count,
+        }
+    }
+}
+
 /// This process and its ancestors, as far up as ten levels (proc → shell →
 /// shell wrapper → IDE → ...). A name lookup skips them all: their command
 /// lines hold proc's own arguments (`zsh -c 'proc by node'`).
