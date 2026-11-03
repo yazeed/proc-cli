@@ -2147,7 +2147,7 @@ mod tests {
         // macOS answers 0 for a process that is not the user's
         assert_eq!(
             open_files_read(Some(0)),
-            if cfg!(target_os = "macos") {
+            if cfg!(any(target_os = "macos", windows)) {
                 None
             } else {
                 Some(0)
