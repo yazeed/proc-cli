@@ -943,9 +943,6 @@ fn ports_lists_a_listener_as_a_table() {
     let (out, _, code) = run_text(&["ports", "--by", &p.name]);
     assert_eq!(code, 0, "{out}");
     assert!(out.contains("Found 1 listening port\n"), "{out}");
-    for heading in ["PORT", "PROTO", "PID", "PROCESS", "ADDRESS"] {
-        assert!(out.contains(heading), "{out}");
-    }
     let row = out
         .lines()
         .find(|l| l.contains(&p.name))
@@ -954,7 +951,147 @@ fn ports_lists_a_listener_as_a_table() {
     assert!(row.contains("TCP"), "{row}");
     assert!(row.contains(&p.pid().to_string()), "{row}");
     assert!(row.contains("127.0.0.1"), "{row}");
-    assert!(!out.contains('↳'), "paths are for --verbose: {out}");
+    assert!(!out.contains('↳'), "no path line any more: {out}");
+}
+
+/// The table's cells for the one row of `ports --by <name>`, and its header
+fn ports_table_of(p: &Owned, extra: &[&str]) -> (Vec<String>, Vec<String>, String) {
+    let mut args = vec!["ports", "--by", &p.name];
+    args.extend_from_slice(extra);
+    let (out, _, code) = run_text(&args);
+    assert_eq!(code, 0, "{out}");
+    let header = out
+        .lines()
+        .find(|l| l.contains("EXPOSURE"))
+        .unwrap_or_else(|| panic!("no header: {out}"));
+    let row = out
+        .lines()
+        .find(|l| l.contains(&p.port.to_string()) && l.contains("TCP"))
+        .unwrap_or_else(|| panic!("no row for {}: {out}", p.name));
+    let words = |line: &str| line.split_whitespace().map(String::from).collect();
+    (words(header), words(row), out)
+}
+
+#[test]
+fn ports_shows_name_uptime_command_and_exposure() {
+    let p = Owned::named_with_args(&format!("pcp{}ux", std::process::id()), &["--marker"]);
+    let (header, row, out) = ports_table_of(&p, &[]);
+    assert_eq!(
+        header,
+        ["PORT", "PROTO", "ADDRESS", "EXPOSURE", "PID", "NAME", "UPTIME", "COMMAND"],
+        "{out}"
+    );
+    assert_eq!(
+        row[..6],
+        [
+            p.port.to_string(),
+            "TCP".to_string(),
+            "127.0.0.1".to_string(),
+            "local".to_string(),
+            p.pid().to_string(),
+            p.shown()
+        ],
+        "{out}"
+    );
+    // UPTIME is a duration, such as `0s` or `1m 3s`; COMMAND starts with the
+    // executable's directory (the table cuts the rest to the terminal)
+    assert!(row[6].starts_with(|c: char| c.is_ascii_digit()), "{row:?}");
+    let dir_start: String = p.dir().chars().take(12).collect();
+    assert!(
+        row.iter().skip(7).any(|w| w.contains(&dir_start)),
+        "{row:?}"
+    );
+}
+
+#[test]
+fn ports_verbose_adds_user_memory_and_path_and_cuts_nothing() {
+    let p = Owned::named_with_args(&format!("pcp{}vb", std::process::id()), &["--marker"]);
+    let (header, row, out) = ports_table_of(&p, &["--verbose"]);
+    assert_eq!(
+        header,
+        [
+            "PORT", "PROTO", "ADDRESS", "EXPOSURE", "PID", "NAME", "USER", "MEM", "UPTIME", "PATH",
+            "COMMAND"
+        ],
+        "{out}"
+    );
+    assert!(!out.contains('…'), "-v cuts nothing: {out}");
+    assert!(!out.contains('↳'), "{out}");
+    // the whole command line is the last cell(s): the executable, then the argument
+    assert_eq!(row.last().map(String::as_str), Some("--marker"), "{row:?}");
+    let json = ports_by(&p.name, &["--verbose"]);
+    let exe = json["ports"][0]["exe_path"].as_str().unwrap();
+    assert!(row.iter().any(|w| w == exe), "{exe} is not in {row:?}");
+    let user = json["ports"][0]["user"].as_str();
+    assert_eq!(
+        row.get(6).map(String::as_str),
+        user.or(Some("-")),
+        "{row:?}"
+    );
+}
+
+#[test]
+fn ports_json_carries_the_holders_facts() {
+    let p = Owned::named_with_args(&format!("pcp{}js", std::process::id()), &["--marker"]);
+    let (text, _, code) = run_text(&["ports", "--by", &p.name, "--json"]);
+    assert_eq!(code, 0, "{text}");
+    let json: Value = serde_json::from_str(&text).unwrap();
+    let row = &json["ports"][0];
+    let (on, _) = run_json(&["on", &p.pid_arg(), "--json"]);
+    let process = &on["process"];
+
+    // what it has always had, then the additions, after it and in this order
+    let at = |key: &str| text.find(&format!("\"{key}\":")).unwrap_or(0);
+    let keys = [
+        "port",
+        "protocol",
+        "pid",
+        "process_name",
+        "address",
+        "exposure",
+        "command",
+        "uptime_secs",
+        "memory_mb",
+    ];
+    for pair in keys.windows(2) {
+        assert!(
+            at(pair[0]) < at(pair[1]),
+            "{} before {}: {text}",
+            pair[0],
+            pair[1]
+        );
+    }
+    assert_eq!(row["exposure"], "local");
+    assert_eq!(row["command"], process["command"], "{row}");
+    assert!(
+        row["command"].as_str().unwrap().ends_with("--marker"),
+        "{row}"
+    );
+    assert_eq!(row["user"], process["user"], "absent where on has none");
+    assert!(row["uptime_secs"].as_u64().unwrap() < 600, "{row}");
+    assert!(row["memory_mb"].as_f64().unwrap() >= 0.0, "{row}");
+    // the connection counts and the path are for -v
+    assert!(row.get("connections").is_none(), "{row}");
+    assert!(row.get("exe_path").is_none(), "{row}");
+}
+
+#[test]
+#[cfg_attr(
+    any(target_os = "freebsd", target_os = "netbsd"),
+    ignore = "the BSDs read no connections"
+)]
+fn ports_verbose_json_counts_the_connections() {
+    let p = Owned::listener();
+    let _clients = connect(p.port, 2);
+    let json = ports_by(&p.name, &["--verbose"]);
+    let row = &json["ports"][0];
+    assert_eq!(row["connections"]["total"], 2, "{json}");
+    assert_eq!(row["connections"]["by_state"]["established"], 2, "{json}");
+    assert!(row["connections"].get("peers").is_none(), "{json}");
+    assert!(
+        row["exe_path"].as_str().unwrap().contains(&p.name),
+        "{json}"
+    );
 }
 
 #[test]
@@ -1081,28 +1218,6 @@ fn ports_by_ignores_a_word_that_is_only_in_the_command_line_unless_cmd_is_given(
     let json = ports_by(&word, &["--cmd"]);
     assert_eq!(json["count"], 1, "{json}");
     assert_eq!(json["ports"][0]["pid"], p.pid());
-}
-
-#[test]
-fn ports_verbose_shows_the_executable_path() {
-    let p = Owned::listener();
-    let (out, _, code) = run_text(&["ports", "--by", &p.name, "--verbose"]);
-    assert_eq!(code, 0, "{out}");
-    let path_line = out
-        .lines()
-        .find(|l| l.contains('↳'))
-        .unwrap_or_else(|| panic!("no path line: {out}"));
-    let json = ports_by(&p.name, &["--verbose"]);
-    let exe = json["ports"][0]["exe_path"].as_str().unwrap();
-    assert!(exe.contains(&p.name), "{exe}");
-
-    // The table cuts a long path; whatever it shows is the start of the real one
-    let shown = path_line.trim().trim_start_matches('↳').trim();
-    let start: String = exe.chars().take(40).collect();
-    assert!(shown.starts_with(&start), "{shown} is not the path {exe}");
-    if exe.chars().count() <= 55 {
-        assert_eq!(shown, exe);
-    }
 }
 
 #[test]

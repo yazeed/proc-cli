@@ -18,8 +18,20 @@
 //!   With `-v` and `--wide` nothing is cut, and in the preview before a signal
 //!   (the thing a person approves) COMMAND is printed whole.
 //! - A value that is not known shows `-`, never an empty cell.
+//!
+//! `proc ports` prints the same table for listeners ([`port_table`]):
+//!
+//! ```text
+//!  PORT  PROTO  ADDRESS    EXPOSURE  PID    NAME     UPTIME  COMMAND
+//!  4000  TCP    127.0.0.1  local     39158  python3  13s     python3 -m http.server 4000
+//! ```
+//!
+//! The columns are `PORT PROTO ADDRESS EXPOSURE PID NAME UPTIME COMMAND`; with
+//! `-v` it adds `USER MEM` and the executable's path (`PATH`) before COMMAND,
+//! and cuts nothing. The process cells of a holder that ended since its port
+//! was listed show `-`; its port cells and the name its socket gave stay.
 
-use crate::core::{Process, ProcessStatus};
+use crate::core::{Exposure, PortInfo, Process, ProcessStatus};
 use crate::ui::card::known;
 use crate::ui::{format_duration, format_memory, truncate_path, truncate_string};
 use comfy_table::presets::NOTHING;
@@ -194,7 +206,7 @@ fn columns(layout: &TableLayout) -> Vec<Column> {
 /// and no trailing blank line), as the text the terminal gets.
 pub fn process_table(processes: &[Process], layout: &TableLayout) -> String {
     let columns = columns(layout);
-    let mut cells: Vec<Vec<String>> = processes
+    let cells: Vec<Vec<String>> = processes
         .iter()
         .map(|process| {
             columns
@@ -203,18 +215,54 @@ pub fn process_table(processes: &[Process], layout: &TableLayout) -> String {
                 .collect()
         })
         .collect();
+    let heads: Vec<Head> = columns
+        .iter()
+        .map(|column| Head {
+            title: column.header(),
+            alignment: column.alignment(),
+            is_dir: *column == Column::Dir,
+        })
+        .collect();
+    let colours: Vec<Vec<Option<Color>>> = processes
+        .iter()
+        .map(|process| {
+            columns
+                .iter()
+                .map(|column| column.colour(process))
+                .collect()
+        })
+        .collect();
+    lay_out(&heads, cells, &colours, layout)
+}
+
+/// What a column needs to be drawn, whatever the rows are
+struct Head {
+    title: &'static str,
+    alignment: CellAlignment,
+    /// The column is DIR: it is cut in the middle, to a share of the line
+    is_dir: bool,
+}
+
+/// Cut `cells` to the terminal and draw them under `heads`. The last column
+/// is COMMAND; the rows are the cells with the colour of each.
+fn lay_out(
+    heads: &[Head],
+    mut cells: Vec<Vec<String>>,
+    colours: &[Vec<Option<Color>>],
+    layout: &TableLayout,
+) -> String {
     let screen = layout.screen.width as usize;
-    let last = columns.len() - 1;
+    let last = heads.len() - 1;
     // A column is as wide as its widest cell or its header, plus the padding
     let width_of = |cells: &[Vec<String>], at: usize| {
         let widest = cells.iter().map(|row| row[at].width()).max().unwrap_or(0);
-        widest.max(columns[at].header().width()) + PADDING
+        widest.max(heads[at].title.width()) + PADDING
     };
 
     // DIR keeps its natural width unless that would squeeze COMMAND, or take
     // more than a third of the line
     if layout.cut_dir {
-        if let Some(at) = columns.iter().position(|column| *column == Column::Dir) {
+        if let Some(at) = heads.iter().position(|head| head.is_dir) {
             let others: usize = (0..last)
                 .filter(|other| *other != at)
                 .map(|other| width_of(&cells, other))
@@ -250,20 +298,401 @@ pub fn process_table(processes: &[Process], layout: &TableLayout) -> String {
     table
         .load_preset(NOTHING)
         .set_content_arrangement(ContentArrangement::Disabled);
-    table.set_header(columns.iter().map(|column| {
-        Cell::new(column.header())
+    table.set_header(heads.iter().map(|head| {
+        Cell::new(head.title)
             .fg(Color::Blue)
             .add_attribute(Attribute::Bold)
-            .set_alignment(column.alignment())
+            .set_alignment(head.alignment)
     }));
-    for (process, row) in processes.iter().zip(cells) {
-        table.add_row(columns.iter().zip(row).map(|(column, text)| {
-            let cell = Cell::new(text).set_alignment(column.alignment());
-            match column.colour(process) {
-                Some(colour) => cell.fg(colour),
-                None => cell,
-            }
-        }));
+    for (row, colours) in cells.into_iter().zip(colours) {
+        table.add_row(
+            heads
+                .iter()
+                .zip(row)
+                .zip(colours)
+                .map(|((head, text), colour)| {
+                    let cell = Cell::new(text).set_alignment(head.alignment);
+                    match colour {
+                        Some(colour) => cell.fg(*colour),
+                        None => cell,
+                    }
+                }),
+        );
     }
     table.to_string()
+}
+
+/// A listener with the process that holds it, for one row of the ports table.
+/// `process` is `None` when the holder ended since its port was listed.
+#[derive(Clone, Copy, Debug)]
+pub struct PortRow<'a> {
+    /// The listening socket
+    pub port: &'a PortInfo,
+    /// Its holder, when it still runs
+    pub process: Option<&'a Process>,
+}
+
+#[derive(Clone, Copy)]
+enum PortColumn {
+    Port,
+    Proto,
+    Address,
+    Exposure,
+    Pid,
+    Name,
+    User,
+    Mem,
+    Uptime,
+    Path,
+    Command,
+}
+
+impl PortColumn {
+    fn header(self) -> &'static str {
+        match self {
+            PortColumn::Port => "PORT",
+            PortColumn::Proto => "PROTO",
+            PortColumn::Address => "ADDRESS",
+            PortColumn::Exposure => "EXPOSURE",
+            PortColumn::Pid => "PID",
+            PortColumn::Name => "NAME",
+            PortColumn::User => "USER",
+            PortColumn::Mem => "MEM",
+            PortColumn::Uptime => "UPTIME",
+            PortColumn::Path => "PATH",
+            PortColumn::Command => "COMMAND",
+        }
+    }
+
+    /// The numbers that grow to the right line up on their right edge, as in
+    /// the process table
+    fn alignment(self) -> CellAlignment {
+        match self {
+            PortColumn::Mem | PortColumn::Uptime => CellAlignment::Right,
+            _ => CellAlignment::Left,
+        }
+    }
+
+    fn colour(self) -> Option<Color> {
+        match self {
+            PortColumn::Port | PortColumn::Pid => Some(Color::Cyan),
+            PortColumn::Name | PortColumn::Proto => Some(Color::White),
+            PortColumn::Address | PortColumn::Path | PortColumn::Command => Some(Color::DarkGrey),
+            PortColumn::Exposure => None,
+            PortColumn::User | PortColumn::Mem | PortColumn::Uptime => None,
+        }
+    }
+
+    fn text(self, row: &PortRow, layout: &TableLayout) -> String {
+        let unknown = || UNKNOWN.to_string();
+        match self {
+            PortColumn::Port => row.port.port.to_string(),
+            PortColumn::Proto => format!("{:?}", row.port.protocol).to_uppercase(),
+            PortColumn::Address => row.port.address.clone().unwrap_or_else(unknown),
+            PortColumn::Exposure => match row.port.exposure() {
+                Exposure::Local => "local",
+                Exposure::Exposed => "exposed",
+            }
+            .to_string(),
+            PortColumn::Pid => row.port.pid.to_string(),
+            // the one name every view shows; a holder that has ended keeps the
+            // name its socket gave
+            PortColumn::Name => row.port.process_name.clone(),
+            PortColumn::User => row
+                .process
+                .and_then(|p| known(&p.user))
+                .map_or_else(unknown, str::to_string),
+            PortColumn::Mem => row
+                .process
+                .map_or_else(unknown, |p| format_memory(p.memory_mb)),
+            PortColumn::Uptime => row
+                .process
+                .and_then(|p| p.start_time)
+                .map_or_else(unknown, |start| {
+                    format_duration(layout.screen.now_secs.saturating_sub(start))
+                }),
+            PortColumn::Path => row
+                .process
+                .and_then(|p| known(&p.exe_path))
+                .map_or_else(unknown, str::to_string),
+            PortColumn::Command => row
+                .process
+                .and_then(|p| known(&p.command))
+                .map_or_else(unknown, str::to_string),
+        }
+    }
+}
+
+/// The ports table's columns, left to right; COMMAND is last
+fn port_columns(layout: &TableLayout) -> Vec<PortColumn> {
+    let mut columns = vec![
+        PortColumn::Port,
+        PortColumn::Proto,
+        PortColumn::Address,
+        PortColumn::Exposure,
+        PortColumn::Pid,
+        PortColumn::Name,
+    ];
+    if layout.verbose {
+        columns.push(PortColumn::User);
+        columns.push(PortColumn::Mem);
+    }
+    columns.push(PortColumn::Uptime);
+    if layout.verbose {
+        columns.push(PortColumn::Path);
+    }
+    columns.push(PortColumn::Command);
+    columns
+}
+
+/// The table for `rows`, the listeners `proc ports` prints: a header line and
+/// a line per listener, on the same width policy as [`process_table`]
+pub fn port_table(rows: &[PortRow], layout: &TableLayout) -> String {
+    let columns = port_columns(layout);
+    let heads: Vec<Head> = columns
+        .iter()
+        .map(|column| Head {
+            title: column.header(),
+            alignment: column.alignment(),
+            is_dir: false,
+        })
+        .collect();
+    let cells: Vec<Vec<String>> = rows
+        .iter()
+        .map(|row| {
+            columns
+                .iter()
+                .map(|column| column.text(row, layout))
+                .collect()
+        })
+        .collect();
+    let colours: Vec<Vec<Option<Color>>> = rows
+        .iter()
+        .map(|_| columns.iter().map(|column| column.colour()).collect())
+        .collect();
+    lay_out(&heads, cells, &colours, layout)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::Protocol;
+
+    const NOW: u64 = 1_000_000;
+
+    fn screen(width: u16) -> Screen {
+        Screen {
+            width,
+            now_secs: NOW,
+        }
+    }
+
+    fn layout(width: u16, verbose: bool) -> TableLayout {
+        TableLayout::from_flags(screen(width), verbose, false, false)
+    }
+
+    /// The text of a table without colour codes, which comfy-table adds only
+    /// when stdout is a terminal
+    fn plain(table: &str) -> String {
+        let mut out = String::new();
+        let mut chars = table.chars();
+        while let Some(c) = chars.next() {
+            if c == '\x1b' {
+                for end in chars.by_ref() {
+                    if end.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    fn listener(port: u16, address: Option<&str>, pid: u32, name: &str) -> PortInfo {
+        PortInfo {
+            port,
+            protocol: Protocol::Tcp,
+            pid,
+            process_name: name.to_string(),
+            address: address.map(String::from),
+        }
+    }
+
+    fn holder(pid: u32, command: &str) -> Process {
+        Process {
+            pid,
+            name: "node".to_string(),
+            exe_path: Some("/opt/node/bin/node".to_string()),
+            cwd: None,
+            command: Some(command.to_string()),
+            argv0: None,
+            raw: None,
+            cpu_percent: 0.0,
+            memory_mb: 26.8,
+            status: ProcessStatus::Sleeping,
+            user: Some("zee".to_string()),
+            parent_pid: None,
+            start_time: Some(NOW - 13),
+            uptime_secs: Some(13),
+            parent_name: None,
+            cpu_time_secs: None,
+            open_files: None,
+            child_count: None,
+        }
+    }
+
+    fn cells(line: &str) -> Vec<&str> {
+        line.split_whitespace().collect()
+    }
+
+    #[test]
+    fn a_listener_shows_its_port_its_exposure_and_what_its_holder_is() {
+        let local = listener(4000, Some("127.0.0.1"), 7, "node");
+        let open = listener(80, Some("0.0.0.0"), 8, "node");
+        let node = holder(7, "node server.js");
+        let rows = [
+            PortRow {
+                port: &local,
+                process: Some(&node),
+            },
+            PortRow {
+                port: &open,
+                process: Some(&node),
+            },
+        ];
+        let table = plain(&port_table(&rows, &layout(120, false)));
+        let lines: Vec<&str> = table.lines().collect();
+        assert_eq!(
+            cells(lines[0]),
+            ["PORT", "PROTO", "ADDRESS", "EXPOSURE", "PID", "NAME", "UPTIME", "COMMAND"]
+        );
+        assert_eq!(
+            cells(lines[1]),
+            [
+                "4000",
+                "TCP",
+                "127.0.0.1",
+                "local",
+                "7",
+                "node",
+                "13s",
+                "node",
+                "server.js"
+            ]
+        );
+        assert_eq!(cells(lines[2])[3], "exposed");
+        assert_eq!(lines.len(), 3);
+    }
+
+    #[test]
+    fn what_is_not_known_shows_a_dash_and_a_gone_holder_keeps_its_port_cells() {
+        // no address: not known, so treated as reachable
+        let unbound = listener(4000, None, 7, "stale-name");
+        let gone = PortRow {
+            port: &unbound,
+            process: None,
+        };
+        let table = plain(&port_table(&[gone], &layout(120, true)));
+        let row = cells(table.lines().nth(1).unwrap());
+        // PORT PROTO ADDRESS EXPOSURE PID NAME USER MEM UPTIME PATH COMMAND
+        assert_eq!(
+            row,
+            [
+                "4000",
+                "TCP",
+                "-",
+                "exposed",
+                "7",
+                "stale-name",
+                "-",
+                "-",
+                "-",
+                "-",
+                "-"
+            ]
+        );
+
+        // a holder that does not say: empty text is as unknown as none
+        let mut quiet = holder(7, "");
+        quiet.user = Some(String::new());
+        quiet.exe_path = None;
+        quiet.start_time = None;
+        quiet.command = None;
+        let table = plain(&port_table(
+            &[PortRow {
+                port: &unbound,
+                process: Some(&quiet),
+            }],
+            &layout(120, true),
+        ));
+        let row = cells(table.lines().nth(1).unwrap());
+        assert_eq!(row[6], "-", "{row:?}");
+        assert_eq!(row[7], "26.8MB", "{row:?}");
+        assert_eq!(&row[8..], ["-", "-", "-"], "{row:?}");
+    }
+
+    #[test]
+    fn the_command_takes_the_width_left_and_is_cut_with_an_ellipsis() {
+        let port = listener(4000, Some("127.0.0.1"), 7, "node");
+        let long = "node ".to_string() + &"x".repeat(200);
+        let node = holder(7, &long);
+        let rows = [PortRow {
+            port: &port,
+            process: Some(&node),
+        }];
+        let table = plain(&port_table(&rows, &layout(80, false)));
+        let row = table.lines().nth(1).unwrap();
+        assert!(row.ends_with("… ") || row.ends_with('…'), "{row}");
+        assert!(row.trim_end().width() < 80, "{row}");
+        // the other columns keep their whole value
+        assert_eq!(
+            &cells(row)[..7],
+            ["4000", "TCP", "127.0.0.1", "local", "7", "node", "13s"]
+        );
+
+        // wide characters count as two columns each
+        let wide = holder(7, &"漢".repeat(100));
+        let rows = [PortRow {
+            port: &port,
+            process: Some(&wide),
+        }];
+        let table = plain(&port_table(&rows, &layout(80, false)));
+        for line in table.lines() {
+            assert!(line.trim_end().width() < 80, "{line}");
+        }
+        assert!(table.contains('…'), "{table}");
+    }
+
+    #[test]
+    fn verbose_adds_user_memory_and_path_and_cuts_nothing() {
+        let port = listener(4000, Some("127.0.0.1"), 7, "node");
+        let long = "node ".to_string() + &"x".repeat(200);
+        let node = holder(7, &long);
+        let rows = [PortRow {
+            port: &port,
+            process: Some(&node),
+        }];
+        let table = plain(&port_table(&rows, &layout(60, true)));
+        let lines: Vec<&str> = table.lines().collect();
+        assert_eq!(
+            cells(lines[0]),
+            [
+                "PORT", "PROTO", "ADDRESS", "EXPOSURE", "PID", "NAME", "USER", "MEM", "UPTIME",
+                "PATH", "COMMAND"
+            ]
+        );
+        assert!(!table.contains('…'), "{table}");
+        let row = cells(lines[1]);
+        assert_eq!(&row[6..10], ["zee", "26.8MB", "13s", "/opt/node/bin/node"]);
+        assert_eq!(row.last(), Some(&"x".repeat(200).as_str()));
+    }
+
+    #[test]
+    fn no_listeners_is_a_header_alone() {
+        let table = plain(&port_table(&[], &layout(120, false)));
+        assert_eq!(table.lines().count(), 1, "{table}");
+        assert!(table.contains("EXPOSURE"), "{table}");
+    }
 }

@@ -198,6 +198,8 @@ A process named twice is handled once, except by the read-only `on` and `why`, w
 
 **Tables.** `list`, `by`, `in`, `for` (several hits), `orphans`, `stuck`, `watch` and the list in front of every `--dry-run` or question print one table: `PID NAME USER CPU% MEM UPTIME COMMAND`. A value proc cannot read is `-`. COMMAND takes the width the other columns leave and ends with `…` where it is cut; the list you approve prints it whole. With `--in`, the directory is the second column. `--verbose` keeps the table, adds `PPID STATUS DIR` and cuts nothing.
 
+**Ports.** `ports` prints `PORT PROTO ADDRESS EXPOSURE PID NAME UPTIME COMMAND` (EXPOSURE is `local` or `exposed`), so each row says what the listener is. `--verbose` adds `USER MEM` and the executable's path (`PATH`) and cuts nothing; `--json` also gives `command`, `user`, `uptime_secs` and `memory_mb` per port, and with `-v` the connection counts.
+
 ## Filters
 
 Not every filter is on every command. `--in`, `--by` (short `-b`) and `--cmd` work on nearly all of them, including the ones that change processes. The rest narrow what the finding commands show:
@@ -228,7 +230,7 @@ Not every filter is on every command. `--in`, `--by` (short `-b`) and `--cmd` wo
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--json` | `-j` | JSON output |
-| `--verbose` | `-v` | Print every value whole. In a process table it adds PPID, STATUS and DIR and cuts nothing |
+| `--verbose` | `-v` | Print every value whole. In a process table it adds PPID, STATUS and DIR and cuts nothing; in `ports` it adds USER, MEM and PATH (JSON: `exe_path` and `connections`) |
 | `--wide` | `-w` | The directory and the command line whole, instead of fitting the terminal (`list`, `by`, `in`, `for`, `stuck`, `orphans`, `watch`) |
 | `--yes` | `-y` | Skip confirmation; required with `--json` or without a terminal, where nobody can be asked |
 | `--dry-run` | | Preview without executing |

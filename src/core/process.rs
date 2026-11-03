@@ -791,6 +791,36 @@ impl Process {
         }))
     }
 
+    /// The running processes among `pids`, PID ascending, each read in full
+    /// (name, command line, user, memory, start time, executable) by one
+    /// refresh of exactly those PIDs rather than of the whole process table. A
+    /// PID that is gone is missing from the answer. The parent's name and the
+    /// number of children are not filled: they need the whole table (see
+    /// [`Process::find_all`]).
+    pub fn find_by_pids(pids: &[u32]) -> Vec<Process> {
+        // a PID asked for twice would be refreshed twice, and sysinfo takes the
+        // second refresh of one as the process having ended
+        let mut once = pids.to_vec();
+        once.sort_unstable();
+        once.dedup();
+        let wanted: Vec<Pid> = once.into_iter().map(Pid::from_u32).collect();
+        let mut sys = System::new();
+        sysinfo_locked(|| {
+            sys.refresh_processes_specifics(
+                sysinfo::ProcessesToUpdate::Some(&wanted),
+                true,
+                sysinfo::ProcessRefreshKind::everything(),
+            )
+        });
+        let mut found: Vec<Process> = sys
+            .processes()
+            .iter()
+            .map(|(pid, proc)| Process::from_sysinfo(*pid, proc))
+            .collect();
+        found.sort_by_key(|p| p.pid);
+        found
+    }
+
     /// Get all running processes (excludes proc's own process)
     pub fn find_all() -> Result<Vec<Process>> {
         let sys = refreshed_system();
@@ -1412,6 +1442,24 @@ mod tests {
         let record = Process::find_by_pid(me).unwrap().unwrap();
         assert_eq!(names.get(&me), Some(&record.name));
         assert!(!names.contains_key(&4_000_000), "a PID nobody holds");
+    }
+
+    #[test]
+    fn find_by_pids_reads_the_processes_asked_for_in_full() {
+        let me = std::process::id();
+        // asked twice and out of order, with a PID nobody holds
+        let found = Process::find_by_pids(&[4_000_000, me, me]);
+        assert_eq!(found.len(), 1, "{found:?}");
+        let record = Process::find_by_pid(me).unwrap().unwrap();
+        let mine = &found[0];
+        assert_eq!(mine.pid, me);
+        assert_eq!(mine.name, record.name);
+        assert_eq!(mine.command, record.command);
+        assert_eq!(mine.user, record.user);
+        assert_eq!(mine.exe_path, record.exe_path);
+        assert_eq!(mine.start_time, record.start_time);
+        assert!(mine.memory_mb > 0.0);
+        assert!(Process::find_by_pids(&[]).is_empty());
     }
 
     #[test]

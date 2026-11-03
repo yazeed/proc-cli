@@ -125,7 +125,7 @@ Aliases: `on` `:`; `for` `f`; `by` `b`; `list` `l` `ps`; `info` `i` `inspect`; `
 | `in` | one directory | Processes whose cwd is under the directory. |
 | `list` | optional names | All processes, or those named. |
 | `info` | targets | Full detail for each target. |
-| `ports` | none | Listening TCP ports. |
+| `ports` | none | Listening TCP ports, each with its holder's name, uptime and command. |
 | `why` | targets | Ancestry of a port holder or process. |
 | `tree` | optional target | Descendants (default) or `--ancestors`. |
 | `watch` | optional targets | Refreshing table, or NDJSON with `--json`. |
@@ -242,6 +242,13 @@ No target found: `success: false`, exit 2. Some found: `success: true`, the rest
 ### ports
 
 `{"action": "ports", "success": true, "count": 12, "ports": [<Port>, ...]}`
+
+Each port object is the port (as above) and what holds it, from the holder's process: `command`, `user`, `uptime_secs` and `memory_mb`. A key is absent when the OS does not give the value, or when the holder exited between listing the port and reading it (the port keys stay), never `null`. With `--verbose` a port also has `exe_path` and `connections` (`total` and `by_state` only, no `peers`: the connections that came in on this process's own sockets; absent where the OS reads none, as on FreeBSD and NetBSD). A process that holds a port on both `127.0.0.1` and `::1` has two rows with the same counts.
+
+```json
+{ "port": 3000, "protocol": "tcp", "pid": 1234, "process_name": "node", "address": "127.0.0.1", "exposure": "local",
+  "command": "node server.js", "user": "zee", "uptime_secs": 34, "memory_mb": 41.5 }
+```
 
 ### on
 

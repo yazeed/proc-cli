@@ -64,7 +64,7 @@
 - q: How do I list all open or listening ports?
   id: list-listening-ports
   a: |
-    `proc ports` lists every listening port with the process behind it. `--exposed` shows only ports reachable from other machines, and `--local` only those bound to localhost.
+    `proc ports` lists every listening port with the process behind it: its name, uptime and command, and whether the port is `local` or `exposed`. `--exposed` shows only ports reachable from other machines, and `--local` only those bound to localhost.
 
     ```bash
     proc ports

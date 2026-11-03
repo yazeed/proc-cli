@@ -25,12 +25,21 @@ pub(crate) struct HeldPort {
     pub(crate) connections: Option<Connections>,
 }
 
-/// The counts of `Connections`, as a port of `on <pid>` or `info` carries them:
-/// no peers
+/// The counts of `Connections`, as a port of `on <pid>`, `info` or `ports -v`
+/// carries them: no peers
 #[derive(Serialize)]
-struct Counts<'a> {
+pub(crate) struct Counts<'a> {
     total: usize,
     by_state: &'a BTreeMap<String, usize>,
+}
+
+impl<'a> Counts<'a> {
+    pub(crate) fn of(found: &'a Connections) -> Self {
+        Counts {
+            total: found.total,
+            by_state: &found.by_state,
+        }
+    }
 }
 
 /// A port as JSON: the port, then its connection counts
@@ -45,10 +54,7 @@ impl Serialize for HeldPort {
         }
         Json {
             port: &self.port,
-            connections: self.connections.as_ref().map(|found| Counts {
-                total: found.total,
-                by_state: &found.by_state,
-            }),
+            connections: self.connections.as_ref().map(Counts::of),
         }
         .serialize(serializer)
     }
@@ -708,9 +714,11 @@ mod tests {
         assert_eq!(mine.len(), 1, "{held:?}");
         // the BSDs read none: the key is absent there, never an empty count
         assert_eq!(mine[0].connections.is_some(), READS_CONNECTIONS);
-        if let Some(found) = mine[0].connections.as_ref() {
-            assert!(found.total >= 1, "{found:?}");
-        }
+        let found = mine[0].connections.as_ref();
+        assert!(
+            found.map_or(!READS_CONNECTIONS, |f| f.total >= 1),
+            "{found:?}"
+        );
         drop(client);
     }
 }

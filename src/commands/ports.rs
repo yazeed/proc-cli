@@ -6,13 +6,18 @@
 //!   proc ports --by node --cmd  # ... or with node anywhere in their command line
 //!   proc ports --exposed    # Only network-accessible ports (0.0.0.0, ::)
 //!   proc ports --local      # Only localhost ports (127.0.0.1, ::1)
-//!   proc ports -v           # Show with executable paths
+//!   proc ports -v           # Add user, memory, executable path and the connection counts (JSON)
 
+use crate::commands::held::{ConnectionReader, Counts};
 use crate::core::{
-    matches_name, resolve_in_dir, sort_ports, NameMatch, Names, PortInfo, PortSortKey, Process,
+    matches_name, resolve_in_dir, sort_ports, Connections, NameMatch, Names, PortInfo, PortSortKey,
+    Process,
 };
 use crate::error::Result;
-use crate::ui::{out, truncate_string, Printer};
+use crate::ui::card::known;
+use crate::ui::output::screen_now;
+use crate::ui::table::{port_table, PortRow, Screen, TableLayout};
+use crate::ui::{out, Printer};
 use clap::Args;
 use colored::*;
 use serde::Serialize;
@@ -87,7 +92,7 @@ pub struct PortsCommand {
     #[arg(long, short = 'j')]
     pub json: bool,
 
-    /// Show verbose output (includes executable path)
+    /// Show verbose output (adds USER, MEM and the executable path; JSON adds the connection counts; nothing is cut)
     #[arg(long, short = 'v')]
     pub verbose: bool,
 
@@ -104,34 +109,48 @@ pub struct PortsCommand {
     pub range: Option<(u16, u16)>,
 }
 
+/// The holders of `ports` as processes, read in one go: a holder that ended
+/// since its port was listed has no entry
+fn holders_of(ports: &[PortInfo]) -> HashMap<u32, Process> {
+    let pids: Vec<u32> = ports
+        .iter()
+        .map(|p| p.pid)
+        .collect::<HashSet<u32>>()
+        .into_iter()
+        .collect();
+    Process::find_by_pids(&pids)
+        .into_iter()
+        .map(|p| (p.pid, p))
+        .collect()
+}
+
+/// The connections that came in on each listener's own sockets, by port and
+/// holder, from one reading of the socket table. `listening` is every listening
+/// socket, so a port several processes hold is split between them. A listener
+/// whose connections the OS does not give (the BSDs, or a reading that failed)
+/// has no entry.
+fn connections_of_each(
+    listening: Vec<PortInfo>,
+    ports: &[PortInfo],
+) -> HashMap<(u16, u32), Connections> {
+    let mut reader = ConnectionReader::new(listening, 0, true);
+    let numbers: Vec<u16> = ports.iter().map(|p| p.port).collect();
+    reader.read_now(&numbers);
+    ports
+        .iter()
+        .filter_map(|p| Some(((p.port, p.pid), reader.of_holder(p.port, p.pid)?)))
+        .collect()
+}
+
 impl PortsCommand {
     /// Executes the ports command, listing all listening TCP ports.
     pub fn execute(&self) -> Result<()> {
         let mut ports = PortInfo::get_all_listening()?;
+        // `-v` counts the connections of each listener, which takes every
+        // process that holds the port, whatever the filters keep
+        let listening = self.verbose.then(|| ports.clone());
 
-        // Filter by process name if specified
-        if let Some(ref name) = self.by_name {
-            let mode = NameMatch::from_flag(self.cmd);
-            let running: HashMap<u32, Process> = Process::find_all()?
-                .into_iter()
-                .map(|p| (p.pid, p))
-                .collect();
-            ports.retain(|p| port_named(p, running.get(&p.pid), name, mode));
-        }
-
-        // Filter by directory if specified
         let in_dir_filter = resolve_in_dir(&self.in_dir)?;
-        if let Some(ref dir_path) = in_dir_filter {
-            ports.retain(|p| {
-                cwd_within(
-                    Process::find_by_pid(p.pid).ok().flatten().as_ref(),
-                    dir_path,
-                )
-            });
-        }
-        // A deleted directory is kept while a process still runs in it, also
-        // one that listens on nothing: it is a directory, with no ports
-        crate::core::require_in_dir_live(&self.in_dir, &in_dir_filter)?;
 
         // Filter by address exposure
         if self.exposed {
@@ -147,6 +166,26 @@ impl PortsCommand {
             ports.retain(|p| p.port >= start && p.port <= end);
         }
 
+        // The holders of the ports that are left, read once for the filters
+        // by process and for the columns
+        let mut holders = None;
+        if self.by_name.is_some() || in_dir_filter.is_some() {
+            let running = holders_of(&ports);
+            // Filter by process name if specified
+            if let Some(ref name) = self.by_name {
+                let mode = NameMatch::from_flag(self.cmd);
+                ports.retain(|p| port_named(p, running.get(&p.pid), name, mode));
+            }
+            // Filter by directory if specified
+            if let Some(ref dir_path) = in_dir_filter {
+                ports.retain(|p| cwd_within(running.get(&p.pid), dir_path));
+            }
+            holders = Some(running);
+        }
+        // A deleted directory is kept while a process still runs in it, also
+        // one that listens on nothing: it is a directory, with no ports
+        crate::core::require_in_dir_live(&self.in_dir, &in_dir_filter)?;
+
         // Sort ports: ties come by port, then PID
         sort_ports(&mut ports, self.sort);
 
@@ -155,25 +194,24 @@ impl PortsCommand {
             ports.truncate(limit);
         }
 
-        // In verbose mode, fetch process info for paths
-        let process_map: HashMap<u32, Process> = if self.verbose {
-            // One lookup per PID; a process that ended since its port was listed has no entry
-            let pids: HashSet<u32> = ports.iter().map(|p| p.pid).collect();
-            pids.into_iter()
-                .filter_map(|pid| {
-                    let proc = Process::find_by_pid(pid).ok().flatten()?;
-                    Some((pid, proc))
-                })
-                .collect()
-        } else {
-            HashMap::new()
+        let holders = holders.unwrap_or_else(|| holders_of(&ports));
+        let connections = match listening {
+            Some(listening) => connections_of_each(listening, &ports),
+            None => HashMap::new(),
         };
 
         if self.json {
-            self.print_json(&ports, &process_map);
+            self.print_json(&ports, &holders, &connections);
         } else {
+            let rows: Vec<PortRow> = ports
+                .iter()
+                .map(|port| PortRow {
+                    port,
+                    process: holders.get(&port.pid),
+                })
+                .collect();
             // A failed write is recorded by `out`, which decides the exit code
-            out::recorded(self.print_human(&mut out::stdout(), &ports, &process_map));
+            out::recorded(self.print_human(&mut out::stdout(), &rows, screen_now()));
         }
 
         Ok(())
@@ -182,10 +220,10 @@ impl PortsCommand {
     fn print_human(
         &self,
         out: &mut impl Write,
-        ports: &[PortInfo],
-        process_map: &HashMap<u32, Process>,
+        rows: &[PortRow],
+        screen: Screen,
     ) -> std::io::Result<()> {
-        if ports.is_empty() {
+        if rows.is_empty() {
             return writeln!(out, "{} No listening ports found", "⚠".yellow().bold());
         }
 
@@ -193,64 +231,41 @@ impl PortsCommand {
             out,
             "{} Found {} listening port{}",
             "✓".green().bold(),
-            ports.len().to_string().cyan().bold(),
-            if ports.len() == 1 { "" } else { "s" }
+            rows.len().to_string().cyan().bold(),
+            if rows.len() == 1 { "" } else { "s" }
         )?;
         writeln!(out)?;
 
-        // Header
-        writeln!(
-            out,
-            "{:<8} {:<10} {:<8} {:<20} {:<15}",
-            "PORT".bright_blue().bold(),
-            "PROTO".bright_blue().bold(),
-            "PID".bright_blue().bold(),
-            "PROCESS".bright_blue().bold(),
-            "ADDRESS".bright_blue().bold()
-        )?;
-        writeln!(out, "{}", "─".repeat(65).bright_black())?;
-
-        for port in ports {
-            let addr = port.address.as_deref().unwrap_or("*");
-            let proto = format!("{:?}", port.protocol).to_uppercase();
-
-            writeln!(
-                out,
-                "{:<8} {:<10} {:<8} {:<20} {:<15}",
-                port.port.to_string().cyan().bold(),
-                proto.white(),
-                port.pid.to_string().cyan(),
-                truncate_string(&port.process_name, 19).white(),
-                addr.bright_black()
-            )?;
-
-            // In verbose mode, show path
-            if self.verbose {
-                if let Some(proc) = process_map.get(&port.pid) {
-                    if let Some(ref path) = proc.exe_path {
-                        writeln!(
-                            out,
-                            "         {} {}",
-                            "↳".bright_black(),
-                            truncate_string(path, 55).bright_black()
-                        )?;
-                    }
-                }
-            }
-        }
+        // `-v` cuts nothing and adds USER, MEM and PATH
+        let layout = TableLayout::from_flags(screen, self.verbose, false, false);
+        writeln!(out, "{}", port_table(rows, &layout))?;
         writeln!(out)
     }
 
-    fn print_json(&self, ports: &[PortInfo], process_map: &HashMap<u32, Process>) {
+    fn print_json(
+        &self,
+        ports: &[PortInfo],
+        holders: &HashMap<u32, Process>,
+        connections: &HashMap<(u16, u32), Connections>,
+    ) {
         let printer = Printer::from_flags(true, self.verbose);
 
         let enriched: Vec<PortWithProcess> = ports
             .iter()
-            .map(|p| PortWithProcess {
-                port: p,
-                exe_path: process_map
-                    .get(&p.pid)
-                    .and_then(|proc| proc.exe_path.as_deref()),
+            .map(|p| {
+                let process = holders.get(&p.pid);
+                PortWithProcess {
+                    port: p,
+                    // the path is for `-v`, as it has always been
+                    exe_path: process
+                        .filter(|_| self.verbose)
+                        .and_then(|proc| proc.exe_path.as_deref()),
+                    command: process.and_then(|proc| known(&proc.command)),
+                    user: process.and_then(|proc| known(&proc.user)),
+                    uptime_secs: process.and_then(|proc| proc.uptime_secs),
+                    memory_mb: process.map(|proc| proc.memory_mb),
+                    connections: connections.get(&(p.port, p.pid)).map(Counts::of),
+                }
             })
             .collect();
 
@@ -263,12 +278,26 @@ impl PortsCommand {
     }
 }
 
+/// A port as JSON: the listener (its keys and their order are those `ports` has
+/// always had, with `exposure` last), then what its holder is, from the
+/// holder's process; a value the OS does not give is a missing key. The
+/// connection counts come only with `-v`.
 #[derive(Serialize)]
 struct PortWithProcess<'a> {
     #[serde(flatten)]
     port: &'a PortInfo,
     #[serde(skip_serializing_if = "Option::is_none")]
     exe_path: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    command: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    user: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    uptime_secs: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    memory_mb: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    connections: Option<Counts<'a>>,
 }
 
 #[derive(Serialize)]
@@ -284,6 +313,7 @@ mod tests {
     use super::*;
     use crate::core::{ProcessStatus, Protocol};
     use crate::test_support::assert_stops_at_a_failed_write;
+    use crate::ui::table::{PortRow, Screen};
 
     fn process(cwd: Option<&str>, exe_path: Option<&str>) -> Process {
         Process {
@@ -358,91 +388,37 @@ mod tests {
         assert!(!cwd_within(None, dir));
     }
 
-    #[test]
-    fn verbose_listing_shows_a_path_only_when_the_process_has_one() {
-        colored::control::set_override(false);
-        let cmd = PortsCommand {
+    fn listing(verbose: bool) -> PortsCommand {
+        PortsCommand {
             by_name: None,
             cmd: false,
             in_dir: None,
             exposed: false,
             local: false,
             json: false,
-            verbose: true,
+            verbose,
             sort: PortSortKey::Port,
             limit: None,
             range: None,
-        };
-        let port = PortInfo {
-            port: 4000,
-            protocol: Protocol::Tcp,
-            pid: 1,
-            process_name: "x".to_string(),
-            address: None,
-        };
-        let listing = |map: &HashMap<u32, Process>| {
-            let mut out = Vec::new();
-            cmd.print_human(&mut out, std::slice::from_ref(&port), map)
-                .unwrap();
-            String::from_utf8(out).unwrap()
-        };
-
-        // The row is there, with `*` for the missing address, in every case
-        let without_entry = listing(&HashMap::new());
-        let row = without_entry
-            .lines()
-            .find(|l| l.starts_with("4000"))
-            .unwrap();
-        assert!(
-            row.contains("TCP") && row.trim_end().ends_with('*'),
-            "{row}"
-        );
-        assert!(!without_entry.contains('↳'), "{without_entry}");
-
-        let without_path = listing(&HashMap::from([(1, process(None, None))]));
-        assert!(!without_path.contains('↳'), "{without_path}");
-
-        let with_path = listing(&HashMap::from([(1, process(None, Some("/bin/x")))]));
-        assert!(with_path.contains("↳ /bin/x\n"), "{with_path}");
+        }
     }
 
-    #[test]
-    fn an_empty_listing_says_so() {
-        colored::control::set_override(false);
-        let cmd = PortsCommand {
-            by_name: None,
-            cmd: false,
-            in_dir: None,
-            exposed: false,
-            local: false,
-            json: false,
-            verbose: false,
-            sort: PortSortKey::Port,
-            limit: None,
-            range: None,
-        };
+    fn screen() -> Screen {
+        Screen {
+            width: 120,
+            now_secs: 1_000,
+        }
+    }
+
+    fn printed(cmd: &PortsCommand, rows: &[PortRow]) -> String {
         let mut out = Vec::new();
-        cmd.print_human(&mut out, &[], &HashMap::new()).unwrap();
-        assert_eq!(
-            String::from_utf8(out).unwrap(),
-            "⚠ No listening ports found\n"
-        );
+        cmd.print_human(&mut out, rows, screen()).unwrap();
+        String::from_utf8(out).unwrap()
     }
 
     #[test]
-    fn a_failed_write_ends_the_listing() {
-        let cmd = PortsCommand {
-            by_name: None,
-            cmd: false,
-            in_dir: None,
-            exposed: false,
-            local: false,
-            json: false,
-            verbose: true,
-            sort: PortSortKey::Port,
-            limit: None,
-            range: None,
-        };
+    fn the_listing_is_the_shared_table_under_a_headline() {
+        colored::control::set_override(false);
         let port = PortInfo {
             port: 4000,
             protocol: Protocol::Tcp,
@@ -450,10 +426,103 @@ mod tests {
             process_name: "x".to_string(),
             address: Some("127.0.0.1".to_string()),
         };
-        let with_path = HashMap::from([(1, process(None, Some("/bin/x")))]);
-        assert_stops_at_a_failed_write(|w| {
-            cmd.print_human(w, std::slice::from_ref(&port), &with_path)
-        });
-        assert_stops_at_a_failed_write(|w| cmd.print_human(w, &[], &HashMap::new()));
+        let mut holder = process(None, Some("/bin/x"));
+        holder.command = Some("/bin/x --serve".to_string());
+        holder.start_time = Some(970);
+        let row = |process| PortRow {
+            port: &port,
+            process,
+        };
+
+        let out = printed(&listing(false), &[row(Some(&holder))]);
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines[0], "✓ Found 1 listening port");
+        assert_eq!(lines[1], "");
+        assert!(lines[2].contains("EXPOSURE"), "{out}");
+        assert!(
+            lines[3].contains("30s") && lines[3].contains("/bin/x --serve"),
+            "{out}"
+        );
+        assert!(!lines[2].contains("PATH"), "{out}");
+        assert_eq!(lines.len(), 5, "{out}");
+        assert_eq!(lines[4], "");
+
+        // a holder that ended: the port's cells stay, the process's are dashes
+        let gone = printed(&listing(true), &[row(None)]);
+        let line = gone.lines().nth(3).unwrap();
+        assert!(
+            line.contains("4000") && line.contains("127.0.0.1"),
+            "{gone}"
+        );
+        assert!(line.trim_end().ends_with('-'), "{gone}");
+        assert!(gone.lines().nth(2).unwrap().contains("PATH"), "{gone}");
+    }
+
+    #[test]
+    fn an_empty_listing_says_so() {
+        colored::control::set_override(false);
+        assert_eq!(
+            printed(&listing(false), &[]),
+            "⚠ No listening ports found\n"
+        );
+    }
+
+    #[test]
+    fn a_failed_write_ends_the_listing() {
+        let port = PortInfo {
+            port: 4000,
+            protocol: Protocol::Tcp,
+            pid: 1,
+            process_name: "x".to_string(),
+            address: Some("127.0.0.1".to_string()),
+        };
+        let holder = process(None, Some("/bin/x"));
+        let cmd = listing(true);
+        let rows = [PortRow {
+            port: &port,
+            process: Some(&holder),
+        }];
+        assert_stops_at_a_failed_write(|w| cmd.print_human(w, &rows, screen()));
+        assert_stops_at_a_failed_write(|w| cmd.print_human(w, &[], screen()));
+    }
+
+    #[test]
+    fn holders_are_read_once_and_a_gone_one_is_missing() {
+        let me = std::process::id();
+        let mut mine = listed("x");
+        mine.pid = me;
+        let mut gone = listed("y");
+        gone.pid = 4_000_000;
+        let found = holders_of(&[mine.clone(), mine, gone]);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[&me].command.is_some());
+        assert!(holders_of(&[]).is_empty());
+    }
+
+    /// The connections of each listener come from one reading of the socket
+    /// table; a listener nobody holds in it has none
+    #[test]
+    #[cfg_attr(
+        any(target_os = "freebsd", target_os = "netbsd"),
+        ignore = "the BSDs read no connections"
+    )]
+    fn each_listener_gets_the_connections_that_came_in_on_its_port() {
+        let server = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = server.local_addr().unwrap().port();
+        let _clients: Vec<_> = (0..2)
+            .map(|_| std::net::TcpStream::connect(("127.0.0.1", port)).unwrap())
+            .collect();
+        let mine = PortInfo {
+            port,
+            protocol: Protocol::Tcp,
+            pid: std::process::id(),
+            process_name: "x".to_string(),
+            address: Some("127.0.0.1".to_string()),
+        };
+        let counted = connections_of_each(vec![mine.clone()], std::slice::from_ref(&mine));
+        let found = &counted[&(port, mine.pid)];
+        assert_eq!(found.total, 2, "{found:?}");
+        assert_eq!(found.by_state["established"], 2);
+        assert!(found.peers.is_empty(), "counts only");
     }
 }

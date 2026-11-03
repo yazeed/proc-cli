@@ -97,7 +97,7 @@ groups:
           - t: ""
             kind: none
             rule: "No target: proc looks at every listening port."
-            text: "Lists every listening port and the process behind it."
+            text: "Lists every listening port, whether it is local or exposed, and the process behind it with its uptime and command."
           - t: "--exposed"
             rule: "<code>--exposed</code> keeps ports listening on 0.0.0.0 or ::, and <code>--local</code> the localhost ones."
             text: "Only the ports other machines can reach, the ones worth checking."
