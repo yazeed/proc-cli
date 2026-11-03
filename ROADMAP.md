@@ -154,6 +154,10 @@ One health check after a crash or a messy session: port conflicts, orphans, stuc
 
 `proc on`, `ports` and `free` only see TCP listeners. **Open:** how UDP sockets show up in each command without making TCP output noisier.
 
+### Connection counts per listening socket
+
+`ports` and `on <pid>` give a process listening on one port number at two addresses (`127.0.0.1` and `::1`) the same `connections` counts on both rows, because a connection is credited to a holder, not to the socket it came in on. **Open:** record each connection's local address in `src/core/connections.rs`, so counts split per (holder, local address) and summing rows no longer counts twice.
+
 ### `tree` children in start order
 
 `tree` lists siblings by PID. PIDs wrap and get reused, so PID order isn't spawn order: on one Mac, 9-21% of adjacent siblings had the higher PID as the older process. A tree is read top to bottom as "what started what", so start time (PID as the tie-break) is the natural order.

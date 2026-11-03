@@ -253,19 +253,12 @@ impl PortsCommand {
         let enriched: Vec<PortWithProcess> = ports
             .iter()
             .map(|p| {
-                let process = holders.get(&p.pid);
-                PortWithProcess {
-                    port: p,
-                    // the path is for `-v`, as it has always been
-                    exe_path: process
-                        .filter(|_| self.verbose)
-                        .and_then(|proc| proc.exe_path.as_deref()),
-                    command: process.and_then(|proc| known(&proc.command)),
-                    user: process.and_then(|proc| known(&proc.user)),
-                    uptime_secs: process.and_then(|proc| proc.uptime_secs),
-                    memory_mb: process.map(|proc| proc.memory_mb),
-                    connections: connections.get(&(p.port, p.pid)).map(Counts::of),
-                }
+                enrich(
+                    p,
+                    holders.get(&p.pid),
+                    self.verbose,
+                    connections.get(&(p.port, p.pid)),
+                )
             })
             .collect();
 
@@ -275,6 +268,28 @@ impl PortsCommand {
             count: ports.len(),
             ports: enriched,
         });
+    }
+}
+
+/// A port with what its holder is. The path is for `-v`, as it has always
+/// been; a value the OS did not give is left out.
+fn enrich<'a>(
+    port: &'a PortInfo,
+    process: Option<&'a Process>,
+    verbose: bool,
+    connections: Option<&'a Connections>,
+) -> PortWithProcess<'a> {
+    PortWithProcess {
+        port,
+        exe_path: process
+            .filter(|_| verbose)
+            .and_then(|proc| proc.exe_path.as_deref()),
+        command: process.and_then(|proc| known(&proc.command)),
+        user: process.and_then(|proc| known(&proc.user)),
+        uptime_secs: process.and_then(|proc| proc.uptime_secs),
+        // 0 is what an unread value is in `Process`: unknown, so no key
+        memory_mb: process.map(|proc| proc.memory_mb).filter(|mb| *mb > 0.0),
+        connections: connections.map(Counts::of),
     }
 }
 
@@ -456,6 +471,25 @@ mod tests {
         );
         assert!(line.trim_end().ends_with('-'), "{gone}");
         assert!(gone.lines().nth(2).unwrap().contains("PATH"), "{gone}");
+    }
+
+    #[test]
+    fn memory_the_os_refused_is_a_missing_key() {
+        let port = listed("x");
+        let mut holder = process(None, Some("/bin/x"));
+        holder.memory_mb = 0.0;
+        let json = serde_json::to_value(enrich(&port, Some(&holder), true, None)).unwrap();
+        assert!(json.get("memory_mb").is_none(), "{json}");
+        assert_eq!(json["exe_path"], "/bin/x");
+
+        holder.memory_mb = 41.5;
+        let json = serde_json::to_value(enrich(&port, Some(&holder), false, None)).unwrap();
+        assert_eq!(json["memory_mb"], 41.5);
+        assert!(json.get("exe_path").is_none(), "{json}");
+
+        // a holder that ended: only the port
+        let json = serde_json::to_value(enrich(&port, None, true, None)).unwrap();
+        assert!(json.get("memory_mb").is_none() && json.get("command").is_none());
     }
 
     #[test]

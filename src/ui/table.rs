@@ -404,6 +404,7 @@ impl PortColumn {
                 .map_or_else(unknown, str::to_string),
             PortColumn::Mem => row
                 .process
+                .filter(|p| p.memory_mb > 0.0)
                 .map_or_else(unknown, |p| format_memory(p.memory_mb)),
             PortColumn::Uptime => row
                 .process
@@ -620,6 +621,8 @@ mod tests {
         quiet.exe_path = None;
         quiet.start_time = None;
         quiet.command = None;
+        // memory the OS refused reads 0: unknown
+        quiet.memory_mb = 0.0;
         let table = plain(&port_table(
             &[PortRow {
                 port: &unbound,
@@ -629,7 +632,7 @@ mod tests {
         ));
         let row = cells(table.lines().nth(1).unwrap());
         assert_eq!(row[6], "-", "{row:?}");
-        assert_eq!(row[7], "26.8MB", "{row:?}");
+        assert_eq!(row[7], "-", "{row:?}");
         assert_eq!(&row[8..], ["-", "-", "-"], "{row:?}");
     }
 

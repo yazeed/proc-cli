@@ -54,7 +54,7 @@ proc ports --in .
 
 ## JSON
 
-Each port has its listener (`port`, `protocol`, `pid`, `process_name`, `address`, `exposure`) and its holder's `command`, `user`, `uptime_secs` and `memory_mb`; a key is left out when the OS does not give it. With `--verbose` it also has `exe_path` and `connections` (`total` and `by_state`).
+Each port has its listener (`port`, `protocol`, `pid`, `process_name`, `address`, `exposure`) and its holder's `command`, `user`, `uptime_secs` and `memory_mb`; a key is left out when the OS does not give it (`memory_mb` too when the memory could not be read, and MEM then shows `-`). With `--verbose` it also has `exe_path` and `connections` (`total` and `by_state`).
 
 ```json
 { "port": 3000, "protocol": "tcp", "pid": 1234, "process_name": "node", "address": "127.0.0.1",
