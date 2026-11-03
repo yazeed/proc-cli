@@ -38,13 +38,46 @@ The flake is done (see the CHANGELOG): it reads its version from Cargo.toml, has
 
 **Open:** when nixpkgs merges the package. (The macOS Nix job passes with nothing skipped: its sandbox needed Apple's `ps` and nixpkgs' `lsof` as check inputs.)
 
+## Decided, not yet scheduled
+
+### A convention for guesses
+
+"If you have to read the docs, we failed" (PHILOSOPHY.md, "Obvious") is the standard, and proc misses it where people guess. Tried with 2.2.0:
+
+- `proc kill 3000` and `proc on 3000` read 3000 as a PID and say "Try: proc list". Nothing mentions `:3000`, though freeing a port is proc's main job and `kill-port 3000` is the habit people bring.
+- `proc kill -9 node`, `proc stop --force node` and `proc kill --all node` stop at a parser error with no tip.
+- Some tips match the spelling, not the meaning: `proc list --port 5000` suggests `--sort`, `proc kill node --signal 9` suggests `--in`, and `proc what :5000` and `proc who :5000` suggest `wait`, `watch` and `why` instead of `on`.
+- `proc ps aux` takes `aux` as a name and exits 0 with "No processes found".
+- `p` is `ports` while `ps` is `list`, and `i` (`info`) sits next to `in`. `-n` is `--limit` in five commands and `--interval` in two. `list aux` exits 0 where `by aux` exits 2 (documented, but a second rule to learn).
+
+Already right: `info :5000`, `list node`, `list --sort mem`, `free 5000` (its error names `:5000`), `help kill`, and `proc port` (did you mean `ports`).
+
+These get fixed together, from one convention, not one error message at a time:
+
+1. **Collect the guesses** before deciding anything: the spellings of the tools people come from (`kill`, `pkill`, `killall`, `fuser`, `lsof`, `ps`, `top`, `htop`, `netstat`, `ss`, `kill-port`), the agent evals in `skills/proc-cli/evals.md`, and first-run sessions of people who have never used proc.
+2. **Give every guess one of three answers.** It works, because it is a habit proc can take in one meaning (proc then says what it did in its own words); it teaches, with an error that names the right command and why; or it is a plain error. A guess never makes proc act on a reading the user didn't type ("Explicit"): a hint can say "port 3000 is `:3000`", but `kill 3000` never kills what is on port 3000.
+3. **Write the convention down** in CONTRIBUTING.md, with the table of guesses and their answers, and a test for each guess, so every new command and flag is checked against it.
+4. **Change the code in one release**, with the CHANGELOG giving each guess's answer. Anything that changes what an existing spelling does (`-n`, the aliases) waits for a major release, with a deprecation notice first.
+
+This takes in the candidates "Errors that name what you meant", "Signal words, not numbers", "`proc :3000`" and "One meaning for `-n`" below, and the human clock is how it is measured: time to a correct answer for someone new, before and after.
+
+**Feature test:** obvious, explicit, and one spelling per intent with habits kept (PHILOSOPHY.md, "Easy to Remember"). **Open:** which release; how far a hint may go before it is a guess.
+
 ## Candidates
 
-### One word for the preview and the receipt
+### One set of JSON names
 
-A command that changes processes lists them as `processes` in its preview (`--dry-run --json`, and the `needs_confirmation` error) and as `succeeded` and `failed` in its receipt. A script that previews and then acts has to know both names for the same set of processes. The idea: settle on one word, or make the receipt carry the preview's `processes` too, so the list that was approved and the list that was changed read the same way.
+The JSON says some things two or three ways, so a script that reads more than one command has to learn each:
 
-**Feature test:** follows the JSON contract and adds keys without changing any. **Open:** whether to add a key to the receipt or rename one (a rename breaks 2.0 scripts, so only in a major release).
+- **The preview and the receipt:** a command that changes processes lists them as `processes` in its preview (`--dry-run --json`, and the `needs_confirmation` error) and as `succeeded` and `failed` in its receipt. The list that was approved and the list that was changed should read the same way.
+- **Counts:** `count` in most commands, `found_count` and `not_found_count` in `info`, `succeeded_count` and `failed_count` in actions, `initial_count` in `wait`.
+- **Durations:** `uptime_secs` on a process, but `elapsed_seconds` and `exited_after_seconds` in `wait`.
+- **Names:** `process_name` on a port row, `name` on a process.
+- **Where the answer is:** `processes`, `ports` or `results`, depending on the command.
+
+The idea: settle every one of these in one pass, from one written rule (a count is `count`, or `<list>_count` beside a list it counts; a duration ends in `_secs`; a process's name is `name`), and check every command's JSON against it in tests.
+
+**Feature test:** keeps the JSON contract (PHILOSOPHY.md, "One Contract"). **Plan:** the next minor release adds the settled names beside the old ones, so 2.x scripts keep working, and the CHANGELOG and `reference.md` mark the old names deprecated; the next major release removes them. **Open:** the rule's exact wording, and whether the receipt also carries the preview's `processes`.
 
 ### Signal words, not numbers
 
@@ -91,7 +124,7 @@ proc hog --cpu
 proc hog --mem
 ```
 
-A shorter `proc list --min-cpu 10 --sort cpu`. **Feature test:** fits, one command, but it adds a second spelling for something `list` already does, which goes against the proposed "one obvious spelling per intent" (below). **Open:** whether there is real demand.
+A shorter `proc list --min-cpu 10 --sort cpu`. **Feature test:** fits, one command, but it adds a second spelling for something `list` already does, which goes against "one obvious spelling per intent" (PHILOSOPHY.md, "Easy to Remember"). **Open:** whether there is real demand.
 
 ### Quiet mode
 
@@ -145,7 +178,7 @@ Both print processes in PID order (81 orphans on one Mac), which says nothing ab
 
 ### The human clock
 
-How long someone who has never used proc takes to get a correct answer. Unlike the machine clock (time per command), nothing measures it yet. **Open:** how to measure it (first-run sessions, agent evals like `skills/proc-cli/evals.md`).
+How long someone who has never used proc takes to get a correct answer (PHILOSOPHY.md, "Fast"). Unlike the machine clock (time per command), nothing measures it yet; the convention for guesses (above) is the first thing it would measure. **Open:** how to measure it (first-run sessions, agent evals like `skills/proc-cli/evals.md`).
 
 ### More operating systems
 
@@ -173,9 +206,6 @@ PHILOSOPHY.md is the criteria, so it changes slowly and on purpose. These change
 
 - **Language, not notation:** prefer words to signal numbers and other notation; accept the notation and answer with the word.
 - **Safe by default:** the dangerous path must be longer to type than the safe one; prompts default by risk, not always to no.
-- **Compatible with habits:** familiar spellings keep working, and proc answers in its own words.
-- **One obvious spelling per intent**, as part of "Easy to remember".
-- **Fast, two clocks:** the machine clock (with an honest exception for CPU readings, which need a real sampling interval) and the human clock.
 - **Two new feature-test questions:** "Would you say it out loud?" and "Is the safe path the short path?"
 
 ## Not planned

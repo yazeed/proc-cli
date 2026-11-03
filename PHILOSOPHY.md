@@ -20,7 +20,7 @@ User intent must be clear. Destructive actions ask first, and only `--yes` or a 
 Cover the full workflow, nothing more. proc handles process and port management completely: finding, inspecting, tracing, pausing, stopping, freeing and waiting. It doesn't creep into service management, container orchestration, or monitoring dashboards. Scope discipline is a feature.
 
 ### Fast
-Speed isn't a nice-to-have; a slow CLI trains users to avoid it. proc answers right away, with no daemon and no index to keep warm.
+Speed isn't a nice-to-have; a slow CLI trains users to avoid it. proc keeps two clocks. On the machine clock, proc answers as soon as the system does, with no daemon and no index to keep warm, and waits only where the answer needs time: a CPU reading compares two samples a moment apart, and `stuck`, `wait` and `watch` watch on purpose. On the human clock, what counts is how long someone new to proc takes to reach the right command and a correct answer.
 
 ### Lightweight
 One static binary, no runtime to install and nothing left running. proc works the same on a laptop, a server, a CI runner or inside a container, on the processes of the machine it runs on.
@@ -64,7 +64,7 @@ proc composes like any Unix tool: its output pipes into `jq`, `head` or the next
 Every feature solves a real, repeated problem. We don't add features because they're technically interesting or because a competitor has them. We add features when users hit the same friction repeatedly.
 
 ### Easy to Remember
-Consistent patterns mean knowing one command teaches you all commands. The cognitive load of proc should be near zero after the first use.
+Consistent patterns mean knowing one command teaches you all commands. Each intent has one obvious spelling, and a spelling means the same thing in every command. Habits from other tools keep working: `ps` lists and `top` watches, and where proc accepts a borrowed spelling it answers in its own words, so the habit turns into knowledge of proc. The cognitive load of proc should be near zero after the first use.
 
 ## The Feature Test
 

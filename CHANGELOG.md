@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **PHILOSOPHY.md says what fast means, and how habits fit "Easy to Remember".** "Fast" said proc answers right away, but a command that shows CPU waits about 0.2 s, because a CPU reading compares two samples. It now names two clocks: the machine's, where proc waits only when the answer needs time, and the human one, how long someone new takes to reach a correct answer. "Easy to Remember" now asks for one obvious spelling per intent, meaning the same in every command, with habits from other tools kept working. ROADMAP.md plans the guesses that still miss this as one convention
 - **Long lines in the website's code blocks show that they continue.** A command wider than its block ran off the edge with no sign of the rest, since macOS hides scrollbars until you scroll. A soft glow now marks the side a line continues on (and goes once you reach that end), and a thin scrollbar stays visible; it is CSS only. The install page's `.deb`/`.rpm` and Nix examples now fit at desktop width, with their comments on their own lines
 
 ### Fixed
