@@ -12,6 +12,8 @@ Each candidate lists what it would look like, how it fares against the feature t
 
 The same release removes `proc_cli::ui::process_table_budget` and `ProcessTableBudget`, deprecated since 2.3.0 (the process table no longer uses them).
 
+It also marks `proc_cli::core::Process` `#[non_exhaustive]`, so a later field never breaks code that builds a `Process` with a struct literal again. 2.3.0 adds four public fields to it (`parent_name`, `cpu_time_secs`, `open_files`, `child_count`), which is such a break in a minor release; the maintainer accepted it there because no crate depends on proc-cli (crates.io lists none) and the CHANGELOG says so.
+
 **Open:** what a comma does once removed: an error that shows the separate-argument form, or treating the whole word as one name.
 
 ## Decided: after the 2.1.0 tag
