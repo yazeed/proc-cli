@@ -5,7 +5,7 @@
 //!   Command:     python3 -m http.server 0 --bind 127.0.0.1
 //!   Parent:      zsh (PID 38120)
 //!   Status:      running
-//!   Resources:   0.0% CPU, 26.8MB, 0.4s CPU time, 9 open files
+//!   Resources:   0.0% CPU, 26.8MB, 0s CPU time, 9 open files
 //!   Started:     21:14:03 (up 13s)
 //!   Children:    none
 //!   Listening:   :53581 TCP on 127.0.0.1 (this machine only)
@@ -439,7 +439,7 @@ impl Card<'_> {
                 found.peers.len().min(PEERS_SHOWN)
             };
             for peer in &found.peers[..shown] {
-                self.put(out, "", &peer_line(peer), truncate_string)?;
+                self.put(out, "", &peer_line(peer), cut_keeping_pid)?;
             }
             // `total` rather than the list: the list may be cut before it gets here
             let more = found.total.saturating_sub(shown);
@@ -957,6 +957,30 @@ mod tests {
         process.start_time = Some(noon() + 5);
         let lines = render(&process, &[], &options(120, false));
         assert!(lines.iter().any(|l| l.ends_with("(up 0s)")), "{lines:?}");
+    }
+
+    #[test]
+    fn a_long_peer_name_is_cut_and_its_pid_stays() {
+        let listening = port(3000, Some("127.0.0.1"));
+        let found = connections(
+            &[("established", 1)],
+            vec![peer(65317, Some("verylongprocessnamethatdoesnotfit"))],
+            1,
+        );
+        let ports = [CardPort {
+            port: &listening,
+            connections: Some(&found),
+        }];
+        let lines = render(&bare(), &ports, &options(50, false));
+        let peer_line = lines
+            .iter()
+            .find(|l| l.contains("127.0.0.1:65317"))
+            .unwrap();
+        assert!(
+            peer_line.contains('…') && peer_line.ends_with("(PID 43581)"),
+            "{peer_line}"
+        );
+        assert!(peer_line.width() <= 50, "{peer_line}");
     }
 
     #[test]

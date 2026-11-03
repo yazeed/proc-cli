@@ -42,7 +42,7 @@ $ proc info 39158
   User:        zee
   Parent:      zsh (PID 38120)
   Status:      running
-  Resources:   0.0% CPU, 26.8MB, 0.4s CPU time, 9 open files
+  Resources:   0.0% CPU, 26.8MB, 0s CPU time, 9 open files
   Started:     21:14:03 (up 13s)
   Children:    none
   Listening:   :53581 TCP on 127.0.0.1 (this machine only)

@@ -115,6 +115,10 @@ impl Sock {
 /// one, has no owner). No holders, no connections. `peer_limit` caps the list
 /// in `peers`, not the counts.
 ///
+/// Pass every process that holds the port, as the `proc` commands do: the
+/// connections of a holder left out of `holders` are given to the listener that
+/// the connection came in on, which may be another process.
+///
 /// One system call per reading: macOS runs `lsof -nP -iTCP:<port>`, Linux reads
 /// `/proc/net/tcp*` and the owner of each socket of the port, Windows runs
 /// `netstat -ano`. FreeBSD and NetBSD give no connections (see the module

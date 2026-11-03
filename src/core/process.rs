@@ -81,7 +81,7 @@ impl Drop for QuietStderr {
 /// row takes its name from here, so `ports`, `on` and `by` all show one name
 /// per process; the socket table's own name (lsof's, the kernel's, sockstat's
 /// cut-short one) is only for a process that has already gone
-pub fn names_by_pid(pids: &[u32]) -> std::collections::HashMap<u32, String> {
+pub(crate) fn names_by_pid(pids: &[u32]) -> std::collections::HashMap<u32, String> {
     let wanted: Vec<Pid> = pids.iter().map(|&pid| Pid::from_u32(pid)).collect();
     let mut sys = System::new();
     sysinfo_locked(|| sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&wanted), true));
@@ -1462,7 +1462,14 @@ fn open_files_read(count: Option<usize>) -> Option<u64> {
 /// it however long `processes` is. Linux threads are no children.
 pub(crate) fn fill_family(processes: &mut [Process], sys: &System) {
     let mut children: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
-    for proc in sys.processes().values().filter(|p| !is_thread(p)) {
+    // proc itself is the child of whatever ran it, but it is no part of what
+    // `tree` lists, so it is left out of the count as it is left out of the list
+    let own = std::process::id();
+    for proc in sys
+        .processes()
+        .values()
+        .filter(|p| !is_thread(p) && p.pid().as_u32() != own)
+    {
         if let Some(parent) = proc.parent() {
             *children.entry(parent.as_u32()).or_insert(0) += 1;
         }
@@ -2223,6 +2230,23 @@ mod tests {
         let by_pid = by_pid.unwrap();
         assert_eq!(by_pid.child_count, Some(1), "{by_pid:?}");
         assert_eq!(by_pid.parent_name, shell_record.parent_name);
+    }
+
+    #[test]
+    fn proc_does_not_count_itself_among_the_children_of_its_parent() {
+        let own = std::process::id();
+        let parent = Process::find_by_pid(own)
+            .unwrap()
+            .and_then(|p| p.parent_pid)
+            .expect("the test process has a parent");
+        let record = Process::find_by_pid(parent).unwrap().unwrap();
+        // the list leaves proc out, so this is the count the listing would give
+        let others = Process::find_all()
+            .unwrap()
+            .iter()
+            .filter(|p| p.parent_pid == Some(parent) && p.pid != own)
+            .count();
+        assert_eq!(record.child_count, Some(others as u32), "{record:?}");
     }
 
     #[test]
