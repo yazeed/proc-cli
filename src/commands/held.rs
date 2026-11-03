@@ -2,7 +2,8 @@
 //! listens on with the connections that came in on them, read once during the
 //! CPU measurement, and the card they are drawn on (see `ui::card`).
 
-use crate::core::connections::{connections_for, Connections, Peer};
+use crate::core::connections::{connections_for, connections_in, Connections, Peer};
+use crate::core::port::{SocketReading, SocketTables};
 use crate::core::{PortInfo, Process};
 use crate::ui::card::{write_card, CardOptions, CardPort};
 use crate::ui::output::terminal_width;
@@ -122,17 +123,20 @@ pub(crate) fn write_process_card(
 /// reading (the usual `work`) hides them. A process that listens on nothing
 /// reads no connections. `peer_limit` caps the peers listed per port. The
 /// `work` runs whatever the reading did; its error is the table's.
+///
+/// The listing and the connections come from one reading of the socket tables.
 pub(crate) fn held_during<T>(
     pids: &[u32],
     peer_limit: usize,
     work: impl FnOnce() -> T,
 ) -> (crate::error::Result<Vec<Vec<HeldPort>>>, T) {
-    held_during_with(PortInfo::get_all_listening, pids, peer_limit, work)
+    held_during_with(SocketReading::read, pids, peer_limit, work)
 }
 
-/// [`held_during`] with the listening table read by `table`
-fn held_during_with<T>(
-    table: impl FnOnce() -> crate::error::Result<Vec<PortInfo>> + Send,
+/// [`held_during`] with the listening table, and the socket tables behind it,
+/// read by `table`
+pub(crate) fn held_during_with<T>(
+    table: impl FnOnce() -> crate::error::Result<SocketReading> + Send,
     pids: &[u32],
     peer_limit: usize,
     work: impl FnOnce() -> T,
@@ -142,7 +146,7 @@ fn held_during_with<T>(
     }
     let (reading, result) = std::thread::scope(|scope| {
         let reading = scope.spawn(|| -> crate::error::Result<ConnectionReader> {
-            let mut reader = ConnectionReader::new(table()?, peer_limit, true);
+            let mut reader = ConnectionReader::from_reading(table()?, peer_limit, true);
             let ports: Vec<u16> = pids.iter().flat_map(|pid| reader.ports_of(*pid)).collect();
             reader.read_now(&ports);
             Ok(reader)
@@ -161,8 +165,18 @@ pub(crate) fn measure_with_ports(
     processes: &mut [Process],
     peer_limit: usize,
 ) -> crate::error::Result<Vec<Vec<HeldPort>>> {
+    measure_with_ports_from(SocketReading::read, processes, peer_limit)
+}
+
+/// [`measure_with_ports`] with the socket tables read by `table`, for a command
+/// that has read them already
+pub(crate) fn measure_with_ports_from(
+    table: impl FnOnce() -> crate::error::Result<SocketReading> + Send,
+    processes: &mut [Process],
+    peer_limit: usize,
+) -> crate::error::Result<Vec<Vec<HeldPort>>> {
     let pids: Vec<u32> = processes.iter().map(|p| p.pid).collect();
-    held_during(&pids, peer_limit, || Process::measure_cpu(processes)).0
+    held_during_with(table, &pids, peer_limit, || Process::measure_cpu(processes)).0
 }
 
 /// [`measure_with_ports`] for a view that does not need the ports: each
@@ -172,8 +186,17 @@ pub(crate) fn measure_with_known_ports(
     processes: &mut [Process],
     peer_limit: usize,
 ) -> Vec<Option<Vec<HeldPort>>> {
+    measure_with_known_ports_from(SocketReading::read, processes, peer_limit)
+}
+
+/// [`measure_with_known_ports`] with the socket tables read by `table`
+pub(crate) fn measure_with_known_ports_from(
+    table: impl FnOnce() -> crate::error::Result<SocketReading> + Send,
+    processes: &mut [Process],
+    peer_limit: usize,
+) -> Vec<Option<Vec<HeldPort>>> {
     let count = processes.len();
-    let held = known(measure_with_ports(processes, peer_limit), count);
+    let held = known(measure_with_ports_from(table, processes, peer_limit), count);
     held.into_iter()
         .zip(processes.iter())
         .map(|(ports, process)| ports.filter(|ports| shown_ports(process, ports).is_some()))
@@ -206,6 +229,7 @@ pub(crate) fn known(
 /// reading of the socket table; `None` for each where the OS reads none or the
 /// reading failed (the answer is the process, not them)
 fn read_connections(
+    tables: Option<&SocketTables>,
     jobs: &[(u16, Vec<u32>)],
     peer_limit: usize,
 ) -> Vec<(u16, Option<Connections>)> {
@@ -214,7 +238,10 @@ fn read_connections(
         .map(|(port, holders)| (*port, holders.as_slice()))
         .collect();
     let found = READS_CONNECTIONS
-        .then(|| connections_for(&ports, peer_limit).ok())
+        .then(|| match tables {
+            Some(tables) => connections_in(tables, &ports, peer_limit).ok(),
+            None => connections_for(&ports, peer_limit).ok(),
+        })
         .flatten()
         .unwrap_or_default();
     jobs.iter()
@@ -258,15 +285,26 @@ pub(crate) struct ConnectionReader {
     /// every peer when the port has several holders. Without it a port keeps
     /// the connections of all its holders, `limit` peers of them.
     split: bool,
+    /// The socket tables the listing came from, which the connections are read
+    /// from too; `None` reads them on their own
+    tables: Option<SocketTables>,
     read: HashMap<u16, Option<Connections>>,
 }
 
 impl ConnectionReader {
+    #[cfg(test)]
     pub(crate) fn new(table: Vec<PortInfo>, limit: usize, split: bool) -> Self {
+        Self::from_reading(SocketReading::of(table), limit, split)
+    }
+
+    /// A reader of the listing in `reading`, reading the connections from the
+    /// socket tables behind it
+    pub(crate) fn from_reading(reading: SocketReading, limit: usize, split: bool) -> Self {
         ConnectionReader {
-            table,
+            table: reading.ports,
             limit,
             split,
+            tables: reading.tables,
             read: HashMap::new(),
         }
     }
@@ -326,7 +364,8 @@ impl ConnectionReader {
     pub(crate) fn read_now(&mut self, ports: &[u16]) {
         let (jobs, limit) = self.jobs(ports);
         if !jobs.is_empty() {
-            self.read.extend(read_connections(&jobs, limit));
+            self.read
+                .extend(read_connections(self.tables.as_ref(), &jobs, limit));
         }
     }
 
@@ -335,8 +374,9 @@ impl ConnectionReader {
     /// reading hides it
     pub(crate) fn read_during<T>(&mut self, ports: &[u16], work: impl FnOnce() -> T) -> T {
         let (jobs, limit) = self.jobs(ports);
+        let tables = self.tables.as_ref();
         let (done, result) = std::thread::scope(|scope| {
-            let reading = scope.spawn(|| read_connections(&jobs, limit));
+            let reading = scope.spawn(|| read_connections(tables, &jobs, limit));
             let result = work();
             let done = reading.join().unwrap_or_else(|e| resume_unwind(e));
             (done, result)
@@ -349,8 +389,8 @@ impl ConnectionReader {
     pub(crate) fn of_port(&mut self, port: u16) -> Option<Connections> {
         if !self.read.contains_key(&port) {
             let (holders, limit) = self.plan(port);
-            self.read
-                .extend(read_connections(&[(port, holders)], limit));
+            let found = read_connections(self.tables.as_ref(), &[(port, holders)], limit);
+            self.read.extend(found);
         }
         self.read[&port].clone()
     }
@@ -706,7 +746,12 @@ mod tests {
         assert!(shown.iter().all(Option::is_none));
 
         // the same lookup with a table that reads
-        let (held, _) = held_during_with(|| Ok(vec![listener()]), &[1, 2], 0, || ());
+        let (held, _) = held_during_with(
+            || Ok(SocketReading::of(vec![listener()])),
+            &[1, 2],
+            0,
+            || (),
+        );
         let shown = known(held, 2);
         assert_eq!(shown[0].as_ref().unwrap().len(), 1);
         assert_eq!(shown[1].as_ref().unwrap().len(), 0);

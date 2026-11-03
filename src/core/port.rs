@@ -11,7 +11,7 @@ use crate::core::escape_control;
 use crate::error::{ProcError, Result};
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "linux")]
-use std::path::Path;
+use std::path::{Path, PathBuf};
 // lsof on macOS, sockstat on FreeBSD and NetBSD, netstat on Windows; Linux
 // reads /proc instead
 #[cfg(not(target_os = "linux"))]
@@ -53,6 +53,95 @@ pub struct PortInfo {
     pub address: Option<String>,
 }
 
+/// One reading of the operating system's socket tables, which the list of
+/// listening ports and the connections to them are both derived from, so a
+/// command that shows both reads the tables once. The reading is the costly
+/// part: every `/proc/<pid>/fd` on Linux, two `netstat` runs on Windows. macOS
+/// and the BSDs list with a command of their own, and their reading is empty.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SocketTables {
+    /// The text of /proc/net/tcp and tcp6, with whether it is the IPv6 table
+    #[cfg(target_os = "linux")]
+    pub(crate) net: Vec<(String, bool)>,
+    /// The processes that have each socket (by inode) open
+    #[cfg(target_os = "linux")]
+    pub(crate) owners: std::collections::HashMap<u64, Vec<u32>>,
+    /// Where the processes are read (/proc)
+    #[cfg(target_os = "linux")]
+    pub(crate) procs: PathBuf,
+    /// What `netstat -ano` printed for IPv4 and for IPv6
+    #[cfg(target_os = "windows")]
+    pub(crate) netstat: [String; 2],
+}
+
+impl SocketTables {
+    /// Reads the tables of this machine
+    pub(crate) fn read() -> Result<Self> {
+        #[cfg(target_os = "linux")]
+        return Self::read_linux(Path::new("/proc/net"), Path::new("/proc"));
+        #[cfg(target_os = "windows")]
+        return Ok(Self {
+            netstat: PortInfo::netstat_tables()?,
+        });
+        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+        Ok(Self::default())
+    }
+
+    /// The tables under `net` (/proc/net) and the owners of their sockets under
+    /// `procs` (/proc). Owners are looked up for every socket, whatever its
+    /// state, in the one walk of /proc/<pid>/fd.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn read_linux(net: &Path, procs: &Path) -> Result<Self> {
+        let net = PortInfo::proc_net_tables(net)?;
+        // a socket no process owns (TIME_WAIT) has inode 0, and no fd links to it
+        let wanted: std::collections::HashSet<u64> = net
+            .iter()
+            .flat_map(|(text, _)| {
+                text.lines()
+                    .skip(1)
+                    .filter_map(|line| line.split_whitespace().nth(9)?.parse().ok())
+            })
+            .filter(|inode| *inode != 0)
+            .collect();
+        let owners = PortInfo::socket_owners(&wanted, procs);
+        Ok(Self {
+            net,
+            owners,
+            procs: procs.to_path_buf(),
+        })
+    }
+}
+
+/// The listening ports of one lookup with the socket tables they came from, so
+/// the connections to them are derived from the same reading. `tables` is
+/// `None` for a listing made some other way, and the connections are then read
+/// on their own.
+#[derive(Debug, Clone)]
+pub(crate) struct SocketReading {
+    pub(crate) ports: Vec<PortInfo>,
+    pub(crate) tables: Option<SocketTables>,
+}
+
+impl SocketReading {
+    /// Reads the tables once and lists the listening ports in them
+    pub(crate) fn read() -> Result<Self> {
+        let tables = SocketTables::read()?;
+        Ok(Self {
+            ports: PortInfo::listening_in(&tables)?,
+            tables: Some(tables),
+        })
+    }
+
+    /// A listing with no tables behind it
+    #[cfg(test)]
+    pub(crate) fn of(ports: Vec<PortInfo>) -> Self {
+        Self {
+            ports,
+            tables: None,
+        }
+    }
+}
+
 impl PortInfo {
     /// Get all listening ports on the system, port ascending and, for one port,
     /// PID ascending. The system lists them in its own order (lsof's on macOS,
@@ -60,14 +149,27 @@ impl PortInfo {
     /// is fixed here once for everything that reads ports: a process's ports are
     /// ascending in `on`, `for` and `why`, and the holders of a port are by PID.
     pub fn get_all_listening() -> Result<Vec<PortInfo>> {
+        Self::listening_in(&SocketTables::read()?)
+    }
+
+    /// The listening ports in one reading of the socket tables, in the order
+    /// [`get_all_listening`](Self::get_all_listening) gives. Reading the tables
+    /// is the costly part (two `netstat` runs on Windows, every
+    /// `/proc/<pid>/fd` on Linux), so a command that needs the connections too
+    /// reads them once and derives both from it.
+    pub(crate) fn listening_in(tables: &SocketTables) -> Result<Vec<PortInfo>> {
         #[cfg(target_os = "macos")]
         let mut ports = Self::get_listening_macos()?;
         #[cfg(target_os = "linux")]
-        let mut ports = Self::get_listening_linux()?;
+        let mut ports = Self::listening_linux(tables);
         #[cfg(target_os = "windows")]
-        let mut ports = Self::get_listening_windows()?;
+        let mut ports =
+            Self::parse_netstat_output(&[&tables.netstat[0], &tables.netstat[1]], |_| None);
         #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
         let mut ports = Self::get_listening_bsd()?;
+        // macOS and the BSDs list with their own command, not from the tables
+        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+        let _ = tables;
         // One name per process, whatever the socket table calls it
         let pids: Vec<u32> = ports.iter().map(|p| p.pid).collect();
         name_as_processes(&mut ports, &crate::core::process::names_by_pid(&pids));
@@ -261,32 +363,24 @@ impl PortInfo {
         })
     }
 
-    /// Linux: read the kernel's socket tables directly, as `ss` does, so nothing
-    /// needs to be installed. Listening sockets come from /proc/net/tcp and tcp6,
-    /// and each socket's holders are all the processes with that socket open in
+    /// Linux: the kernel's socket tables, as `ss` reads them, so nothing needs to
+    /// be installed. Listening sockets come from /proc/net/tcp and tcp6, and
+    /// each socket's holders are all the processes with that socket open in
     /// /proc/<pid>/fd (a master and its workers share one).
     /// Sockets of other users' processes have no visible owner without root, so
     /// they are left out, as with `ss -p`.
     #[cfg(target_os = "linux")]
-    fn get_listening_linux() -> Result<Vec<PortInfo>> {
-        Self::listening_from(Path::new("/proc/net"), Path::new("/proc"))
-    }
-
-    /// `get_listening_linux` reading the socket tables from `net` and the
-    /// processes from `procs`, which are /proc/net and /proc
-    #[cfg(target_os = "linux")]
-    fn listening_from(net: &Path, procs: &Path) -> Result<Vec<PortInfo>> {
+    fn listening_linux(tables: &SocketTables) -> Vec<PortInfo> {
+        let procs = tables.procs.as_path();
         let mut sockets = Vec::new();
-        for (text, v6) in Self::proc_net_tables(net)? {
+        for (text, v6) in &tables.net {
             sockets.extend(
                 text.lines()
                     .skip(1)
-                    .filter_map(|line| Self::parse_proc_net_line(line, v6)),
+                    .filter_map(|line| Self::parse_proc_net_line(line, *v6)),
             );
         }
-
-        let wanted: std::collections::HashSet<u64> = sockets.iter().map(|s| s.0).collect();
-        let owners = Self::socket_owners(&wanted, procs);
+        let owners = &tables.owners;
 
         let mut ports = Vec::new();
         let mut seen = std::collections::HashSet::new();
@@ -317,7 +411,16 @@ impl PortInfo {
                 });
             }
         }
-        Ok(ports)
+        ports
+    }
+
+    /// [`listening_linux`](Self::listening_linux) on the tables under `net`
+    /// (/proc/net) and the processes under `procs` (/proc)
+    #[cfg(all(target_os = "linux", test))]
+    fn listening_from(net: &Path, procs: &Path) -> Result<Vec<PortInfo>> {
+        Ok(Self::listening_linux(&SocketTables::read_linux(
+            net, procs,
+        )?))
     }
 
     /// The text of /proc/net/tcp and tcp6 (in `net`), each with whether it is
@@ -431,16 +534,6 @@ impl PortInfo {
             pids.sort_unstable();
         }
         owners
-    }
-
-    #[cfg(target_os = "windows")]
-    fn get_listening_windows() -> Result<Vec<PortInfo>> {
-        let [v4, v6] = Self::netstat_tables()?;
-
-        // netstat gives no names; `get_all_listening` names every socket's
-        // process from one process-list lookup (a `tasklist` per socket made
-        // each reading take seconds, and `proc ports --in` run past a minute)
-        Ok(Self::parse_netstat_output(&[&v4, &v6], |_| None))
     }
 
     /// What `netstat -ano` prints for TCP: the IPv4 table and the IPv6 table
@@ -597,7 +690,7 @@ fn name_as_processes(ports: &mut [PortInfo], names: &std::collections::HashMap<u
 /// The listeners in `listening` that hold `port`, one per process: a process
 /// that listens on both an IPv4 and an IPv6 address is one holder, listed with
 /// the first address
-fn holders_in(listening: Vec<PortInfo>, port: u16) -> Vec<PortInfo> {
+pub(crate) fn holders_in(listening: Vec<PortInfo>, port: u16) -> Vec<PortInfo> {
     let mut seen = std::collections::HashSet::new();
     listening
         .into_iter()

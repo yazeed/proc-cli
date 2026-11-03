@@ -18,6 +18,7 @@ use super::held::{
     ConnectionReader, HeldPort,
 };
 use crate::core::connections::Connections;
+use crate::core::port::{holders_in, SocketReading};
 use crate::core::{
     flatten_targets, parse_target, resolve_in_dir, resolve_target, ruled_out_by, Exposure, Guards,
     NameMatch, PortInfo, Process, TargetType,
@@ -211,12 +212,18 @@ impl OnCommand {
     /// The connections to the port are read with every holder, whatever the
     /// filters keep, and while the CPU is being measured.
     fn lookup_port(&self, port: u16, limit: usize, split: bool) -> Result<PortHolders> {
-        let listeners = PortInfo::holders_of(port)?;
+        // The socket tables are read once, for the holders and for the connections
+        let reading = SocketReading::read()?;
+        let listeners = holders_in(reading.ports, port);
         if listeners.is_empty() {
             return Err(ProcError::PortNotFound(port));
         }
 
-        let mut reader = ConnectionReader::new(listeners.clone(), limit, split);
+        let reading = SocketReading {
+            ports: listeners.clone(),
+            tables: reading.tables,
+        };
+        let mut reader = ConnectionReader::from_reading(reading, limit, split);
         let kept = reader.read_during(&[port], || {
             let mut holders = Vec::new();
             for listener in &listeners {

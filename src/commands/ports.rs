@@ -9,6 +9,7 @@
 //!   proc ports -v           # Add user, memory, executable path and the connection counts (JSON)
 
 use crate::commands::held::{ConnectionReader, Counts};
+use crate::core::port::SocketReading;
 use crate::core::{
     matches_name, resolve_in_dir, sort_ports, Connections, NameMatch, Names, PortInfo, PortSortKey,
     Process,
@@ -130,10 +131,10 @@ fn holders_of(ports: &[PortInfo]) -> HashMap<u32, Process> {
 /// whose connections the OS does not give (the BSDs, or a reading that failed)
 /// has no entry.
 fn connections_of_each(
-    listening: Vec<PortInfo>,
+    listening: SocketReading,
     ports: &[PortInfo],
 ) -> HashMap<(u16, u32), Connections> {
-    let mut reader = ConnectionReader::new(listening, 0, true);
+    let mut reader = ConnectionReader::from_reading(listening, 0, true);
     let numbers: Vec<u16> = ports.iter().map(|p| p.port).collect();
     reader.read_now(&numbers);
     ports
@@ -145,10 +146,13 @@ fn connections_of_each(
 impl PortsCommand {
     /// Executes the ports command, listing all listening TCP ports.
     pub fn execute(&self) -> Result<()> {
-        let mut ports = PortInfo::get_all_listening()?;
+        // One reading of the socket tables serves the listing and, with `-v`,
+        // the connections of each listener
+        let reading = SocketReading::read()?;
+        let mut ports = reading.ports.clone();
         // `-v` counts the connections of each listener, which takes every
         // process that holds the port, whatever the filters keep
-        let listening = self.verbose.then(|| ports.clone());
+        let listening = self.verbose.then_some(reading);
 
         let in_dir_filter = resolve_in_dir(&self.in_dir)?;
 
@@ -555,7 +559,10 @@ mod tests {
             process_name: "x".to_string(),
             address: Some("127.0.0.1".to_string()),
         };
-        let counted = connections_of_each(vec![mine.clone()], std::slice::from_ref(&mine));
+        let counted = connections_of_each(
+            SocketReading::of(vec![mine.clone()]),
+            std::slice::from_ref(&mine),
+        );
         let found = &counted[&(port, mine.pid)];
         assert_eq!(found.total, 2, "{found:?}");
         assert_eq!(found.by_state["established"], 2);

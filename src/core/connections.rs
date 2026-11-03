@@ -19,7 +19,9 @@
 
 // the BSDs read no sockets, so nothing there parses a table
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 use crate::core::port::PortInfo;
+use crate::core::port::SocketTables;
 use crate::error::Result;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -131,6 +133,22 @@ pub fn connections_for(
     ports: &[(u16, &[u32])],
     peer_limit: usize,
 ) -> Result<Vec<(u16, Connections)>> {
+    // nothing to read when no port has a holder
+    let tables = if ports.iter().all(|(_, holders)| holders.is_empty()) {
+        SocketTables::default()
+    } else {
+        SocketTables::read()?
+    };
+    connections_in(&tables, ports, peer_limit)
+}
+
+/// [`connections_for`] from socket tables a command already read (see
+/// `SocketReading`), so the listing and the connections cost one reading
+pub(crate) fn connections_in(
+    tables: &SocketTables,
+    ports: &[(u16, &[u32])],
+    peer_limit: usize,
+) -> Result<Vec<(u16, Connections)>> {
     let wanted: Vec<u16> = ports
         .iter()
         .filter(|(_, holders)| !holders.is_empty())
@@ -139,7 +157,7 @@ pub fn connections_for(
     let socks = if wanted.is_empty() {
         Vec::new()
     } else {
-        read_socks(&wanted)?
+        read_socks(tables, &wanted)?
     };
     Ok(assemble_ports(
         &socks,
@@ -182,7 +200,7 @@ fn assemble_ports(
 }
 
 #[cfg(target_os = "macos")]
-fn read_socks(ports: &[u16]) -> Result<Vec<Sock>> {
+fn read_socks(_tables: &SocketTables, ports: &[u16]) -> Result<Vec<Sock>> {
     // no state filter: the rows of both ends of a connection, and the listeners
     // that say whose a connection nobody has accepted is. One call for all the
     // ports: a port list after TCP: is one filter
@@ -198,53 +216,54 @@ fn read_socks(ports: &[u16]) -> Result<Vec<Sock>> {
 }
 
 #[cfg(target_os = "linux")]
-fn read_socks(ports: &[u16]) -> Result<Vec<Sock>> {
-    linux_socks(
-        std::path::Path::new("/proc/net"),
-        std::path::Path::new("/proc"),
-        ports,
-    )
+fn read_socks(tables: &SocketTables, ports: &[u16]) -> Result<Vec<Sock>> {
+    Ok(linux_socks_in(tables, ports))
 }
 
 #[cfg(target_os = "windows")]
-fn read_socks(ports: &[u16]) -> Result<Vec<Sock>> {
-    let [v4, v6] = PortInfo::netstat_tables()?;
-    let mut socks = parse_netstat_connections(&[&v4, &v6]);
+fn read_socks(tables: &SocketTables, ports: &[u16]) -> Result<Vec<Sock>> {
+    let [v4, v6] = &tables.netstat;
+    let mut socks = parse_netstat_connections(&[v4, v6]);
     // both ends of a connection to the ports, and their listeners
     socks.retain(|s| ports.contains(&s.local.1) || ports.contains(&s.remote.1));
     Ok(socks)
 }
 
 #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
-fn read_socks(_ports: &[u16]) -> Result<Vec<Sock>> {
+fn read_socks(_tables: &SocketTables, _ports: &[u16]) -> Result<Vec<Sock>> {
     Ok(Vec::new())
 }
 
-/// The sockets of `port` in the kernel tables under `net` (/proc/net), with the
-/// processes under `procs` (/proc) that have each open
+/// The sockets of `ports` in the kernel tables already read, with the
+/// processes that have each open
 #[cfg(target_os = "linux")]
-fn linux_socks(net: &std::path::Path, procs: &std::path::Path, ports: &[u16]) -> Result<Vec<Sock>> {
-    let mut rows = Vec::new();
-    for (text, v6) in PortInfo::proc_net_tables(net)? {
+fn linux_socks_in(tables: &SocketTables, ports: &[u16]) -> Vec<Sock> {
+    let mut socks = Vec::new();
+    for (text, v6) in &tables.net {
         // both ends of a connection to the ports, and their listeners
-        rows.extend(
-            parse_proc_net_connections(&text, v6)
+        socks.extend(
+            parse_proc_net_connections(text, *v6)
                 .into_iter()
-                .filter(|(_, s)| ports.contains(&s.local.1) || ports.contains(&s.remote.1)),
+                .filter(|(_, s)| ports.contains(&s.local.1) || ports.contains(&s.remote.1))
+                .map(|(inode, mut sock)| {
+                    if let Some(pids) = tables.owners.get(&inode) {
+                        sock.pids = pids.clone();
+                    }
+                    sock
+                }),
         );
     }
-    // a socket no process owns (TIME_WAIT) has inode 0, and no fd links to it
-    let wanted: HashSet<u64> = rows.iter().map(|(inode, _)| *inode).collect();
-    let owners = PortInfo::socket_owners(&wanted, procs);
-    Ok(rows
-        .into_iter()
-        .map(|(inode, mut sock)| {
-            if let Some(pids) = owners.get(&inode) {
-                sock.pids = pids.clone();
-            }
-            sock
-        })
-        .collect())
+    socks
+}
+
+/// [`linux_socks_in`] on the tables under `net` (/proc/net) and the processes
+/// under `procs` (/proc)
+#[cfg(all(target_os = "linux", test))]
+fn linux_socks(net: &std::path::Path, procs: &std::path::Path, ports: &[u16]) -> Result<Vec<Sock>> {
+    Ok(linux_socks_in(
+        &SocketTables::read_linux(net, procs)?,
+        ports,
+    ))
 }
 
 /// One state, one name: lowercase, `fin_wait1`, `syn_recv`, whichever the OS
@@ -1133,8 +1152,7 @@ node 9 zee 4u IPv4 0xb 0t0 TCP 127.0.0.1:3000 (LISTEN)
 
     /// A fake /proc: the tables and one directory per process
     #[cfg(target_os = "linux")]
-    #[test]
-    fn linux_reads_the_tables_and_finds_each_sockets_owner() {
+    fn fake_proc() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("net")).unwrap();
         std::fs::write(dir.path().join("net/tcp"), PROC_NET_TCP).unwrap();
@@ -1155,6 +1173,13 @@ node 9 zee 4u IPv4 0xb 0t0 TCP 127.0.0.1:3000 (LISTEN)
                     .unwrap();
             }
         }
+        dir
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_reads_the_tables_and_finds_each_sockets_owner() {
+        let dir = fake_proc();
         let socks = super::linux_socks(&dir.path().join("net"), dir.path(), &[80]).unwrap();
         let c = assemble(&socks, 80, &[1, 31], 50, names);
         assert_eq!(c.total, 5);
@@ -1166,5 +1191,44 @@ node 9 zee 4u IPv4 0xb 0t0 TCP 127.0.0.1:3000 (LISTEN)
         // no tables: an error, as for the listening ports
         let missing = dir.path().join("nothing");
         assert!(super::linux_socks(&missing, dir.path(), &[80]).is_err());
+    }
+
+    /// The listing and the connections are derived from one reading: the fake
+    /// /proc is gone (dropped) before either is derived, so neither reads again
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_derives_the_listing_and_the_connections_from_one_reading() {
+        let tables = {
+            let dir = fake_proc();
+            SocketTables::read_linux(&dir.path().join("net"), dir.path()).unwrap()
+        };
+        let listening = PortInfo::listening_in(&tables).unwrap();
+        let on_80: Vec<u32> = listening
+            .iter()
+            .filter(|p| p.port == 80)
+            .map(|p| p.pid)
+            .collect();
+        // only pid 1 listens; 31 holds accepted sockets of the port
+        assert_eq!(on_80, vec![1], "{listening:?}");
+        let found = connections_in(&tables, &[(80, &[1, 31])], 50).unwrap();
+        assert_eq!(found[0].1.total, 5, "{found:?}");
+    }
+
+    /// The listing and the connections are derived from one reading of netstat
+    #[cfg(windows)]
+    #[test]
+    fn windows_derives_the_listing_and_the_connections_from_one_reading() {
+        let tables = SocketTables {
+            netstat: [NETSTAT_V4.to_string(), NETSTAT_V6.to_string()],
+        };
+        let listening = PortInfo::listening_in(&tables).unwrap();
+        let holders: Vec<u32> = listening
+            .iter()
+            .filter(|p| p.port == 8080)
+            .map(|p| p.pid)
+            .collect();
+        assert_eq!(holders, vec![4242], "{listening:?}");
+        let found = connections_in(&tables, &[(8080, &holders)], 50).unwrap();
+        assert_eq!(found[0].1.total, 6, "{found:?}");
     }
 }
