@@ -331,6 +331,8 @@ fn row_of(out: &str, pid: u32) -> Vec<&str> {
 
 /// Whether `cell` is `dir`, or `dir` with its middle replaced by `…`
 fn is_dir_or_its_cut(cell: &str, dir: &str) -> bool {
+    // Windows ends a working directory with `\`
+    let cell = cell.trim_end_matches('\\');
     match cell.split_once('…') {
         Some((head, tail)) => dir.starts_with(head) && dir.ends_with(tail),
         None => cell == dir,

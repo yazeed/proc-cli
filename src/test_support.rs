@@ -26,10 +26,14 @@ impl Write for FailsAfter {
 
 /// Run `print` against a writer that fails after every possible number of
 /// bytes: it must write exactly what fits, in order, and hand back the
-/// writer's error instead of carrying on or panicking.
+/// writer's error instead of carrying on or panicking. Colours are off for
+/// every run: the switch is global, so another test turning it off between
+/// the full run and the cut ones would otherwise change the bytes (the Nix
+/// build starts with colours on).
 pub(crate) fn assert_stops_at_a_failed_write(
     print: impl Fn(&mut FailsAfter) -> std::io::Result<()>,
 ) {
+    colored::control::set_override(false);
     let mut all = FailsAfter {
         left: usize::MAX,
         written: Vec::new(),
