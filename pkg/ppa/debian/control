@@ -1,0 +1,19 @@
+Source: proc-cli
+Section: utils
+Priority: optional
+Maintainer: Yazeed Al Oyoun <me@yazeed.com>
+Build-Depends: debhelper-compat (= 13), @RUST@
+Standards-Version: 4.6.0
+Homepage: https://proc-cli.com
+Vcs-Browser: https://github.com/yazeed/proc-cli
+Vcs-Git: https://github.com/yazeed/proc-cli.git
+Rules-Requires-Root: no
+
+Package: proc-cli
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Semantic CLI tool for process management
+ Target by port, PID, name or path. proc finds what listens on a port,
+ runs from a directory or holds a file open, and stops, frees, pauses or
+ waits for it. Commands that change processes preview with --dry-run and
+ ask first, and every command prints JSON with --json for scripts.

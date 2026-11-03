@@ -1,0 +1,44 @@
+#!/usr/bin/make -f
+# proc-cli for the Launchpad PPA. Launchpad builds without network, so the
+# crates come in the source package (proc-cli_<version>.orig-vendor.tar.xz,
+# unpacked into vendor/) and cargo builds offline from them.
+
+# Ubuntu 22.04 and 24.04 build with the versioned Rust 1.91 packages, whose
+# default cargo (1.75) is older than proc's minimum (1.88)
+RUST_BIN := $(wildcard /usr/lib/rust-1.91/bin)
+ifneq ($(RUST_BIN),)
+export PATH := $(RUST_BIN):$(PATH)
+endif
+export CARGO_HOME := $(CURDIR)/debian/cargo-home
+
+%:
+	dh $@
+
+# dh_clean deletes *.orig files as editor leftovers, but every vendored crate
+# has a Cargo.toml.orig that its checksum list names, and cargo refuses the
+# crate without it
+override_dh_clean:
+	dh_clean -XCargo.toml.orig
+
+override_dh_auto_configure:
+	mkdir -p .cargo
+	printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "vendor"\n' > .cargo/config.toml
+
+override_dh_auto_build:
+	cargo --version
+	cargo build --release --frozen --offline
+
+# The tests start servers, terminals and child processes, which the build
+# machines don't allow; CI runs them on every commit
+override_dh_auto_test:
+
+override_dh_auto_install:
+	install -Dm755 target/release/proc debian/proc-cli/usr/bin/proc
+	install -d debian/proc-cli/usr/share/man/man1 \
+		debian/proc-cli/usr/share/bash-completion/completions \
+		debian/proc-cli/usr/share/zsh/vendor-completions \
+		debian/proc-cli/usr/share/fish/vendor_completions.d
+	target/release/proc manpage > debian/proc-cli/usr/share/man/man1/proc.1
+	target/release/proc completions bash > debian/proc-cli/usr/share/bash-completion/completions/proc
+	target/release/proc completions zsh > debian/proc-cli/usr/share/zsh/vendor-completions/_proc
+	target/release/proc completions fish > debian/proc-cli/usr/share/fish/vendor_completions.d/proc.fish
