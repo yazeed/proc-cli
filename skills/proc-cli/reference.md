@@ -221,7 +221,7 @@ The same machine gives the same order on every run, so a list can be compared wi
 
 `address` is `0.0.0.0` or `::` for all addresses (a `*` bind reads `0.0.0.0`) and `127.0.0.1` or `::1` for loopback, with IPv6 unbracketed on every OS. Add brackets yourself to build a URL (`http://[::1]:3000`). Only TCP listeners appear: a UDP socket is invisible to `ports` and `on`.
 
-`exposure` says whether the port is reachable from the network: `"local"` when it is bound to loopback only (`127.0.0.1`, `::1`), `"exposed"` for all interfaces (`0.0.0.0`, `::`, `*`), any other address, or no known address. It is derived from `address`, so the two always agree. `on :port` has it at the top level, next to `address` (the first holder's, as `address` is); `on <pid>`, `info`, names and `ports` give it on each port object.
+`exposure` says whether the port is reachable from the network: `"local"` when it is bound to loopback only (`127.0.0.1`, `::1`), `"exposed"` for all interfaces (`0.0.0.0`, `::`, `*`), any other address, or no known address. Answer who can reach a port from `exposure`, not by working it out again from `address`; proc does not check firewalls. `on :port` has it at the top level, next to `address` (the first holder's, as `address` is); `on <pid>`, `info`, names and `ports` give it on each port object.
 
 ## Output shapes
 
