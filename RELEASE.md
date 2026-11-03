@@ -16,7 +16,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps # The docs.rs pages build with no
 ```
 
 - [ ] CI is green on main, including "Coverage gate" (100% lines across Linux, macOS and Windows; see CONTRIBUTING.md "Coverage"), both "Nix" jobs (the flake builds proc and runs its tests in Nix's sandbox, macOS's included, and the nixpkgs package builds), both "Test (freebsd)"/"Test (netbsd)" jobs (the whole suite in a BSD VM, then the release binary built and run there) and the "Package .deb and .rpm" and "Install the packages" jobs (the four packages install, run and remove in Debian, Ubuntu and Fedora). A tag release does not wait for it. Locally: `scripts/coverage-local.sh`
-- [ ] The release workflow's dry run is green: `gh workflow run release.yml --ref main`, then `gh run watch`. It runs every build and package job (the BSD builds and the `.deb`/`.rpm` files run only in this workflow's form here) and assembles the release files with `checksums.txt`, and publishes nothing: the GitHub Release step and the crates.io, npm, Homebrew and Scoop jobs run only for a tag. Its version checks print instead of failing, since a branch build is a `-dev` build; the tag checks them
+- [ ] The release workflow's dry run is green: `gh workflow run release.yml --ref main`, then `gh run watch`. It runs every build and package job (the BSD builds and the `.deb`/`.rpm` files run only in this workflow's form here) and assembles the release files with `checksums.txt`, and publishes nothing: the GitHub Release step and the crates.io, npm, PyPI, Homebrew and Scoop jobs run only for a tag. The PyPI wheels are built and installed on every OS in the dry run (`package-pypi`, `test-pypi`); only `publish-pypi` waits for a tag. Its version checks print instead of failing, since a branch build is a `-dev` build; the tag checks them
 - [ ] The dry run's "Check credentials" job passed and printed no warning. It tries every secret under "Required Secrets" and reads when each expires (GitHub reports a token's expiry, so no date is kept anywhere): one that is invalid or expired fails the job, and the tag's release then publishes nothing; one that expires within 30 days is a warning. Renew it now, set it with `gh secret set <NAME>`, and run the dry run again
 - [ ] The credentials outside CI still work: the PPA key on the maintainer's Mac (`gpg -K 227B9E7E7C22B6E88774325184D7BBF5E38CCC4D` lists it; it has no expiry date, and if one is ever set it shows as `[expires: ...]`) and, only if the COPR package's settings change in this release, the COPR API token (`grep expiration ~/.config/copr`; a new one comes from https://copr.fedorainfracloud.org/api/). A release itself needs neither token: COPR builds from the webhook
 
@@ -173,6 +173,8 @@ After tag push, monitor GitHub Actions:
 - [ ] "Update winget" opened the pull request for the new version on microsoft/winget-pkgs (until the first version is merged it skips, with a notice)
 - [ ] The PPA's builds for the new version succeeded on every release and both architectures (https://launchpad.net/~yazeedaloyoun/+archive/ubuntu/proc-cli/+packages)
 - [ ] "Update COPR" passed: the build for the new version succeeded on every chroot (https://copr.fedorainfracloud.org/coprs/yazeed/proc-cli/builds/)
+- [ ] The "Install the PyPI wheel" jobs passed (Linux x86_64 and aarch64, Alpine, macOS arm64 and x86_64, Windows)
+- [ ] PyPI published: https://pypi.org/project/proc-cli/ shows the new version
 
 ## 7. Post-Release Verification
 
@@ -285,6 +287,7 @@ On tag push, GitHub Actions handles:
 9. **apt repository**: `update-apt` runs `pages.yml`, which deploys proc-cli.com with `/apt` rebuilt from the `.deb` files of the last three releases and signed with `APT_SIGNING_KEY` (`pkg/apt/build-repo.sh`)
 10. **winget**: `update-winget` opens the pull request for the new version on microsoft/winget-pkgs from the `yazeed/winget-pkgs` fork, with `WINGET_TOKEN` (winget-releaser; the fork must keep that name). It skips, with a notice, until a first version of `yazeed.proc-cli` is in winget-pkgs
 11. **COPR**: `update-copr` sends the version to the project's custom webhook (`COPR_WEBHOOK`). COPR runs the package's build script (`pkg/copr/copr-build.sh`, kept in COPR), which fetches `pkg/copr/sources.sh` and the spec at the tag and makes the source RPM: the spec at that version with a changelog entry, the tag's tarball and every crate `Cargo.lock` names. COPR then builds it for each Fedora and EPEL chroot of `yazeed/proc-cli`; the job follows the build on COPR's API and fails if it fails. Fedora's new releases join the project by themselves ("Follow Fedora branching"). To change the script COPR keeps, edit the file and run `copr-cli edit-package-custom proc-cli --script pkg/copr/copr-build.sh --script-builddeps "curl cargo tar xz"`; `pkg/copr/srpm.sh X.Y.Z` builds the same source RPM locally
+12. **PyPI**: `pip install proc-cli` (also `pipx` and `uv tool`). `package-pypi` repacks the five release binaries into five wheels with `pkg/pypi/build-wheels.py` (standard library only; no maturin, no second Rust build): `manylinux_2_17`/`manylinux2014`/`musllinux_1_1` for Linux x86_64 and aarch64 (the static musl binaries), `macosx_10_12_x86_64` and `macosx_11_0_arm64` (each binary's own minimum macOS, read with `vtool -show-build`; check it again when the build target changes) and `win_amd64`, each holding the binary as the `proc` command. It checks the metadata with `twine check` and expects exactly five wheels. `test-pypi` installs the wheel with pip on its own OS (Ubuntu x86_64 and arm64, an Alpine container for musl, macOS arm64 and Intel, Windows) with `pkg/pypi/test-install.sh` and checks `proc --version`. `publish-pypi` runs for a tag, after the GitHub Release and every `test-pypi` job, and uploads the wheels with trusted publishing (environment `pypi`). The wheels are not release files. There is no TestPyPI run: its `proc-cli` belongs to an unrelated project
 
 The GitHub Release, and so every job after it, waits on `check-credentials`, which runs on every tag and dry run (step 1). Docker's workflow runs on its own and logs in itself.
 
@@ -310,11 +313,12 @@ Configure in GitHub repo settings → Secrets:
 
 The PPA's signing key is not a secret here: it stays on the maintainer's Mac (see "After the tag: Ubuntu PPA").
 
-npm and crates.io need no secret. Both publish through **Trusted Publishing (OIDC)**:
+npm, crates.io and PyPI need no secret. All three publish through **Trusted Publishing (OIDC)**:
 - **npm:** configured on npmjs.com under `proc-cli` → Settings → Trusted Publisher: GitHub Actions, `yazeed` / `proc-cli`, workflow `release.yml`, no environment, **Allow npm publish** checked. The `publish-npm` job needs `id-token: write` and npm 11.5.1 or newer.
 - **crates.io:** configured under the `proc-cli` crate → Settings → Trusted Publishing: GitHub, `yazeed` / `proc-cli`, workflow `release.yml`, no environment.
+- **PyPI:** configured on pypi.org under `proc-cli` → Publishing: GitHub, `yazeed` / `proc-cli`, workflow `release.yml`, environment `pypi`. Until the project exists, add it as a pending publisher (pypi.org → Your account → Publishing) with the same values; the first publish creates the project. The GitHub environment `pypi` (repository Settings → Environments) allows deployments from `v*` tags only. The `publish-pypi` job needs only `id-token: write`.
 
-If the repository or the workflow file is renamed, both trusted publishers must be recreated. A new npm trusted publisher expires unless a publish succeeds within 2 days, so add it shortly before tagging.
+If the repository or the workflow file is renamed, all three trusted publishers must be recreated. A new npm trusted publisher expires unless a publish succeeds within 2 days, so add it shortly before tagging.
 
 ## Package Distribution
 

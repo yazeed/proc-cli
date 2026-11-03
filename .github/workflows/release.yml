@@ -187,6 +187,120 @@ jobs:
           path: packages/*
           if-no-files-found: error
 
+  # The PyPI wheels: one per release binary, repacked, not rebuilt
+  # (pkg/pypi/build-wheels.py), so pip installs the very binaries build-release
+  # checked. They are not release files: create-release leaves them out
+  package-pypi:
+    name: Package the PyPI wheels
+    needs: build-release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Download the Linux binaries
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: proc-linux-*
+          merge-multiple: true
+          path: binaries
+
+      - name: Download the macOS binaries
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: proc-darwin-*
+          merge-multiple: true
+          path: binaries
+
+      - name: Download the Windows binary
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: proc-windows-*
+          merge-multiple: true
+          path: binaries
+
+      - name: Get the version
+        id: version
+        run: |
+          # A dry run has no tag: the version comes from Cargo.toml
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n1)
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build the wheels
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python3 pkg/pypi/build-wheels.py "$VERSION" dist binaries
+          ls -la dist
+          test "$(find dist -type f | wc -l)" -eq 5
+
+      # Checks the metadata and the README PyPI will render
+      - name: Check the wheels' metadata
+        run: pipx run twine check dist/*
+
+      - name: Upload the wheels
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pypi-wheels
+          path: dist/*
+          if-no-files-found: error
+
+  # Each wheel is installed with pip, from the files, on the OS it is for, and
+  # its proc must run and name the version. There is no TestPyPI run: its
+  # proc-cli belongs to an unrelated project. The musl wheel runs in Alpine
+  test-pypi:
+    name: Install the PyPI wheel (${{ matrix.name }})
+    needs: package-pypi
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64
+            os: ubuntu-latest
+          - name: Linux aarch64
+            os: ubuntu-24.04-arm
+          - name: Alpine x86_64
+            os: ubuntu-latest
+            image: python:3-alpine
+          - name: macOS arm64
+            os: macos-latest
+          - name: macOS x86_64
+            os: macos-15-intel
+          - name: Windows x86_64
+            os: windows-latest
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Download the wheels
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: pypi-wheels
+          path: wheels
+
+      - name: Install the wheel and run proc
+        if: matrix.image == ''
+        shell: bash
+        env:
+          VERSION: ${{ needs.package-pypi.outputs.version }}
+        run: pkg/pypi/test-install.sh "$VERSION" wheels "$GITHUB_EVENT_NAME"
+
+      - name: Install the wheel and run proc (Alpine)
+        if: matrix.image != ''
+        env:
+          VERSION: ${{ needs.package-pypi.outputs.version }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          docker run --rm -v "$PWD:/src:ro" -w /src "$IMAGE" \
+            sh pkg/pypi/test-install.sh "$VERSION" wheels "$GITHUB_EVENT_NAME"
+
   # FreeBSD and NetBSD build natively in their own VMs (scripts/bsd-build.sh:
   # cross's images lack libraries proc links). Each binary must print the
   # tag's version and read the port table there before anything is published.
@@ -338,7 +452,8 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir -p release
-          find artifacts -type f -exec cp {} release/ \;
+          # The PyPI wheels (package-pypi) are not release files, and may or may not be here yet
+          find artifacts -path artifacts/pypi-wheels -prune -o -type f -exec cp {} release/ \;
           ls -la release/
 
       - name: Generate checksums
@@ -438,6 +553,30 @@ jobs:
               exit 1
             fi
           fi
+
+  # Trusted publishing (OIDC, no token): pypi.org → proc-cli → Publishing has
+  # GitHub, yazeed / proc-cli, release.yml, environment pypi (RELEASE.md,
+  # "Required Secrets"). Re-running it after a partial upload skips the files
+  # PyPI already has
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [create-release, test-pypi]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download the wheels
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: pypi-wheels
+          path: dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3 (release/v1)
+        with:
+          skip-existing: true
 
   update-homebrew:
     name: Update Homebrew Tap
