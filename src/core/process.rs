@@ -77,11 +77,11 @@ impl Drop for QuietStderr {
 }
 
 /// Each running process's name, by PID, as [`Process`] records it (one refresh
-/// of exactly those PIDs); a PID that is gone is missing from the map. For
-/// socket tables whose own name column is cut short (FreeBSD's sockstat keeps
-/// 10 characters)
-#[cfg(any(target_os = "freebsd", target_os = "netbsd", test))]
-pub(crate) fn names_by_pid(pids: &[u32]) -> std::collections::HashMap<u32, String> {
+/// of exactly those PIDs); a PID that is gone is missing from the map. A port
+/// row takes its name from here, so `ports`, `on` and `by` all show one name
+/// per process; the socket table's own name (lsof's, the kernel's, sockstat's
+/// cut-short one) is only for a process that has already gone
+pub fn names_by_pid(pids: &[u32]) -> std::collections::HashMap<u32, String> {
     let wanted: Vec<Pid> = pids.iter().map(|&pid| Pid::from_u32(pid)).collect();
     let mut sys = System::new();
     sysinfo_locked(|| sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&wanted), true));

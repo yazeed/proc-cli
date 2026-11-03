@@ -783,6 +783,57 @@ fn ports_json_describes_each_listener() {
     assert!(row.get("exe_path").is_none(), "{row}");
 }
 
+/// A process started through a symlink named `zzname-<pid of the test>`, so the
+/// name the socket tables report (the name it was started as) and the name the
+/// process list records can differ
+#[cfg(unix)]
+#[test]
+fn a_port_row_and_its_process_have_one_name() {
+    let name = format!("zzname-{}", std::process::id());
+    let (_tmp, dir) = fresh_dir();
+    let link = dir.join(&name);
+    std::os::unix::fs::symlink(listener_path(), &link).unwrap();
+    let mut child = spawn_copy(&link, &[], &dir);
+    let mut line = String::new();
+    BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let port: u16 = line.trim().strip_prefix("PORT ").unwrap().parse().unwrap();
+    let pid = child.id();
+
+    let (ports, code) = run_json(&["ports", "--json"]);
+    assert_eq!(code, 0, "{ports}");
+    let row = ports["ports"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["pid"].as_u64() == Some(u64::from(pid)))
+        .unwrap_or_else(|| panic!("no row for PID {pid} in {ports}"))
+        .clone();
+    let row_name = row["process_name"].as_str().unwrap().to_string();
+
+    let (by_port, _) = run_json(&["on", &format!(":{port}"), "--json"]);
+    let (by_pid, _) = run_json(&["on", &pid.to_string(), "--json"]);
+    let port_name = by_port["process"]["name"].as_str().unwrap().to_string();
+    let pid_name = by_pid["process"]["name"].as_str().unwrap().to_string();
+    let (found, by_code) = run_json(&["by", &row_name, "--json"]);
+
+    let _ = child.kill();
+    let _ = child.wait();
+
+    assert_eq!(row_name, port_name, "ports row vs on :port");
+    assert_eq!(row_name, pid_name, "ports row vs on <pid>");
+    assert_eq!(by_code, 0, "by {row_name}: {found}");
+    assert!(
+        found["processes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["pid"].as_u64() == Some(u64::from(pid))),
+        "by {row_name} did not find PID {pid}: {found}"
+    );
+}
+
 #[test]
 fn ports_by_matches_the_whole_name_in_any_case() {
     let p = Owned::listener();

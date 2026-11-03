@@ -54,6 +54,9 @@ impl PortInfo {
         let mut ports = Self::get_listening_windows()?;
         #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
         let mut ports = Self::get_listening_bsd()?;
+        // One name per process, whatever the socket table calls it
+        let pids: Vec<u32> = ports.iter().map(|p| p.pid).collect();
+        name_as_processes(&mut ports, &crate::core::process::names_by_pid(&pids));
         ports.sort_by_key(|p| (p.port, p.pid));
         Ok(ports)
     }
@@ -85,21 +88,12 @@ impl PortInfo {
             .output()
             .map_err(|e| ProcError::SystemError(format!("Failed to run sockstat: {}", e)))?;
 
-        let mut ports = Self::parse_sockstat_output(
+        // sockstat cuts names short (FreeBSD keeps 10 characters);
+        // `get_all_listening` names each holder as the process list does
+        Ok(Self::parse_sockstat_output(
             &String::from_utf8_lossy(&output.stdout),
             cfg!(target_os = "netbsd"),
-        );
-        // sockstat cuts names short (FreeBSD keeps 10 characters): name each
-        // holder as the process list does, keeping sockstat's name for one
-        // that is already gone
-        let pids: Vec<u32> = ports.iter().map(|p| p.pid).collect();
-        let names = crate::core::process::names_by_pid(&pids);
-        for port in &mut ports {
-            if let Some(name) = names.get(&port.pid) {
-                port.process_name = name.clone();
-            }
-        }
-        Ok(ports)
+        ))
     }
 
     /// The listening TCP ports in sockstat's output, one entry per port and
@@ -424,12 +418,12 @@ impl PortInfo {
             .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
             .unwrap_or_default();
 
-        // One process list names every socket: a `tasklist` per socket made
-        // each reading take seconds, and `proc ports --in` run past a minute
-        let names = Self::process_names_windows();
+        // netstat gives no names; `get_all_listening` names every socket's
+        // process from one process-list lookup (a `tasklist` per socket made
+        // each reading take seconds, and `proc ports --in` run past a minute)
         Ok(Self::parse_netstat_output(
             &[&String::from_utf8_lossy(&v4.stdout), &v6],
-            |pid| names.get(&pid).cloned(),
+            |_| None,
         ))
     }
 
@@ -482,21 +476,6 @@ impl PortInfo {
         })
     }
 
-    /// What each running process is called, by PID, as `tasklist` names it
-    /// (`listener.exe`)
-    #[cfg(target_os = "windows")]
-    fn process_names_windows() -> std::collections::HashMap<u32, String> {
-        let mut sys = sysinfo::System::new();
-        sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-        sys.processes()
-            .iter()
-            .map(|(pid, p)| {
-                let name = p.name().to_string_lossy();
-                (pid.as_u32(), escape_control(&name).into_owned())
-            })
-            .collect()
-    }
-
     /// Whether the port is open to the network: bound to every address. A port
     /// with no known address counts as open.
     pub fn is_exposed(&self) -> bool {
@@ -512,6 +491,17 @@ impl PortInfo {
             .as_ref()
             .map(|a| a == "127.0.0.1" || a == "::1")
             .unwrap_or(false)
+    }
+}
+
+/// Name each row as `names` (the process list's names, by PID) does. A PID
+/// missing from `names` is already gone and keeps the name its socket table
+/// gave it.
+fn name_as_processes(ports: &mut [PortInfo], names: &std::collections::HashMap<u32, String>) {
+    for port in ports {
+        if let Some(name) = names.get(&port.pid) {
+            port.process_name = name.clone();
+        }
     }
 }
 
@@ -1082,6 +1072,29 @@ Active Connections
             address: None,
         };
         assert_eq!(me.get_process().unwrap().unwrap().pid, std::process::id());
+    }
+
+    fn row(pid: u32, name: &str) -> PortInfo {
+        PortInfo {
+            port: 8000 + pid as u16,
+            protocol: Protocol::Tcp,
+            pid,
+            process_name: name.to_string(),
+            address: None,
+        }
+    }
+
+    #[test]
+    fn a_gone_pid_keeps_the_socket_tables_name() {
+        let mut ports = vec![row(1, "python3.14"), row(2, "gone-name")];
+        let mut names = std::collections::HashMap::new();
+        names.insert(1, "python3".to_string());
+        name_as_processes(&mut ports, &names);
+        assert_eq!(ports[0].process_name, "python3", "a running PID is renamed");
+        assert_eq!(
+            ports[1].process_name, "gone-name",
+            "a PID the process list lacks keeps the socket table's name"
+        );
     }
 
     #[test]

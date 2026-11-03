@@ -213,6 +213,8 @@ The same machine gives the same order on every run, so a list can be compared wi
 { "port": 3000, "protocol": "tcp", "pid": 1234, "process_name": "node", "address": "0.0.0.0" }
 ```
 
+`process_name` is the process's name, the same as `name` in a process object (a port row looks it up by PID; only a process that exited as the ports were read keeps the name the socket table gave it), so a name copied from `ports` matches `by`.
+
 `address` is `0.0.0.0` or `::` for all addresses (a `*` bind reads `0.0.0.0`) and `127.0.0.1` or `::1` for loopback, with IPv6 unbracketed on every OS. Add brackets yourself to build a URL (`http://[::1]:3000`). Only TCP listeners appear: a UDP socket is invisible to `ports` and `on`.
 
 ## Output shapes
