@@ -169,6 +169,7 @@ Asks first, or previews with `--dry-run`.
 
 ```bash
 proc on :3000                   # what's on port 3000?
+proc on 1234                    # what is PID 1234, and what ports is it using?
 proc by node --in . --min-cpu 5 # node in this directory using >5% CPU
 proc info :3000 1234            # info for a port and a PID
 proc tree --min-cpu 5           # process tree, busy processes only

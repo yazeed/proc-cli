@@ -229,6 +229,17 @@ impl Drop for Owned {
     }
 }
 
+/// `n` connections to the listener at `port`, held until the caller drops them.
+/// The listener never accepts; the connections still count, and their client
+/// ends belong to this test process.
+fn connect(port: u16, n: usize) -> Vec<std::net::TcpStream> {
+    (0..n)
+        .map(|_| {
+            std::net::TcpStream::connect(("127.0.0.1", port)).expect("connect to the listener")
+        })
+        .collect()
+}
+
 /// How many `results` of an `on` JSON answer are for this PID
 fn results_for(json: &Value, pid: u32) -> usize {
     json["results"]
@@ -254,28 +265,94 @@ fn on_port_names_the_process_holding_it() {
     let (out, _, code) = run_text(&["on", &p.target()]);
     assert_eq!(code, 0, "{out}");
     assert!(
-        out.contains(&format!("Port {} is used by:", p.port)),
+        out.starts_with(&format!(
+            "✓ Port {} is used by 1 process, reachable from this machine only\n\n",
+            p.port
+        )),
         "{out}"
     );
     assert!(out.contains(&format!("(PID {})", p.pid())), "{out}");
-    assert!(out.contains("Process:"), "{out}");
-    assert!(out.contains("Directory:"), "{out}");
-    assert!(out.contains("Path:"), "{out}");
-    assert!(out.contains("Listening: TCP on 127.0.0.1"), "{out}");
-    assert!(out.contains("Resources:"), "{out}");
-    assert!(out.contains("Uptime:"), "{out}");
+    for label in [
+        "Process:",
+        "Command:",
+        "Directory:",
+        "Path:",
+        "Resources:",
+        "Started:",
+    ] {
+        assert!(out.contains(label), "{label} missing: {out}");
+    }
     assert!(
-        !out.contains("Command:"),
-        "the command line is for --verbose: {out}"
+        out.contains(&format!(
+            "Listening:   :{} TCP on 127.0.0.1 (this machine only)",
+            p.port
+        )),
+        "{out}"
+    );
+    assert!(!out.contains("Uptime:"), "the card says Started: {out}");
+}
+
+/// The card is the one view: command, user, parent and the connections to the
+/// port, as a client of it would see them
+#[test]
+#[cfg_attr(
+    any(target_os = "freebsd", target_os = "netbsd"),
+    ignore = "the BSDs read no connections"
+)]
+fn on_a_port_shows_the_card_with_its_connections() {
+    let p = Owned::listener();
+    let _clients = connect(p.port, 2);
+    let (out, _, code) = run_text(&["on", &p.target()]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("Command:"), "{out}");
+    assert!(out.contains("User:"), "{out}");
+    assert!(out.contains("Parent:"), "{out}");
+    assert!(out.contains("Connections: 2 established"), "{out}");
+    // each peer is this test process, which holds the client ends
+    let peers = out.lines().filter(|l| l.contains(" → ")).count();
+    assert_eq!(peers, 2, "{out}");
+    assert!(
+        out.contains(&format!("(PID {})", std::process::id())),
+        "{out}"
     );
 }
 
+/// Five peers by default and the count of the rest; `-v` lists every one
 #[test]
-fn on_port_verbose_adds_the_command_line() {
+#[cfg_attr(
+    any(target_os = "freebsd", target_os = "netbsd"),
+    ignore = "the BSDs read no connections"
+)]
+fn on_a_port_lists_five_peers_and_verbose_lists_all() {
     let p = Owned::listener();
+    let _clients = connect(p.port, 7);
+    let peer_lines = |out: &str| out.lines().filter(|l| l.contains(" → ")).count();
+
+    let (out, _, code) = run_text(&["on", &p.target()]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("Connections: 7 established"), "{out}");
+    assert_eq!(peer_lines(&out), 5, "{out}");
+    assert!(out.contains("… and 2 more (-v for all)"), "{out}");
+
+    let (out, _, code) = run_text(&["on", &p.target(), "-v"]);
+    assert_eq!(code, 0, "{out}");
+    assert_eq!(peer_lines(&out), 7, "{out}");
+    assert!(!out.contains("more"), "{out}");
+}
+
+/// Values that don't fit the terminal are cut with `…`; `-v` prints them whole
+#[test]
+fn on_port_verbose_prints_the_whole_command_line() {
+    let long = "x".repeat(300);
+    let p = Owned::named_with_args(&format!("pcp{}lx", std::process::id()), &[&long]);
+    let (out, _, code) = run_text(&["on", &p.target()]);
+    assert_eq!(code, 0, "{out}");
+    assert!(!out.contains(&long), "cut to the width: {out}");
+    assert!(out.contains('…'), "{out}");
+
     let (out, _, code) = run_text(&["on", &p.target(), "--verbose"]);
     assert_eq!(code, 0, "{out}");
-    assert!(out.contains("Command:"), "{out}");
+    assert!(out.contains(&long), "{out}");
     assert!(out.contains(&p.name), "{out}");
 }
 
@@ -290,8 +367,50 @@ fn on_port_json_describes_the_listener_and_its_process() {
     assert_eq!(json["port"], p.port);
     assert_eq!(json["protocol"], "tcp");
     assert_eq!(json["address"], "127.0.0.1");
+    assert_eq!(json["exposure"], "local");
     assert_eq!(json["process"]["pid"], p.pid());
     assert!(json.get("ports").is_none(), "{json}");
+}
+
+/// The port's connections are in the JSON in full, next to `address`
+#[test]
+#[cfg_attr(
+    any(target_os = "freebsd", target_os = "netbsd"),
+    ignore = "the BSDs read no connections"
+)]
+fn on_port_json_carries_the_connections() {
+    let p = Owned::listener();
+    let _clients = connect(p.port, 2);
+    let (json, code) = run_json(&["on", &p.target(), "--json"]);
+    assert_eq!(code, 0, "{json}");
+    assert_eq!(json["exposure"], "local");
+    assert_eq!(json["connections"]["total"], 2, "{json}");
+    assert_eq!(json["connections"]["by_state"]["established"], 2, "{json}");
+    let peers = json["connections"]["peers"].as_array().unwrap();
+    assert_eq!(peers.len(), 2, "{json}");
+    assert_eq!(peers[0]["holder_pid"], p.pid(), "{json}");
+    assert_eq!(peers[0]["peer"]["pid"], std::process::id(), "{json}");
+    assert!(json["connections"].get("peers_truncated").is_none());
+}
+
+/// The JSON lists 50 peers at most and says it cut the list
+#[test]
+#[cfg_attr(
+    any(target_os = "freebsd", target_os = "netbsd"),
+    ignore = "the BSDs read no connections"
+)]
+fn on_port_json_caps_the_peers_at_fifty() {
+    let p = Owned::listener();
+    let _clients = connect(p.port, 60);
+    let (json, code) = run_json(&["on", &p.target(), "--json"]);
+    assert_eq!(code, 0, "{json}");
+    assert_eq!(json["connections"]["total"], 60, "{json}");
+    assert_eq!(
+        json["connections"]["peers"].as_array().unwrap().len(),
+        50,
+        "{json}"
+    );
+    assert_eq!(json["connections"]["peers_truncated"], true, "{json}");
 }
 
 #[test]
@@ -365,28 +484,66 @@ fn on_pid_lists_the_ports_it_listens_on() {
     let p = Owned::listener();
     let (out, _, code) = run_text(&["on", &p.pid_arg()]);
     assert_eq!(code, 0, "{out}");
-    assert!(out.contains(&p.name), "{out}");
     assert!(
-        out.contains(&format!("(PID {}) is listening on:", p.pid())),
+        out.starts_with(&format!("✓ {} (PID {})\n\n", p.name, p.pid())),
         "{out}"
     );
     assert!(
-        out.contains(&format!(":{} (TCP on 127.0.0.1)", p.port)),
+        !out.contains("is listening on:"),
+        "the headline is the process: {out}"
+    );
+    assert!(
+        out.contains(&format!(
+            "Listening:   :{} TCP on 127.0.0.1 (this machine only)",
+            p.port
+        )),
         "{out}"
     );
-    assert!(out.contains("Directory:"), "{out}");
-    assert!(out.contains("Uptime:"), "{out}");
-    assert!(!out.contains("Path:"), "the path is for --verbose: {out}");
-    assert!(!out.contains("Command:"), "{out}");
+    for label in ["Process:", "Directory:", "Path:", "Started:"] {
+        assert!(out.contains(label), "{label} missing: {out}");
+    }
+    assert!(!out.contains("Uptime:"), "the card says Started: {out}");
+}
+
+/// `on <pid>` is the card `on :port` prints
+#[test]
+#[cfg_attr(
+    any(target_os = "freebsd", target_os = "netbsd"),
+    ignore = "the BSDs read no connections"
+)]
+fn on_a_pid_shows_the_same_card() {
+    let p = Owned::listener();
+    let _clients = connect(p.port, 2);
+    let (by_pid, _, code) = run_text(&["on", &p.pid_arg()]);
+    assert_eq!(code, 0, "{by_pid}");
+    for want in ["Command:", "User:", "Parent:", "Connections: 2 established"] {
+        assert!(by_pid.contains(want), "{want} missing: {by_pid}");
+    }
+    // the card, from `Process:` on, is the one the port prints
+    let (by_port, _, _) = run_text(&["on", &p.target()]);
+    let card = |out: &str| {
+        // `Started:` and CPU move between two runs
+        let at = out.find("  Process:").unwrap();
+        out[at..]
+            .lines()
+            .filter(|l| !l.contains("Started:") && !l.contains("Resources:"))
+            .map(|l| format!("{l}\n"))
+            .collect::<String>()
+    };
+    assert_eq!(card(&by_pid), card(&by_port));
 }
 
 #[test]
-fn on_pid_verbose_adds_path_and_command() {
-    let p = Owned::listener();
+fn on_pid_verbose_prints_the_whole_command_line() {
+    let long = "y".repeat(300);
+    let p = Owned::named_with_args(&format!("pcp{}vx", std::process::id()), &[&long]);
+    let (out, _, code) = run_text(&["on", &p.pid_arg()]);
+    assert_eq!(code, 0, "{out}");
+    assert!(!out.contains(&long), "cut to the width: {out}");
     let (out, _, code) = run_text(&["on", &p.pid_arg(), "-v"]);
     assert_eq!(code, 0, "{out}");
+    assert!(out.contains(&long), "{out}");
     assert!(out.contains("Path:"), "{out}");
-    assert!(out.contains("Command:"), "{out}");
 }
 
 #[test]
@@ -398,18 +555,57 @@ fn on_pid_json_lists_its_ports() {
     assert_eq!(json["process"]["pid"], p.pid());
     let ports = json["ports"].as_array().unwrap();
     assert!(ports.iter().any(|x| x["port"] == p.port), "{json}");
+    assert!(ports.iter().all(|x| x["exposure"] == "local"), "{json}");
     assert!(json.get("port").is_none(), "{json}");
 }
 
+/// A port of `on <pid>` and of a name carries the counts, never the peers
 #[test]
-fn on_a_pid_with_no_ports_says_so() {
-    // This test binary listens on nothing
-    let me = std::process::id().to_string();
-    let (out, _, code) = run_text(&["on", &me]);
-    assert_eq!(code, 0, "{out}");
-    assert!(out.contains("No listening ports"), "{out}");
+#[cfg_attr(
+    any(target_os = "freebsd", target_os = "netbsd"),
+    ignore = "the BSDs read no connections"
+)]
+fn on_pid_and_name_json_carry_connection_counts_only() {
+    let p = Owned::listener();
+    let _clients = connect(p.port, 2);
+    let (json, code) = run_json(&["on", &p.pid_arg(), "--json"]);
+    assert_eq!(code, 0, "{json}");
+    let port = &json["ports"][0];
+    assert_eq!(port["port"], p.port, "{json}");
+    assert_eq!(port["connections"]["total"], 2, "{json}");
+    assert_eq!(port["connections"]["by_state"]["established"], 2, "{json}");
+    assert!(port["connections"].get("peers").is_none(), "{json}");
 
-    let (json, code) = run_json(&["on", &me, "--json"]);
+    let (json, code) = run_json(&["on", &p.name, "--json"]);
+    assert_eq!(code, 0, "{json}");
+    let port = &json["results"][0]["ports"][0];
+    assert_eq!(port["connections"]["total"], 2, "{json}");
+    assert!(port["connections"].get("peers").is_none(), "{json}");
+
+    // several targets: the same port object
+    let (json, code) = run_json(&["on", &p.pid_arg(), &p.target(), "--json"]);
+    assert_eq!(code, 0, "{json}");
+    for result in json["results"].as_array().unwrap() {
+        assert_eq!(result["ports"][0]["connections"]["total"], 2, "{json}");
+        assert!(result["ports"][0]["connections"].get("peers").is_none());
+    }
+}
+
+#[test]
+fn on_a_process_listening_on_nothing_says_none() {
+    let p = Owned::named_with_args(&format!("pcp{}nx", std::process::id()), &["--no-port"]);
+    let (out, _, code) = run_text(&["on", &p.pid_arg()]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains(&format!("(PID {})", p.pid())), "{out}");
+    assert!(out.contains("Listening:   none"), "{out}");
+    assert!(!out.contains("is listening on:"), "{out}");
+    assert!(!out.contains("No listening ports"), "{out}");
+    assert!(
+        !out.contains("Connections:"),
+        "nothing to connect to: {out}"
+    );
+
+    let (json, code) = run_json(&["on", &p.pid_arg(), "--json"]);
     assert_eq!(code, 0, "{json}");
     assert_eq!(json["ports"].as_array().unwrap().len(), 0, "{json}");
 }
@@ -458,10 +654,14 @@ fn on_name_lists_each_matching_process() {
     let (out, _, code) = run_text(&["on", &p.name]);
     assert_eq!(code, 0, "{out}");
     assert!(
-        out.contains(&format!("(PID {}) is listening on:", p.pid())),
+        out.starts_with(&format!("✓ 1 process named '{}'\n\n", p.name)),
         "{out}"
     );
-    assert!(out.contains(&format!(":{}", p.port)), "{out}");
+    assert!(out.contains(&format!("(PID {})", p.pid())), "{out}");
+    assert!(
+        out.contains(&format!("Listening:   :{} TCP", p.port)),
+        "{out}"
+    );
 
     let (json, code) = run_json(&["on", &p.name, "--json"]);
     assert_eq!(code, 0, "{json}");
@@ -522,6 +722,14 @@ fn on_name_is_the_whole_name_and_cmd_widens_it_to_the_command_line() {
     assert_eq!(json["count"], 1, "{json}");
     assert_eq!(json["results"][0]["process"]["pid"], p.pid());
 
+    // the headline says what matched: the command line, not a name
+    let (out, _, code) = run_text(&["on", &word, "--cmd"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.starts_with(&format!("✓ 1 process matching '{word}'\n\n")),
+        "{out}"
+    );
+
     // part of the name is not the name either
     let part = &p.name[..p.name.len() - 1];
     let (out, err, code) = run_text(&["on", part]);
@@ -548,11 +756,11 @@ fn on_several_targets_shows_each_and_warns_about_the_missing_one() {
     let (out, _, code) = run_text(&["on", &targets]);
     assert_eq!(code, 0, "one match is enough: {out}");
     assert!(
-        out.contains(&format!("Port {} is used by:", a.port)),
+        out.contains(&format!("✓ Port {} is used by 1 process", a.port)),
         "{out}"
     );
     assert!(
-        out.contains(&format!("(PID {}) is listening on:", b.pid())),
+        out.contains(&format!("✓ {} (PID {})", b.name, b.pid())),
         "{out}"
     );
     assert!(out.contains(&format!("Port {missing}:")), "{out}");
@@ -682,11 +890,11 @@ fn on_takes_several_targets_as_separate_arguments_and_commas_still_work() {
     let (out, _, code) = run_text(&["on", &a.target(), &b.pid_arg(), &missing]);
     assert_eq!(code, 0, "{out}");
     assert!(
-        out.contains(&format!("Port {} is used by:", a.port)),
+        out.contains(&format!("✓ Port {} is used by 1 process", a.port)),
         "{out}"
     );
     assert!(
-        out.contains(&format!("(PID {}) is listening on:", b.pid())),
+        out.contains(&format!("✓ {} (PID {})", b.name, b.pid())),
         "{out}"
     );
     assert!(out.contains("No process listening on port"), "{out}");

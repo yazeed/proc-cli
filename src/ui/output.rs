@@ -115,7 +115,7 @@ pub struct Printer {
 }
 
 /// Detect terminal width, falling back to 120 when stdout is not a TTY.
-fn terminal_width() -> u16 {
+pub(crate) fn terminal_width() -> u16 {
     crossterm::terminal::size().map(|(w, _)| w).unwrap_or(120)
 }
 

@@ -31,6 +31,9 @@
 //! # What's on port 3000?
 //! proc on :3000
 //!
+//! # What is PID 1234, and what ports is it using?
+//! proc on 1234
+//!
 //! # What has this file open, or runs it as its program?
 //! proc for ./server
 //!

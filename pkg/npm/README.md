@@ -15,6 +15,7 @@ bun install -g proc-cli
 
 ```bash
 proc on :3000           # what's on port 3000?
+proc on 1234            # what is PID 1234, and what ports is it using?
 proc kill :3000 :8080   # kill multiple targets
 proc by node --in .     # node processes in current directory
 ```

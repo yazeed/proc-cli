@@ -32,6 +32,10 @@ const EXAMPLES: &[(&str, &[(&str, &str)])] = &[
             ("proc on :3000", "What's on port 3000?"),
             ("proc on :3000 :8080", "What's on several ports?"),
             (
+                "proc on 1234",
+                "What is PID 1234 and what ports is it using?",
+            ),
+            (
                 "proc on node",
                 "What ports are the processes named node using?",
             ),

@@ -16,7 +16,7 @@
 - q: How do I find what process is using a port?
   id: find-process-using-port
   a: |
-    `proc on` shows the process listening on a port: its name and PID, the folder it was started in, the executable, CPU, memory and how long it has been running.
+    `proc on` shows the process listening on a port as one card: its name and PID, command line, the folder it was started in, the executable, user, parent, CPU, memory, when it started, whether the port is reachable from the network or only from this machine, and who is connected to it. `proc on 1234` shows the same card for a PID.
 
     ```bash
     proc on :8080

@@ -178,7 +178,10 @@ fn on_prints_every_holder() {
     let (out, code) = run_text(&["on", &pair.target()]);
     assert_eq!(code, 0, "{out}");
     assert!(
-        out.contains(&format!("Port {} is used by 2 processes:", pair.v4.port)),
+        out.starts_with(&format!(
+            "✓ Port {} is used by 2 processes, reachable from this machine only\n\n",
+            pair.v4.port
+        )),
         "{out}"
     );
     for pid in pair.pids() {
@@ -187,6 +190,58 @@ fn on_prints_every_holder() {
             "{pid} missing: {out}"
         );
     }
+    // one card each, a blank line between
+    assert_eq!(out.matches("  Process:").count(), 2, "{out}");
+}
+
+/// Each holder's card counts the connections that came in on its own socket:
+/// two clients of the `127.0.0.1` holder, one of the `[::1]` one
+#[test]
+#[cfg_attr(
+    any(target_os = "freebsd", target_os = "netbsd"),
+    ignore = "the BSDs read no connections"
+)]
+fn on_gives_each_holder_its_own_connections() {
+    let Some(pair) = Pair::start() else {
+        return;
+    };
+    let port = pair.v4.port;
+    let _v4_clients = [
+        std::net::TcpStream::connect(("127.0.0.1", port)).unwrap(),
+        std::net::TcpStream::connect(("127.0.0.1", port)).unwrap(),
+    ];
+    let _v6_client = std::net::TcpStream::connect(("::1", port)).unwrap();
+
+    let (out, code) = run_text(&["on", &pair.target()]);
+    assert_eq!(code, 0, "{out}");
+    let card_of = |pid: u32| {
+        out.split("\n\n")
+            .find(|card| card.contains(&format!("(PID {pid})")) && card.contains("Process:"))
+            .unwrap_or_else(|| panic!("no card for {pid}: {out}"))
+    };
+    assert!(
+        card_of(pair.v4.pid()).contains("Connections: 2 established"),
+        "{out}"
+    );
+    assert!(
+        card_of(pair.v6.pid()).contains("Connections: 1 established"),
+        "{out}"
+    );
+
+    // the JSON counts the port's connections as a whole, each peer under its holder
+    let (json, code) = run_json(&["on", &pair.target(), "--json"]);
+    assert_eq!(code, 0, "{json}");
+    assert_eq!(json["connections"]["total"], 3, "{json}");
+    let held_by = |pid: u32| {
+        json["connections"]["peers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|p| p["holder_pid"] == pid)
+            .count()
+    };
+    assert_eq!(held_by(pair.v4.pid()), 2, "{json}");
+    assert_eq!(held_by(pair.v6.pid()), 1, "{json}");
 }
 
 #[test]

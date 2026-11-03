@@ -221,7 +221,7 @@ The same machine gives the same order on every run, so a list can be compared wi
 
 `address` is `0.0.0.0` or `::` for all addresses (a `*` bind reads `0.0.0.0`) and `127.0.0.1` or `::1` for loopback, with IPv6 unbracketed on every OS. Add brackets yourself to build a URL (`http://[::1]:3000`). Only TCP listeners appear: a UDP socket is invisible to `ports` and `on`.
 
-`exposure` says whether the port is reachable from the network: `"local"` when it is bound to loopback only (`127.0.0.1`, `::1`), `"exposed"` for all interfaces (`0.0.0.0`, `::`, `*`), any other address, or no known address. It is derived from `address`, so the two always agree. `on :port` answers with `address` but no `exposure` key; `on <pid>` and `ports` give it on each port object.
+`exposure` says whether the port is reachable from the network: `"local"` when it is bound to loopback only (`127.0.0.1`, `::1`), `"exposed"` for all interfaces (`0.0.0.0`, `::`, `*`), any other address, or no known address. It is derived from `address`, so the two always agree. `on :port` has it at the top level, next to `address` (the first holder's, as `address` is); `on <pid>`, names and `ports` give it on each port object.
 
 ## Output shapes
 
@@ -248,15 +248,22 @@ One port (`proc on :3000`):
 ```json
 {
   "action": "on", "query_type": "port_to_process", "success": true,
-  "port": 3000, "protocol": "tcp", "address": "0.0.0.0",
+  "port": 3000, "protocol": "tcp", "address": "0.0.0.0", "exposure": "exposed",
+  "connections": {
+    "total": 3, "by_state": {"established": 3},
+    "peers": [{"holder_pid": 1234, "state": "established", "remote_address": "127.0.0.1", "remote_port": 53781, "peer": {"pid": 4321, "name": "curl"}}, ...],
+    "peers_truncated": true
+  },
   "process": <Process>,
   "processes": [<Process>, ...]
 }
 ```
 
-`127.0.0.1:3000` and `[::1]:3000` are different sockets. `processes` lists every holder once. `process` is the holder with the lowest PID on every OS, and `protocol` and `address` are that holder's. Read `processes`.
+`127.0.0.1:3000` and `[::1]:3000` are different sockets. `processes` lists every holder once. `process` is the holder with the lowest PID on every OS, and `protocol`, `address` and `exposure` are that holder's. Read `processes`.
 
-One PID (`proc on <pid>`): `{"action": "on", "query_type": "process_to_ports", "success": true, "process": <Process>, "ports": [<Port>, ...]}`.
+`connections` counts every TCP connection to the port, whichever holder's socket it came in on: `total`, `by_state` (`established`, `close_wait`, `time_wait` and so on, a state with none is left out) and `peers`, at most 50, each with the `holder_pid` whose socket it came in on, its `state`, the client's `remote_address` and `remote_port`, and `peer`, the process at the client's end (`pid`, and `name` when known) when that end is on this machine. `peers_truncated` is present, `true`, only when there are more connections than `peers` lists. `connections` is absent where proc reads none (FreeBSD and NetBSD) or the reading failed, never `null`; a port with none has `total: 0`.
+
+One PID (`proc on <pid>`): `{"action": "on", "query_type": "process_to_ports", "success": true, "process": <Process>, "ports": [<Port>, ...]}`. Each port object also has `connections` with `total` and `by_state` only (no `peers`): the connections that came in on this process's own sockets, so a port held by two processes counts each one's share.
 
 One name, or several targets (`proc on :3000 1234 node`):
 
@@ -271,7 +278,7 @@ One name, or several targets (`proc on :3000 1234 node`):
 }
 ```
 
-A single name gives `results` entries of `{process, ports}` without `target`. Port targets list that port only. If no target is found the plain error (exit 2) is printed.
+A single name gives `results` entries of `{process, ports}` without `target`; each port has `exposure` and `connections` (`total` and `by_state`) as for one PID. Port targets list that port only. If no target is found the plain error (exit 2) is printed.
 
 ### kill, stop, freeze, thaw, orphans --kill, stuck --kill
 
