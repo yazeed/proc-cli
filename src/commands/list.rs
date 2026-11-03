@@ -64,11 +64,11 @@ pub struct ListCommand {
     #[arg(long, short = 'j')]
     pub json: bool,
 
-    /// Show verbose output with command line, cwd, parent PID, and uptime
+    /// Add PPID, STATUS and DIR to the table, and cut nothing
     #[arg(long, short = 'v')]
     pub verbose: bool,
 
-    /// Print full directories and arguments instead of fitting the terminal width
+    /// Print the directory and the command line whole instead of fitting the terminal width
     #[arg(long, short = 'w')]
     pub wide: bool,
 
@@ -84,7 +84,9 @@ pub struct ListCommand {
 impl ListCommand {
     /// Executes the list command, displaying processes matching the filters.
     pub fn execute(&self) -> Result<()> {
-        let printer = Printer::from_flags(self.json, self.verbose).wide(self.wide);
+        let printer = Printer::from_flags(self.json, self.verbose)
+            .wide(self.wide)
+            .scoped_to_dir(self.in_dir.is_some());
 
         // Get base process list (several names as separate arguments; each may
         // still be a comma-separated list)

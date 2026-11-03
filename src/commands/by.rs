@@ -52,11 +52,11 @@ pub struct ByCommand {
     #[arg(long, short = 'j')]
     pub json: bool,
 
-    /// Show verbose output with command line, cwd, parent PID, and uptime
+    /// Add PPID, STATUS and DIR to the table, and cut nothing
     #[arg(long, short = 'v')]
     pub verbose: bool,
 
-    /// Print full directories and arguments instead of fitting the terminal width
+    /// Print the directory and the command line whole instead of fitting the terminal width
     #[arg(long, short = 'w')]
     pub wide: bool,
 
@@ -72,7 +72,9 @@ pub struct ByCommand {
 impl ByCommand {
     /// Executes the by command, listing processes matching the name filter.
     pub fn execute(&self) -> Result<()> {
-        let printer = Printer::from_flags(self.json, self.verbose).wide(self.wide);
+        let printer = Printer::from_flags(self.json, self.verbose)
+            .wide(self.wide)
+            .scoped_to_dir(self.in_dir.is_some());
 
         // Get processes by name
         let mut processes = Process::find_by_name(&self.name, NameMatch::from_flag(self.cmd))?;

@@ -39,7 +39,7 @@ pub struct StopCommand {
     #[arg(long, short = 'j')]
     json: bool,
 
-    /// Show verbose output
+    /// Add PPID, STATUS and DIR to the table of processes it lists, and cut nothing
     #[arg(long, short = 'v')]
     verbose: bool,
 
@@ -73,7 +73,8 @@ pub struct StopCommand {
 impl StopCommand {
     /// Executes the stop command, gracefully terminating matched processes.
     pub fn execute(&self) -> Result<()> {
-        let printer = Printer::from_flags(self.json, self.verbose);
+        let printer =
+            Printer::from_flags(self.json, self.verbose).scoped_to_dir(self.in_dir.is_some());
 
         // Validate --signal first, so a bad name fails the same way with or
         // without --dry-run, and before the confirmation prompt

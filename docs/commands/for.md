@@ -13,7 +13,7 @@ proc for /usr/bin/node     # processes using this executable
 proc for ~/bin/myapp       # tilde expansion
 ```
 
-One process gets the same card as `proc on`, under the line `✓ Found 1 process for ./server`: its command line, directory, path, user, parent, status, resources, start time, children, the ports it listens on and the connections to them. Several get the standard process table, followed by the ports they listen on. `--json` is the same for one process or several. If the OS gives no port table (for example macOS without `lsof` on the PATH), the card and the table leave the ports out, and `--json` has no `ports` key for those processes.
+One process gets the same card as `proc on`, under the line `✓ Found 1 process for ./server`: its command line, directory, path, user, parent, status, resources, start time, children, the ports it listens on and the connections to them. Several get the standard process table (the one `proc list` prints; `--verbose` adds PPID, STATUS and DIR), followed by the ports they listen on. `--json` is the same for one process or several. If the OS gives no port table (for example macOS without `lsof` on the PATH), the card and the table leave the ports out, and `--json` has no `ports` key for those processes.
 
 ## Options
 
@@ -29,8 +29,8 @@ One process gets the same card as `proc on`, under the line `✓ Found 1 process
 | `--sort <key>` | `-s` | Sort by: cpu, mem (biggest first); pid, name (ascending). Ties come by PID (default: cpu) |
 | `--limit <n>` | `-n` | Limit results |
 | `--json` | `-j` | Output as JSON |
-| `--verbose` | `-v` | Print every value whole and every connection (default: cut to the terminal width, 5 peers) |
-| `--wide` | `-w` | Print full directories and arguments instead of fitting the terminal |
+| `--verbose` | `-v` | Print every value whole and every connection (default: cut to the terminal width, 5 peers); a table of several hits gains PPID, STATUS and DIR |
+| `--wide` | `-w` | Print the directory and the command line whole instead of fitting the terminal |
 
 ## Examples
 

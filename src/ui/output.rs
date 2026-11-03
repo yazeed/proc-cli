@@ -4,15 +4,10 @@
 
 use crate::core::Process;
 use crate::error::{ExitCode, ProcError, Result};
-use crate::out_println;
-use crate::ui::format::{
-    colorize_status, format_duration, format_memory, plural, process_table_budget, truncate_path,
-    truncate_string,
-};
+use crate::ui::format::plural;
+use crate::ui::table::{process_table, Screen, TableLayout};
 use crate::ui::{out, prompt};
 use colored::*;
-use comfy_table::presets::NOTHING;
-use comfy_table::{Attribute, Cell, CellAlignment, Color, ContentArrangement, Table};
 use serde::Serialize;
 use std::io::Write;
 
@@ -109,6 +104,9 @@ pub struct Printer {
     verbose: bool,
     /// Print full values instead of truncating them to the terminal width.
     wide: bool,
+    /// The command is scoped to a directory (`--in`): DIR is the table's
+    /// second column.
+    scoped_to_dir: bool,
     /// The targets that matched nothing, for a command that takes targets. When
     /// set, every JSON result the printer writes has them as `not_found`.
     not_found: Option<Vec<String>>,
@@ -119,6 +117,21 @@ pub(crate) fn terminal_width() -> u16 {
     crossterm::terminal::size().map(|(w, _)| w).unwrap_or(120)
 }
 
+/// A screen `width` columns wide, at the time now
+pub(crate) fn screen_of(width: u16) -> Screen {
+    Screen {
+        width,
+        now_secs: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs()),
+    }
+}
+
+/// The terminal as it is now: its width and the clock
+pub(crate) fn screen_now() -> Screen {
+    screen_of(terminal_width())
+}
+
 impl Printer {
     /// Creates a new printer with the specified format and verbosity.
     pub fn new(format: OutputFormat, verbose: bool) -> Self {
@@ -126,6 +139,7 @@ impl Printer {
             format,
             verbose,
             wide: false,
+            scoped_to_dir: false,
             not_found: None,
         }
     }
@@ -142,6 +156,13 @@ impl Printer {
     /// may exceed the terminal width rather than being elided.
     pub fn wide(mut self, wide: bool) -> Self {
         self.wide = wide;
+        self
+    }
+
+    /// Say whether the command is scoped to a directory (`--in`): the process
+    /// table then has DIR as its second column, with or without `-v`.
+    pub fn scoped_to_dir(mut self, scoped: bool) -> Self {
+        self.scoped_to_dir = scoped;
         self
     }
 
@@ -205,7 +226,7 @@ impl Printer {
     /// The `action` parameter sets the JSON `action` field (e.g. "list", "by", "stuck").
     pub fn print_processes_as(&self, action: &str, processes: &[Process], context: Option<&str>) {
         match self.format {
-            OutputFormat::Human => self.print_processes_human(processes, context),
+            OutputFormat::Human => self.print_processes_human(processes, context, false),
             OutputFormat::Json => self.print_json(&ProcessListOutput {
                 action,
                 success: true,
@@ -226,17 +247,26 @@ impl Printer {
         self.print_processes_with_context(processes, None)
     }
 
-    fn print_processes_human(&self, processes: &[Process], context: Option<&str>) {
-        to_stdout(|out| self.write_processes_human(out, terminal_width(), processes, context));
+    fn print_processes_human(
+        &self,
+        processes: &[Process],
+        context: Option<&str>,
+        whole_command: bool,
+    ) {
+        to_stdout(|out| {
+            self.write_processes_human(out, screen_now(), processes, context, whole_command)
+        });
     }
 
-    /// `width` is the terminal width the table is fitted to.
+    /// `screen` is what the table is fitted to. `whole_command` prints the
+    /// command lines whole, for a list a person is about to approve.
     fn write_processes_human(
         &self,
         out: &mut impl Write,
-        width: u16,
+        screen: Screen,
         processes: &[Process],
         context: Option<&str>,
+        whole_command: bool,
     ) -> std::io::Result<()> {
         if processes.is_empty() {
             let msg = match context {
@@ -257,7 +287,7 @@ impl Printer {
         )?;
         writeln!(out)?;
 
-        self.write_process_rows(out, width, processes)
+        self.write_process_rows(out, screen, processes, whole_command)
     }
 
     /// Like `print_processes_as`, for a caller that has printed its own headline
@@ -267,236 +297,44 @@ impl Printer {
         match self.format {
             OutputFormat::Human => to_stdout(|out| {
                 writeln!(out)?;
-                self.write_process_rows(out, terminal_width(), processes)
+                self.write_process_rows(out, screen_now(), processes, false)
             }),
             OutputFormat::Json => self.print_processes_as(action, processes, None),
         }
     }
 
-    /// The process table (or the verbose list), without a headline, fitted to
-    /// a terminal `width` columns wide
+    /// The table under a headline, for the list in front of a question: the
+    /// command lines are printed whole, since the person answering approves
+    /// exactly those processes. Only a person is asked, so this is human output.
+    pub fn print_processes_to_approve(&self, processes: &[Process]) {
+        to_stdout(|out| {
+            writeln!(out)?;
+            self.write_process_rows(out, screen_now(), processes, true)
+        });
+    }
+
+    /// How the table is laid out for this printer: `-v` adds columns and cuts
+    /// nothing, `--wide` cuts nothing, and `whole_command` keeps the command
+    /// lines whole whatever the flags say.
+    fn layout(&self, screen: Screen, whole_command: bool) -> TableLayout {
+        let layout = TableLayout::from_flags(screen, self.verbose, self.wide, self.scoped_to_dir);
+        if whole_command {
+            layout.with_whole_command()
+        } else {
+            layout
+        }
+    }
+
+    /// The process table, without a headline, fitted to `screen`
     fn write_process_rows(
         &self,
         out: &mut impl Write,
-        width: u16,
+        screen: Screen,
         processes: &[Process],
+        whole_command: bool,
     ) -> std::io::Result<()> {
-        if self.verbose {
-            // Verbose: full details, nothing truncated
-            for proc in processes {
-                let status_str = format!("{:?}", proc.status);
-                let status_colored = colorize_status(&proc.status, &status_str);
-
-                writeln!(
-                    out,
-                    "{} {} {}  {:.1}% CPU  {}  {}",
-                    proc.pid.to_string().cyan().bold(),
-                    proc.name.white().bold(),
-                    format!("[{}]", status_colored).bright_black(),
-                    proc.cpu_percent,
-                    format_memory(proc.memory_mb),
-                    proc.user.as_deref().unwrap_or("-").bright_black()
-                )?;
-
-                if let Some(ref cmd) = proc.command {
-                    writeln!(out, "    {} {}", "cmd:".bright_black(), cmd)?;
-                }
-                if let Some(ref path) = proc.exe_path {
-                    writeln!(out, "    {} {}", "exe:".bright_black(), path.bright_black())?;
-                }
-                if let Some(ref cwd) = proc.cwd {
-                    writeln!(out, "    {} {}", "cwd:".bright_black(), cwd.bright_black())?;
-                }
-                if let Some(ppid) = proc.parent_pid {
-                    writeln!(
-                        out,
-                        "    {} {}",
-                        "parent:".bright_black(),
-                        ppid.to_string().bright_black()
-                    )?;
-                }
-                if let Some(uptime) = proc.uptime_secs {
-                    writeln!(
-                        out,
-                        "    {} {}",
-                        "uptime:".bright_black(),
-                        format_duration(uptime).bright_black()
-                    )?;
-                }
-                writeln!(out)?;
-            }
-        } else {
-            let budget = process_table_budget(width);
-            let show_uptime = budget.show_uptime;
-            let (dir_content, name_content, args_content) = (budget.dir, budget.name, budget.args);
-
-            let mut table = Table::new();
-            // Disabled never reflows a cell, so one process is always one line.
-            // Fitting the terminal is handled by truncating content above, not
-            // by letting comfy-table wrap — a wrapped cell breaks the column
-            // alignment that makes the table readable in the first place.
-            table
-                .load_preset(NOTHING)
-                .set_content_arrangement(ContentArrangement::Disabled);
-
-            // Header
-            let mut header = vec![
-                Cell::new("PID")
-                    .fg(Color::Blue)
-                    .add_attribute(Attribute::Bold),
-                Cell::new("DIR")
-                    .fg(Color::Blue)
-                    .add_attribute(Attribute::Bold),
-                Cell::new("NAME")
-                    .fg(Color::Blue)
-                    .add_attribute(Attribute::Bold),
-                Cell::new("ARGS")
-                    .fg(Color::Blue)
-                    .add_attribute(Attribute::Bold),
-                Cell::new("CPU%")
-                    .fg(Color::Blue)
-                    .add_attribute(Attribute::Bold)
-                    .set_alignment(CellAlignment::Right),
-                Cell::new("MEM")
-                    .fg(Color::Blue)
-                    .add_attribute(Attribute::Bold)
-                    .set_alignment(CellAlignment::Right),
-            ];
-            if show_uptime {
-                header.push(
-                    Cell::new("UPTIME")
-                        .fg(Color::Blue)
-                        .add_attribute(Attribute::Bold)
-                        .set_alignment(CellAlignment::Right),
-                );
-            }
-            header.push(
-                Cell::new("STATUS")
-                    .fg(Color::Blue)
-                    .add_attribute(Attribute::Bold)
-                    .set_alignment(CellAlignment::Right),
-            );
-            table.set_header(header);
-
-            // Constraints mirror the budget above. In --wide mode no constraint
-            // is set at all, so every column sizes to its full content.
-            if !self.wide {
-                use comfy_table::ColumnConstraint::*;
-                use comfy_table::Width::*;
-                table
-                    .column_mut(0)
-                    .expect("PID column")
-                    .set_constraint(Absolute(Fixed(budget.pid as u16))); // 6 content — fits "999999"
-                table
-                    .column_mut(4)
-                    .expect("CPU% column")
-                    .set_constraint(Absolute(Fixed(budget.cpu as u16))); // 6 content — fits "100.0"
-                table
-                    .column_mut(5)
-                    .expect("MEM column")
-                    .set_constraint(Absolute(Fixed(budget.mem as u16))); // 9 content — fits "9999.9MB"
-                let status_column = if show_uptime {
-                    table
-                        .column_mut(6)
-                        .expect("UPTIME column")
-                        .set_constraint(Absolute(Fixed(budget.uptime as u16))); // 8 content
-                    7
-                } else {
-                    6
-                };
-                table
-                    .column_mut(status_column)
-                    .expect("STATUS column")
-                    .set_constraint(Absolute(Fixed(budget.status as u16))); // 10 content
-            }
-
-            for proc in processes {
-                let status_str = format!("{:?}", proc.status);
-
-                // Show working directory (where the process was started from).
-                // Middle elision keeps the root and the tail that differs
-                // between rows; truncating either end alone loses one of them.
-                let cwd = proc.cwd.as_deref().unwrap_or("-");
-                let path_display = if self.wide {
-                    cwd.to_string()
-                } else {
-                    truncate_path(cwd, dir_content)
-                };
-                let name_display = if self.wide {
-                    proc.name.clone()
-                } else {
-                    truncate_string(&proc.name, name_content)
-                };
-
-                // Show command args (skip executable, simplify paths to filenames)
-                let cmd_display = proc
-                    .command
-                    .as_ref()
-                    .map(|c| {
-                        let parts: Vec<&str> = c.split_whitespace().collect();
-                        if parts.len() > 1 {
-                            let args: Vec<String> = parts[1..]
-                                .iter()
-                                .map(|arg| {
-                                    if arg.contains('/') && !arg.starts_with('-') {
-                                        std::path::Path::new(arg)
-                                            .file_name()
-                                            .map(|f| f.to_string_lossy().to_string())
-                                            .unwrap_or_else(|| arg.to_string())
-                                    } else {
-                                        arg.to_string()
-                                    }
-                                })
-                                .collect();
-                            let result = args.join(" ");
-                            if self.wide {
-                                result
-                            } else {
-                                truncate_string(&result, args_content)
-                            }
-                        } else {
-                            // No args beyond the executable itself
-                            "-".to_string()
-                        }
-                    })
-                    .unwrap_or_else(|| "-".to_string());
-
-                let mem_display = format_memory(proc.memory_mb);
-
-                let status_color = match proc.status {
-                    crate::core::ProcessStatus::Running => Color::Green,
-                    crate::core::ProcessStatus::Sleeping => Color::Blue,
-                    crate::core::ProcessStatus::Stopped => Color::Yellow,
-                    crate::core::ProcessStatus::Zombie => Color::Red,
-                    _ => Color::White,
-                };
-
-                let mut row = vec![
-                    Cell::new(proc.pid).fg(Color::Cyan),
-                    Cell::new(&path_display).fg(Color::DarkGrey),
-                    Cell::new(&name_display).fg(Color::White),
-                    Cell::new(&cmd_display).fg(Color::DarkGrey),
-                    Cell::new(format!("{:.1}", proc.cpu_percent))
-                        .set_alignment(CellAlignment::Right),
-                    Cell::new(&mem_display).set_alignment(CellAlignment::Right),
-                ];
-                if show_uptime {
-                    let uptime_display = proc
-                        .uptime_secs
-                        .map(format_duration)
-                        .unwrap_or_else(|| "-".to_string());
-                    row.push(Cell::new(uptime_display).set_alignment(CellAlignment::Right));
-                }
-                row.push(
-                    Cell::new(&status_str)
-                        .fg(status_color)
-                        .set_alignment(CellAlignment::Right),
-                );
-                table.add_row(row);
-            }
-
-            writeln!(out, "{table}")?;
-        }
+        let layout = self.layout(screen, whole_command);
+        writeln!(out, "{}", process_table(processes, &layout))?;
         writeln!(out)
     }
 
@@ -680,7 +518,8 @@ impl Printer {
     pub fn print_dry_run_with(&self, action: &str, processes: &[Process], message: &str) {
         match self.format {
             OutputFormat::Human => {
-                self.print_processes_human(processes, None);
+                // The thing a person approves: the whole command line
+                self.print_processes_human(processes, None, true);
                 self.warning(message);
             }
             OutputFormat::Json => self.print_json(&DryRunOutput {
@@ -722,27 +561,28 @@ impl Printer {
         Ok(confirmed)
     }
 
-    /// Print a confirmation prompt showing processes about to be acted on
+    /// Print a confirmation prompt showing processes about to be acted on:
+    /// the process table, with the whole command lines
     pub fn print_confirmation(&self, action: &str, processes: &[Process]) {
-        out_println!(
+        to_stdout(|out| self.write_confirmation(out, screen_now(), action, processes));
+    }
+
+    fn write_confirmation(
+        &self,
+        out: &mut impl Write,
+        screen: Screen,
+        action: &str,
+        processes: &[Process],
+    ) -> std::io::Result<()> {
+        writeln!(
+            out,
             "\n{} Found {} process{} to {}:\n",
             "⚠".yellow().bold(),
             processes.len().to_string().cyan().bold(),
             if processes.len() == 1 { "" } else { "es" },
             action
-        );
-
-        for proc in processes {
-            out_println!(
-                "  {} {} [PID {}] - CPU: {:.1}%, MEM: {}",
-                "→".bright_black(),
-                proc.name.white().bold(),
-                proc.pid.to_string().cyan(),
-                proc.cpu_percent,
-                format_memory(proc.memory_mb)
-            );
-        }
-        out_println!();
+        )?;
+        self.write_process_rows(out, screen, processes, true)
     }
 }
 
@@ -919,121 +759,249 @@ mod tests {
         assert_eq!(written(|w| json().write_warning(w, "careful")), "");
     }
 
+    /// The time the tests draw tables at
+    const NOW: u64 = 1_000_000;
+
+    /// A screen `width` columns wide, at [`NOW`]
+    fn screen(width: u16) -> Screen {
+        Screen {
+            width,
+            now_secs: NOW,
+        }
+    }
+
+    /// A process that has run for `secs`
+    fn up_for(mut p: Process, secs: u64) -> Process {
+        p.start_time = Some(NOW - secs);
+        p
+    }
+
     #[test]
     fn no_processes_says_so_with_or_without_a_context() {
-        let out = written(|w| human().write_processes_human(w, 120, &[], None));
+        let out = written(|w| human().write_processes_human(w, screen(120), &[], None, false));
         assert_eq!(out, "⚠ No processes found\n");
-        let out = written(|w| human().write_processes_human(w, 120, &[], Some("in /srv")));
+        let out =
+            written(|w| human().write_processes_human(w, screen(120), &[], Some("in /srv"), false));
         assert_eq!(out, "⚠ No processes found in /srv\n");
     }
 
     #[test]
     fn the_headline_counts_processes_and_names_the_context() {
         let one = [process(42, "node")];
-        let out = written(|w| human().write_processes_human(w, 120, &one, Some("in /a")));
+        let out =
+            written(|w| human().write_processes_human(w, screen(120), &one, Some("in /a"), false));
         assert_eq!(out.lines().next(), Some("✓ Found 1 process in /a"));
         assert_eq!(out.lines().nth(1), Some(""));
 
         let two = [process(42, "node"), process(43, "deno")];
-        let out = written(|w| human().write_processes_human(w, 120, &two, None));
+        let out = written(|w| human().write_processes_human(w, screen(120), &two, None, false));
         assert_eq!(out.lines().next(), Some("✓ Found 2 processes"));
     }
 
-    #[test]
-    fn the_table_lists_a_process_per_row_and_ends_with_a_blank_line() {
-        let mut p = process(42, "node");
+    /// A process with every column known
+    fn known_process() -> Process {
+        let mut p = up_for(process(42, "node"), 65);
+        p.user = Some("zee".into());
         p.cwd = Some("/a/b".into());
         p.command = Some("node /x/y/server.js --port 3000".into());
+        p.parent_pid = Some(7);
         p.cpu_percent = 1.25;
         p.memory_mb = 12.5;
-        p.uptime_secs = Some(65);
-        let out = written(|w| human().write_process_rows(w, 120, &[p]));
+        p
+    }
+
+    #[test]
+    fn the_table_shows_pid_name_user_cpu_mem_uptime_command() {
+        let out =
+            written(|w| human().write_process_rows(w, screen(120), &[known_process()], false));
         assert_eq!(
             rows(&out),
             [
-                "PID DIR NAME ARGS CPU% MEM UPTIME STATUS",
-                "42 /a/b node server.js --port 3000 1.2 12.5MB 1m 5s Running"
+                "PID NAME USER CPU% MEM UPTIME COMMAND",
+                "42 node zee 1.2 12.5MB 1m 5s node /x/y/server.js --port 3000"
             ]
         );
         assert!(out.ends_with("\n\n"), "{out:?}");
     }
 
     #[test]
-    fn a_narrow_terminal_drops_the_uptime_column_and_cuts_the_args() {
-        let mut p = process(42, "node");
-        p.cwd = Some("/a/b".into());
-        p.command = Some("node /x/y/server.js --port 3000".into());
-        p.uptime_secs = Some(65);
-        let out = written(|w| human().write_process_rows(w, 80, &[p.clone()]));
+    fn uptime_shows_at_any_width() {
+        for width in [1, 20, 40, 80, 99, 100, 200] {
+            let out = written(|w| {
+                human().write_process_rows(w, screen(width), &[known_process()], false)
+            });
+            let rows = rows(&out);
+            assert!(
+                rows[0].starts_with("PID NAME USER CPU% MEM UPTIME COMMAND"),
+                "{width} columns: {out}"
+            );
+            assert!(
+                rows[1].starts_with("42 node zee 1.2 12.5MB 1m 5s "),
+                "{width}: {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_narrow_terminal_cuts_the_command_and_nothing_else() {
+        let out = written(|w| human().write_process_rows(w, screen(60), &[known_process()], false));
+        // 60 columns less the other columns (39 with their padding), the
+        // command's own padding and the slack leaves 18 for the command
         assert_eq!(
             rows(&out),
             [
-                "PID DIR NAME ARGS CPU% MEM STATUS",
-                "42 /a/b node server.js -… 0.0 0KB Running"
+                "PID NAME USER CPU% MEM UPTIME COMMAND",
+                "42 node zee 1.2 12.5MB 1m 5s node /x/y/server.…"
             ]
         );
-        // 100 columns is the first width with room for UPTIME
-        let out = written(|w| human().write_process_rows(w, 99, &[p.clone()]));
-        assert!(!out.contains("UPTIME"), "{out}");
-        let out = written(|w| human().write_process_rows(w, 100, &[p]));
-        assert!(out.contains("UPTIME"), "{out}");
+        for line in out.lines().filter(|l| !l.is_empty()) {
+            assert!(line.chars().count() <= 60, "{line:?} overflows 60 columns");
+        }
+        // The command keeps a few columns however narrow the terminal is
+        let out = written(|w| human().write_process_rows(w, screen(10), &[known_process()], false));
+        let command = rows(&out)[1].split_once("1m 5s ").unwrap().1.to_string();
+        assert_eq!(command, "node /x/y/s…");
     }
 
     #[test]
-    fn wide_prints_every_value_in_full() {
-        let mut p = process(42, "a-process-with-a-very-long-name");
+    fn wide_and_verbose_cut_nothing_and_a_whole_command_keeps_only_the_command() {
+        let mut p = known_process();
+        p.name = "a-process-with-a-very-long-name".into();
         p.cwd = Some("/srv/some/deeply/nested/working/directory/of/the/app".into());
         p.command = Some("a-process /x/y/server.js --listen-on-all-interfaces-please 3000".into());
+        let command = "a-process /x/y/server.js --listen-on-all-interfaces-please 3000";
 
-        let cut = written(|w| human().write_process_rows(w, 80, &[p.clone()]));
-        assert!(cut.matches('…').count() >= 2, "{cut}");
+        let cut = written(|w| human().write_process_rows(w, screen(80), &[p.clone()], false));
+        assert!(cut.contains('…'), "{cut}");
+        assert!(!cut.contains(command), "{cut}");
 
-        let wide = written(|w| human().wide(true).write_process_rows(w, 80, &[p]));
+        let wide = written(|w| {
+            human()
+                .wide(true)
+                .write_process_rows(w, screen(80), &[p.clone()], false)
+        });
+        assert!(wide.contains(command) && !wide.contains('…'), "{wide}");
+
+        let verbose = written(|w| {
+            Printer::new(OutputFormat::Human, true).write_process_rows(
+                w,
+                screen(80),
+                &[p.clone()],
+                false,
+            )
+        });
+        assert!(
+            verbose.contains(command) && !verbose.contains('…'),
+            "{verbose}"
+        );
+        assert!(verbose.contains("/srv/some/deeply/nested/working/directory/of/the/app"));
+
+        // A list to approve keeps the command whole and still cuts the rest
+        let approve = written(|w| {
+            human()
+                .scoped_to_dir(true)
+                .write_process_rows(w, screen(80), &[p.clone()], true)
+        });
+        assert!(approve.contains(command), "{approve}");
+        assert!(approve.contains('…'), "the directory is cut: {approve}");
+    }
+
+    #[test]
+    fn verbose_adds_ppid_status_dir_uncut() {
+        let verbose = Printer::new(OutputFormat::Human, true);
+        let bare = process(43, "deno");
+        let out =
+            written(|w| verbose.write_process_rows(w, screen(20), &[known_process(), bare], false));
         assert_eq!(
-            rows(&wide)[1],
-            "42 /srv/some/deeply/nested/working/directory/of/the/app \
-             a-process-with-a-very-long-name \
-             server.js --listen-on-all-interfaces-please 3000 0.0 0KB Running"
+            rows(&out),
+            [
+                "PID NAME USER CPU% MEM UPTIME PPID STATUS DIR COMMAND",
+                "42 node zee 1.2 12.5MB 1m 5s 7 Running /a/b node /x/y/server.js --port 3000",
+                "43 deno - 0.0 0KB - - Running - -"
+            ]
         );
     }
 
     #[test]
-    fn args_show_file_names_for_paths_and_dashes_when_there_are_none() {
-        let args_of = |command: Option<&str>| {
-            let mut p = process(42, "node");
-            p.command = command.map(str::to_string);
-            let out = written(|w| human().wide(true).write_process_rows(w, 120, &[p]));
-            // PID DIR NAME ARGS ...: the fourth cell of the row
-            rows(&out)[1]
-                .split(' ')
-                .skip(3)
-                .take_while(|c| *c != "0.0")
-                .collect::<Vec<_>>()
-                .join(" ")
-        };
-        // Paths shrink to their file name, flags and plain words stay
+    fn in_puts_dir_second() {
+        let scoped = human().scoped_to_dir(true);
+        let out = written(|w| scoped.write_process_rows(w, screen(120), &[known_process()], false));
         assert_eq!(
-            args_of(Some(
-                "/usr/bin/node /opt/app/server.js -c /etc/x.conf -p/q start"
-            )),
-            "server.js -c x.conf -p/q start"
+            rows(&out),
+            [
+                "PID DIR NAME USER CPU% MEM UPTIME COMMAND",
+                "42 /a/b node zee 1.2 12.5MB 1m 5s node /x/y/server.js --port 3000"
+            ]
         );
-        // Paths with no file name stay as they are
-        assert_eq!(args_of(Some("node / a/..")), "/ a/..");
-        // The executable alone has no args; a process with no command line neither
-        assert_eq!(args_of(Some("/usr/bin/node")), "-");
-        assert_eq!(args_of(None), "-");
+        // with -v too: the second column, not the one before COMMAND
+        let verbose = Printer::new(OutputFormat::Human, true).scoped_to_dir(true);
+        let out =
+            written(|w| verbose.write_process_rows(w, screen(120), &[known_process()], false));
+        assert_eq!(
+            rows(&out),
+            [
+                "PID DIR NAME USER CPU% MEM UPTIME PPID STATUS COMMAND",
+                "42 /a/b node zee 1.2 12.5MB 1m 5s 7 Running node /x/y/server.js --port 3000"
+            ]
+        );
     }
 
     #[test]
-    fn a_missing_directory_or_uptime_shows_a_dash() {
-        let p = process(42, "node");
-        let out = written(|w| human().write_process_rows(w, 120, &[p]));
-        assert_eq!(rows(&out)[1], "42 - node - 0.0 0KB - Running");
+    fn the_directory_gives_way_to_the_command() {
+        let dir = "/srv/some/deeply/nested/working/directory/of/the/app";
+        let mut p = process(42, "node");
+        p.cwd = Some(dir.into());
+        p.command = Some("node ".to_string() + &"argument ".repeat(10));
+        let scoped = human().scoped_to_dir(true);
+
+        // Room for both: neither is cut
+        let out = written(|w| scoped.write_process_rows(w, screen(200), &[p.clone()], false));
+        assert!(rows(&out)[1].contains(dir), "{out}");
+        assert!(!out.contains('…'), "{out}");
+
+        // 80 columns: the other columns take 36, the directory gets 15 and the
+        // command the 24 that are left
+        let out = written(|w| scoped.write_process_rows(w, screen(80), &[p.clone()], false));
+        let row = rows(&out)[1].clone();
+        let cells: Vec<&str> = row.split(' ').collect();
+        assert_eq!(cells[1], crate::ui::truncate_path(dir, 15), "{out}");
+        let command = row.split_once(" - - 0.0 0KB - ").map(|(_, c)| c);
+        assert!(command.is_none(), "the order is DIR NAME USER ...: {row}");
+        let command = row.split_once("0KB - ").unwrap().1;
+        assert_eq!(command.chars().count(), 24, "{out}");
+        assert!(command.ends_with('…'), "{out}");
+
+        // However wide the terminal, the directory gets a third of the line at most
+        let out = written(|w| scoped.write_process_rows(w, screen(140), &[p.clone()], false));
+        let cell = rows(&out)[1].split(' ').nth(1).unwrap().to_string();
+        assert_eq!(cell, crate::ui::truncate_path(dir, 46), "{out}");
+
+        // The directory is never cut below 12 columns
+        let out = written(|w| scoped.write_process_rows(w, screen(30), &[p.clone()], false));
+        assert_eq!(
+            rows(&out)[1].split(' ').nth(1).unwrap().chars().count(),
+            12,
+            "{out}"
+        );
     }
 
     #[test]
-    fn the_table_names_every_status() {
+    fn an_unknown_value_shows_a_dash() {
+        let mut p = process(42, "node");
+        p.user = Some(String::new());
+        p.command = Some(String::new());
+        let verbose = Printer::new(OutputFormat::Human, true);
+        let out = written(|w| verbose.write_process_rows(w, screen(120), &[p.clone()], false));
+        assert_eq!(rows(&out)[1], "42 node - 0.0 0KB - - Running - -");
+        // Nothing at all known but the PID and name
+        p.user = None;
+        p.command = None;
+        let out = written(|w| human().write_process_rows(w, screen(120), &[p], false));
+        assert_eq!(rows(&out)[1], "42 node - 0.0 0KB - -");
+    }
+
+    #[test]
+    fn the_verbose_table_names_every_status() {
         let statuses = [
             ProcessStatus::Running,
             ProcessStatus::Sleeping,
@@ -1051,43 +1019,43 @@ mod tests {
                 p
             })
             .collect();
-        let table = written(|w| human().write_process_rows(w, 120, &list));
-        let verbose =
-            written(|w| Printer::new(OutputFormat::Human, true).write_process_rows(w, 120, &list));
+        let verbose = Printer::new(OutputFormat::Human, true);
+        let table = written(|w| verbose.write_process_rows(w, screen(120), &list, false));
         for (i, status) in statuses.iter().enumerate() {
             let name = format!("{status:?}");
-            assert!(rows(&table)[i + 1].ends_with(&name), "{table}");
-            assert!(verbose.contains(&format!("[{name}]")), "{verbose}");
+            let row = &rows(&table)[i + 1];
+            assert!(row.contains(&format!(" {name} ")), "{table}");
         }
     }
 
     #[test]
-    fn verbose_lists_every_known_detail_of_each_process() {
-        let mut p = process(42, "node");
-        p.cpu_percent = 2.5;
-        p.memory_mb = 1500.0;
-        p.user = Some("zee".into());
-        p.command = Some("node server.js".into());
-        p.exe_path = Some("/usr/bin/node".into());
-        p.cwd = Some("/srv/app".into());
-        p.parent_pid = Some(7);
-        p.uptime_secs = Some(3700);
-        let bare = process(43, "deno");
-        let verbose = Printer::new(OutputFormat::Human, true);
-        let out = written(|w| verbose.write_process_rows(w, 120, &[p, bare]));
+    fn a_preview_shows_the_whole_command_line() {
+        let mut p = known_process();
+        p.command = Some("node ".to_string() + &"argument ".repeat(30));
+        let command = p.command.clone().unwrap();
+
+        // The dry run's table and the question's list
+        let preview =
+            written(|w| human().write_processes_human(w, screen(60), &[p.clone()], None, true));
+        assert!(preview.contains(&command), "{preview}");
+        assert!(!preview.contains('…'), "{preview}");
+        let question = written(|w| human().write_confirmation(w, screen(60), "kill", &[p.clone()]));
+        assert!(question.contains(&command), "{question}");
         assert_eq!(
-            out,
-            "42 node [Running]  2.5% CPU  1.5GB  zee\n\
-             \x20   cmd: node server.js\n\
-             \x20   exe: /usr/bin/node\n\
-             \x20   cwd: /srv/app\n\
-             \x20   parent: 7\n\
-             \x20   uptime: 1h 1m\n\
-             \n\
-             43 deno [Running]  0.0% CPU  0KB  -\n\
-             \n\
-             \n"
+            question.lines().next(),
+            Some(""),
+            "a blank line comes before the headline: {question:?}"
         );
+        assert_eq!(
+            question.lines().nth(1),
+            Some("⚠ Found 1 process to kill:"),
+            "{question:?}"
+        );
+        assert_eq!(rows(&question)[1], "PID NAME USER CPU% MEM UPTIME COMMAND");
+
+        // ... where the same terminal cuts it in a list
+        let list = written(|w| human().write_processes_human(w, screen(60), &[p], None, false));
+        assert!(!list.contains(&command) && list.contains('…'), "{list}");
     }
 
     #[test]
@@ -1207,25 +1175,36 @@ mod tests {
 
     #[test]
     fn a_failed_write_ends_the_table() {
-        let mut p = process(42, "node");
-        p.cwd = Some("/a/b".into());
-        p.command = Some("node server.js".into());
+        let p = known_process();
         assert_stops_at_a_failed_write(|w| {
-            human().write_processes_human(w, 120, &[p.clone()], Some("in /a"))
+            human().write_processes_human(
+                w,
+                screen(120),
+                std::slice::from_ref(&p),
+                Some("in /a"),
+                false,
+            )
         });
-        assert_stops_at_a_failed_write(|w| human().write_processes_human(w, 120, &[], None));
+        assert_stops_at_a_failed_write(|w| {
+            human().write_processes_human(w, screen(120), &[], None, false)
+        });
     }
 
     #[test]
-    fn a_failed_write_ends_the_verbose_list() {
-        let mut p = process(42, "node");
-        p.command = Some("node server.js".into());
-        p.exe_path = Some("/usr/bin/node".into());
-        p.cwd = Some("/srv/app".into());
-        p.parent_pid = Some(7);
-        p.uptime_secs = Some(3700);
+    fn a_failed_write_ends_the_verbose_table() {
+        let p = known_process();
         let verbose = Printer::new(OutputFormat::Human, true);
-        assert_stops_at_a_failed_write(|w| verbose.write_process_rows(w, 120, &[p.clone()]));
+        assert_stops_at_a_failed_write(|w| {
+            verbose.write_process_rows(w, screen(120), std::slice::from_ref(&p), false)
+        });
+    }
+
+    #[test]
+    fn a_failed_write_ends_the_confirmation_list() {
+        let p = known_process();
+        assert_stops_at_a_failed_write(|w| {
+            human().write_confirmation(w, screen(120), "kill", std::slice::from_ref(&p))
+        });
     }
 
     #[test]

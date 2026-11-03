@@ -274,8 +274,8 @@ proc stuck
 ```
 ⚠ Found 1 potentially stuck process
 
- PID     DIR       NAME  ARGS            CPU%        MEM      STATUS 
- 4821    …y-agent  node  ts-node ind…   475.7      5.9GB     Running 
+ PID   NAME  USER   CPU%    MEM  UPTIME  COMMAND
+ 4821  node  zee   475.7  5.9GB  1h 12m  node /Users/zee/my-agent/node_modules/.bin/ts-node index.ts
 ```
 
 Attempt recovery with escalating signals (SIGCONT, then SIGINT):

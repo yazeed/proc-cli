@@ -41,7 +41,7 @@ Most commands support these flags (check individual command pages for details):
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--json` | `-j` | Output as JSON |
-| `--verbose` | `-v` | Show extra details |
+| `--verbose` | `-v` | Print every value whole. In a process table it adds PPID, STATUS and DIR and cuts nothing |
 | `--in [<dir>]` | `-i` | Filter by directory (bare `--in` is the current directory) |
 | `--by <name>` | `-b` | Filter by process name |
 | `--help` | `-h` | Show help |

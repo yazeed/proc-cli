@@ -17,9 +17,17 @@ proc list --sort cpu --limit 10  # top 10 by CPU
 
 Several names are separate arguments. Comma-separated lists (`node,python`) still work but are deprecated.
 
-The table shows PID, directory, name, arguments, CPU, memory and status, plus uptime on terminals at least 100 columns wide. `--verbose` and `--json` always include uptime.
+```
+✓ Found 2 processes
 
-One process is always one line. Directories and arguments are shortened to fit the terminal, with long paths keeping their root and their tail (`/Users/…/maliqe-website/.next/standalone`). Use `--wide` to print them in full.
+ PID    NAME     USER  CPU%     MEM  UPTIME  COMMAND
+ 39158  python3  zee    0.0  26.8MB     13s  python3 -m http.server 0 --bind 127.0.0.1
+ 38120  zsh      zee    0.0   4.1MB  2h 14m  -zsh
+```
+
+Every process table in proc (`list`, `by`, `in`, `for` with several hits, `orphans`, `stuck`, `watch`, and the list in front of a `--dry-run` or a question) has these columns: PID, NAME, USER, CPU%, MEM, UPTIME and COMMAND. UPTIME is there at any terminal width. A value proc cannot read shows as `-`. With `--in`, the directory is the second column (`PID DIR NAME ...`). `--verbose` keeps the table and adds PPID, STATUS and the directory (DIR) to it, and cuts nothing; `--json` has all of it.
+
+One process is always one line. COMMAND takes the width the other columns leave and ends with `…` where it is cut. Every other column keeps its width, except the directory under `--in`, which is cut in the middle (`/Users/…/maliqe-website/.next/standalone`) before it takes more than a third of the line. `--verbose` and `--wide` print everything whole, even when the line is longer than the terminal. The list in front of a `--dry-run` or a question prints the command line whole, since that is what you approve.
 
 ## Options
 
@@ -36,8 +44,8 @@ One process is always one line. Directories and arguments are shortened to fit t
 | `--sort <key>` | `-s` | Sort by: cpu, mem (biggest first); pid, name (ascending). Ties come by PID (default: cpu) |
 | `--limit <n>` | `-n` | Limit results |
 | `--json` | `-j` | Output as JSON |
-| `--verbose` | `-v` | Show command line, cwd, parent PID, uptime |
-| `--wide` | `-w` | Print full directories and arguments instead of fitting the terminal |
+| `--verbose` | `-v` | Add PPID, STATUS and DIR to the table, and cut nothing |
+| `--wide` | `-w` | Print the directory and the command line whole instead of fitting the terminal |
 
 ## Examples
 

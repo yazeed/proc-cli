@@ -40,11 +40,11 @@ pub struct StuckCommand {
     #[arg(long, short = 'j')]
     pub json: bool,
 
-    /// Show verbose output
+    /// Add PPID, STATUS and DIR to the table, and cut nothing
     #[arg(long, short = 'v')]
     pub verbose: bool,
 
-    /// Print full directories and arguments instead of fitting the terminal width
+    /// Print the directory and the command line whole instead of fitting the terminal width
     #[arg(long, short = 'w')]
     pub wide: bool,
 
@@ -66,7 +66,9 @@ impl StuckCommand {
     /// Executes the stuck command, finding long-running processes that stay busy (over 50% CPU)
     /// or are blocked in uninterruptible sleep.
     pub fn execute(&self) -> Result<()> {
-        let printer = Printer::from_flags(self.json, self.verbose).wide(self.wide);
+        let printer = Printer::from_flags(self.json, self.verbose)
+            .wide(self.wide)
+            .scoped_to_dir(self.in_dir.is_some());
 
         let timeout = Duration::from_secs(self.timeout);
         let mut processes = Process::find_stuck(timeout)?;
@@ -118,7 +120,7 @@ impl StuckCommand {
         // Kill: JSON prints a single action result; humans see the list first.
         // When they are asked, the question shows it, beside the question.
         if !self.json && !matches!(asking, Ok(true)) {
-            printer.print_processes_under_headline("stuck", &processes);
+            printer.print_processes_to_approve(&processes);
         }
 
         if asking? {
@@ -127,7 +129,7 @@ impl StuckCommand {
                 processes.len(),
                 plural(processes.len())
             );
-            let list = || printer.print_processes_under_headline("stuck", &processes);
+            let list = || printer.print_processes_to_approve(&processes);
             let confirmed = prompt::ask("stuck --kill", &processes, None, &question, list)?;
 
             if !confirmed {

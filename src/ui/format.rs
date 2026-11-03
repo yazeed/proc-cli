@@ -124,76 +124,6 @@ fn take_width_from_end(s: &str, max_width: usize) -> String {
     chars.iter().rev().collect()
 }
 
-/// What the three flexible process-table columns may use at a given terminal
-/// width, once the fixed columns are accounted for.
-pub struct ProcessTableBudget {
-    /// Column width for PID, including comfy-table's padding.
-    pub pid: usize,
-    /// Column width for CPU%.
-    pub cpu: usize,
-    /// Column width for MEM.
-    pub mem: usize,
-    /// Column width for UPTIME.
-    pub uptime: usize,
-    /// Column width for STATUS.
-    pub status: usize,
-    /// Content width for DIR.
-    pub dir: usize,
-    /// Content width for NAME.
-    pub name: usize,
-    /// Content width for ARGS.
-    pub args: usize,
-    /// UPTIME only fits next to a readable ARGS column on wider terminals.
-    pub show_uptime: bool,
-}
-
-/// Column budget for a process table rendered at `width` terminal columns.
-///
-/// Both process tables — `ui::output` and `commands::watch` — size their
-/// columns from this. They used to carry separate copies of the same layout,
-/// which is exactly how `watch` kept wrapping after the other table was fixed.
-///
-/// Pre-truncating each flexible column to its share is what keeps one process
-/// on one line: comfy-table wraps any cell that does not fit, and a wrapped
-/// cell destroys the alignment that makes a table readable.
-pub fn process_table_budget(width: u16) -> ProcessTableBudget {
-    // Fixed columns: content plus comfy-table's 1-column padding on each side.
-    const PID_W: usize = 8;
-    const CPU_W: usize = 8;
-    const MEM_W: usize = 11;
-    const UPTIME_W: usize = 10;
-    const STATUS_W: usize = 12;
-    // Each flexible column renders as its content width plus comfy-table's
-    // 2 columns of padding, so reserve those 6 up front.
-    const FLEX_PADDING: usize = 6;
-    // Measured slack: with arrangement disabled the fixed columns render a few
-    // columns wider than their constraints, and a line exactly as wide as the
-    // terminal wraps in some emulators. Verified against rendered output at
-    // 80/100/120/160/200 columns.
-    const SAFETY: usize = 7;
-
-    let show_uptime = width >= 100;
-    let fixed = PID_W + CPU_W + MEM_W + STATUS_W + if show_uptime { UPTIME_W } else { 0 };
-    let avail = (width as usize)
-        .saturating_sub(fixed + FLEX_PADDING + SAFETY)
-        .max(24);
-    let name = (avail / 4).clamp(8, 16);
-    let rest = avail - name;
-    let args = (rest / 2).max(12);
-    let dir = rest - args;
-    ProcessTableBudget {
-        pid: PID_W,
-        cpu: CPU_W,
-        mem: MEM_W,
-        uptime: UPTIME_W,
-        status: STATUS_W,
-        dir,
-        name,
-        args,
-        show_uptime,
-    }
-}
-
 /// Format memory in MB to a human-readable string with adaptive units.
 ///
 /// Examples: "512KB", "6.0MB", "3.0GB"
@@ -387,24 +317,5 @@ mod tests {
             assert_eq!(coloured.fgcolor, Some(colour), "{status:?}");
             assert_eq!(coloured.input, "word");
         }
-    }
-
-    #[test]
-    fn the_budget_adds_uptime_from_100_columns_and_always_fits_the_minimum() {
-        let narrow = process_table_budget(99);
-        assert!(!narrow.show_uptime);
-        let wide = process_table_budget(100);
-        assert!(wide.show_uptime);
-        // Never below the floor, however small the terminal
-        let tiny = process_table_budget(10);
-        assert_eq!(tiny.dir + tiny.name + tiny.args, 24);
-        assert_eq!((tiny.name, tiny.args, tiny.dir), (8, 12, 4));
-        // At 120 columns the three flexible columns share what the fixed ones leave
-        let b = process_table_budget(120);
-        assert_eq!((b.name, b.args, b.dir), (14, 22, 22));
-        assert_eq!(
-            (b.pid, b.cpu, b.mem, b.uptime, b.status),
-            (8, 8, 11, 10, 12)
-        );
     }
 }

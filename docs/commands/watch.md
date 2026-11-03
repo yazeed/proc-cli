@@ -19,7 +19,7 @@ Several targets are separate arguments. Comma-separated lists (`:3000,:8080`) st
 
 Press `q`, `Esc`, or `Ctrl+C` to exit. The terminal is always restored cleanly: also when a signal ends watch (`kill`, closing the window) or when it panics. proc then ends by that same signal, so a shell shows 130 for `Ctrl+C`/SIGINT, 143 for SIGTERM, 129 for SIGHUP and 131 for SIGQUIT (130 for any Ctrl+C, Ctrl+Break or closing console on Windows).
 
-The table has the same columns as `proc list`, including uptime on terminals at least 100 columns wide.
+The table has the same columns as `proc list`: PID, NAME, USER, CPU%, MEM, UPTIME and COMMAND, with the directory second under `--in`. `--verbose` adds PPID, STATUS and DIR and cuts nothing. COMMAND is cut to the width of the terminal, which watch reads again on every refresh.
 
 ## Options
 
@@ -34,8 +34,8 @@ The table has the same columns as `proc list`, including uptime on terminals at 
 | `--min-cpu <n>` | | Minimum CPU % |
 | `--min-mem <n>` | | Minimum memory (MB) |
 | `--json` | `-j` | NDJSON output (one object per refresh) |
-| `--verbose` | `-v` | Show extra details |
-| `--wide` | `-w` | Print full directories and arguments instead of fitting the terminal |
+| `--verbose` | `-v` | Add PPID, STATUS and DIR to the table, and cut nothing |
+| `--wide` | `-w` | Print the directory and the command line whole instead of fitting the terminal |
 
 ## Modes
 

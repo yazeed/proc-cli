@@ -262,19 +262,15 @@ fn clicolor_force_colours_a_pipe_and_overrides_no_colour() {
 fn coloured_text_is_the_plain_text_plus_escape_codes() {
     let owned = Owned::listener();
     let dir = owned.raw_dir();
-    // The headline and the process's name, status and directory are the same
-    // in both runs; the CPU and uptime figures move between runs, so compare
-    // the lines that hold none
+    // The headline and the table's header are the same in both runs; the CPU
+    // and uptime figures move between runs, so compare the lines that hold none
     for args in [vec!["list", "--in", &dir], vec!["list", "--in", &dir, "-v"]] {
         let (coloured, _, _) = run(coloured_cmd(), &args);
         let (plain, _, _) = run(plain_cmd(), &args);
         assert!(coloured.contains(ESC), "{coloured:?}");
         let stable = |text: &str| -> Vec<String> {
             text.lines()
-                .filter(|l| {
-                    let l = l.trim_start();
-                    l.starts_with("✓") || l.starts_with("cwd:") || l.starts_with("exe:")
-                })
+                .filter(|l| l.starts_with("✓") || l.trim_start().starts_with("PID"))
                 .map(str::to_string)
                 .collect()
         };
@@ -324,79 +320,128 @@ fn cells(line: &str) -> Vec<&str> {
     line.split_whitespace().collect()
 }
 
+/// The row of the table in `out` that starts with `pid`, as cells
+fn row_of(out: &str, pid: u32) -> Vec<&str> {
+    let pid = pid.to_string();
+    out.lines()
+        .map(cells)
+        .find(|row| row.first() == Some(&pid.as_str()))
+        .unwrap_or_else(|| panic!("no row for PID {pid}:\n{out}"))
+}
+
+/// Whether `cell` is `dir`, or `dir` with its middle replaced by `…`
+fn is_dir_or_its_cut(cell: &str, dir: &str) -> bool {
+    match cell.split_once('…') {
+        Some((head, tail)) => dir.starts_with(head) && dir.ends_with(tail),
+        None => cell == dir,
+    }
+}
+
 #[test]
-fn a_process_is_one_row_under_the_column_headers() {
+fn the_table_shows_pid_name_user_cpu_mem_uptime_command() {
     let owned = Owned::listener();
-    let (out, _, code) = run(plain_cmd(), &["list", "--in", &owned.raw_dir()]);
+    let (out, _, code) = run(plain_cmd(), &["by", &owned.name]);
     assert_eq!(code, 0, "{out}");
     let lines: Vec<&str> = out.lines().collect();
-    assert!(lines[0].starts_with("✓ Found 1 process in "), "{out}");
+    assert!(lines[0].starts_with("✓ Found 1 process"), "{out}");
     assert_eq!(lines[1], "", "{out}");
-
-    let header = cells(lines[2]);
-    // Terminals narrower than 100 columns have no UPTIME column
-    let expected: Vec<&str> = if header.contains(&"UPTIME") {
-        vec![
-            "PID", "DIR", "NAME", "ARGS", "CPU%", "MEM", "UPTIME", "STATUS",
-        ]
-    } else {
-        vec!["PID", "DIR", "NAME", "ARGS", "CPU%", "MEM", "STATUS"]
-    };
-    assert_eq!(header, expected, "{out}");
-
-    let row = cells(lines[3]);
-    assert_eq!(row[0], owned.pid().to_string(), "{out}");
-    assert!(owned.name_cell_matches(row[2]), "{} in {out}", row[2]);
-    assert_eq!(row[3], "-", "no arguments: {out}");
-    assert!(
-        matches!(*row.last().unwrap(), "Running" | "Sleeping"),
+    // At any terminal width: UPTIME is never dropped
+    assert_eq!(
+        cells(lines[2]),
+        ["PID", "NAME", "USER", "CPU%", "MEM", "UPTIME", "COMMAND"],
         "{out}"
+    );
+
+    let row = row_of(&out, owned.pid());
+    assert!(owned.name_cell_matches(row[1]), "{} in {out}", row[1]);
+    assert!(!row[2].is_empty() && row[2] != "-", "the user: {out}");
+    assert!(row[3].parse::<f64>().is_ok(), "CPU%: {out}");
+    assert!(
+        row[4].ends_with("KB") || row[4].ends_with("MB") || row[4].ends_with("GB"),
+        "MEM: {out}"
+    );
+    let uptime = regex::Regex::new(r"^\d+[smhd]$").unwrap();
+    assert!(uptime.is_match(row[5]), "UPTIME: {out}");
+    // COMMAND is the last column, and the listener has one: a "-" would be
+    // an unknown command line
+    assert!(
+        row.len() >= 7 && *row.last().unwrap() != "-",
+        "COMMAND: {out}"
     );
     assert_eq!(lines.len(), 5, "headline, blank, header, row, blank: {out}");
     assert_eq!(lines[4], "", "{out}");
 }
 
 #[test]
-fn verbose_lists_the_details_under_each_process() {
+fn verbose_adds_ppid_status_dir_uncut() {
     let owned = Owned::listener();
-    let (out, _, code) = run(
-        plain_cmd(),
-        &["list", "--in", &owned.raw_dir(), "--verbose"],
-    );
+    let (out, _, code) = run(plain_cmd(), &["by", &owned.name, "--verbose"]);
     assert_eq!(code, 0, "{out}");
     let lines: Vec<&str> = out.lines().collect();
-    let first = lines
-        .iter()
-        .position(|l| l.starts_with(&owned.pid().to_string()))
-        .unwrap_or_else(|| panic!("no process line:\n{out}"));
-    let head = regex::Regex::new(&format!(
-        r"^{} {} \[(Running|Sleeping)\]  \d+\.\d% CPU  \S+  .+$",
-        owned.pid(),
-        regex::escape(&owned.shown_name())
-    ))
-    .unwrap();
-    assert!(head.is_match(lines[first]), "{}\n{out}", lines[first]);
-    let details: Vec<&str> = lines[first + 1..]
-        .iter()
-        .take_while(|l| l.starts_with("    "))
-        .copied()
-        .collect();
-    let labels: Vec<&str> = details
-        .iter()
-        .map(|l| l.trim_start().split(':').next().unwrap())
-        .collect();
+    // The table stays; nothing is printed under it
     assert_eq!(
-        labels,
-        ["cmd", "exe", "cwd", "parent", "uptime"],
-        "{out}\n{}",
-        owned.what_proc_saw()
+        cells(lines[2]),
+        ["PID", "NAME", "USER", "CPU%", "MEM", "UPTIME", "PPID", "STATUS", "DIR", "COMMAND"],
+        "{out}"
+    );
+    assert_eq!(lines.len(), 5, "headline, blank, header, row, blank: {out}");
+    assert!(
+        !out.contains("cmd:") && !out.contains("exe:") && !out.contains("cwd:"),
+        "{out}"
+    );
+    let row = lines[3];
+    assert!(
+        row.contains(&format!(" {} ", std::process::id())),
+        "the parent: {out}"
     );
     assert!(
-        details[3] == format!("    parent: {}", std::process::id()),
-        "the test started it: {out}"
+        row.contains(" Running ") || row.contains(" Sleeping "),
+        "STATUS: {out}"
     );
-    // A blank line closes each process, and one more ends the list
-    assert_eq!(&lines[first + 6..], ["", ""], "{out}");
+    assert!(row.contains(&owned.printed_dir()), "DIR whole: {out}");
+    assert!(!row.contains('…'), "nothing is cut: {out}");
+}
+
+#[test]
+fn in_puts_dir_second() {
+    let owned = Owned::listener();
+    let dir = owned.raw_dir();
+    for (args, columns) in [
+        (
+            vec!["list", "--in", &dir],
+            vec![
+                "PID", "DIR", "NAME", "USER", "CPU%", "MEM", "UPTIME", "COMMAND",
+            ],
+        ),
+        (
+            vec!["list", "--in", &dir, "-v"],
+            vec![
+                "PID", "DIR", "NAME", "USER", "CPU%", "MEM", "UPTIME", "PPID", "STATUS", "COMMAND",
+            ],
+        ),
+        (
+            vec!["in", &dir],
+            vec![
+                "PID", "DIR", "NAME", "USER", "CPU%", "MEM", "UPTIME", "COMMAND",
+            ],
+        ),
+        (
+            vec!["by", &owned.name, "--in", &dir],
+            vec![
+                "PID", "DIR", "NAME", "USER", "CPU%", "MEM", "UPTIME", "COMMAND",
+            ],
+        ),
+    ] {
+        let (out, _, code) = run(plain_cmd(), &args);
+        assert_eq!(code, 0, "{args:?}: {out}");
+        let header = out.lines().nth(2).unwrap();
+        assert_eq!(cells(header), columns, "{args:?}: {out}");
+        let row = row_of(&out, owned.pid());
+        assert!(
+            is_dir_or_its_cut(row[1], &owned.printed_dir()),
+            "DIR second: {args:?}: {out}"
+        );
+    }
 }
 
 #[test]
@@ -533,37 +578,107 @@ mod width {
 
     fn header_of(out: &str) -> Vec<String> {
         out.lines()
-            .find(|l| l.contains("PID") && l.contains("STATUS"))
+            .find(|l| l.contains("PID") && l.contains("COMMAND"))
             .unwrap_or_else(|| panic!("no table header in:\n{out}"))
             .split_whitespace()
             .map(str::to_string)
             .collect()
     }
 
+    /// The table of `out`, not the headline above it (which holds the whole path)
+    fn table_of(out: &str) -> Vec<&str> {
+        out.lines()
+            .skip_while(|l| !l.contains("COMMAND"))
+            .filter(|l| !l.trim().is_empty())
+            .collect()
+    }
+
     #[test]
-    fn a_terminal_under_100_columns_has_no_uptime_column() {
+    fn uptime_shows_at_any_width() {
         let owned = Owned::listener();
-        let out = in_terminal(80, &["list", "--in", &owned.raw_dir()]);
-        assert_eq!(
-            header_of(&out),
-            ["PID", "DIR", "NAME", "ARGS", "CPU%", "MEM", "STATUS"],
-            "{out}"
-        );
-        // The table, not the headline above it (which holds the whole path)
-        let table = out.lines().skip_while(|l| !l.contains("STATUS"));
-        for line in table {
-            assert!(line.chars().count() < 80, "{line:?} overflows 80 columns");
+        for cols in [60, 80, 100, 140, 200] {
+            let out = in_terminal(cols, &["by", &owned.name]);
+            assert_eq!(
+                header_of(&out),
+                ["PID", "NAME", "USER", "CPU%", "MEM", "UPTIME", "COMMAND"],
+                "{cols} columns:\n{out}"
+            );
+            let row = row_of(&out, owned.pid());
+            assert!(
+                row[5].ends_with(['s', 'm', 'h', 'd']),
+                "{cols} columns: {out}"
+            );
         }
     }
 
     #[test]
-    fn a_wider_terminal_adds_the_uptime_column() {
+    fn the_command_is_cut_to_the_line_and_the_rest_keeps_its_width() {
         let owned = Owned::listener();
-        let out = in_terminal(140, &["list", "--in", &owned.raw_dir()]);
+        let narrow = in_terminal(70, &["by", &owned.name]);
+        let wide = in_terminal(200, &["by", &owned.name]);
+        // The table fits the terminal; the command is what gave way
+        for line in table_of(&narrow) {
+            assert!(line.chars().count() < 70, "{line:?} overflows 70 columns");
+        }
+        assert!(
+            row_of(&narrow, owned.pid()).last().unwrap().ends_with('…'),
+            "{narrow}"
+        );
+        assert!(!wide.contains('…'), "{wide}");
+        // The columns before COMMAND are whole at both widths (CPU% and UPTIME
+        // move between runs)
+        assert_eq!(
+            row_of(&narrow, owned.pid())[..3],
+            row_of(&wide, owned.pid())[..3]
+        );
+    }
+
+    #[test]
+    fn a_dir_scoped_table_fits_a_terminal_of_100_columns() {
+        let owned = Owned::listener();
+        let out = in_terminal(100, &["list", "--in", &owned.raw_dir()]);
         assert_eq!(
             header_of(&out),
-            ["PID", "DIR", "NAME", "ARGS", "CPU%", "MEM", "UPTIME", "STATUS"],
+            ["PID", "DIR", "NAME", "USER", "CPU%", "MEM", "UPTIME", "COMMAND"],
             "{out}"
         );
+        for line in table_of(&out) {
+            assert!(line.chars().count() < 100, "{line:?} overflows 100 columns");
+        }
+    }
+
+    #[test]
+    fn verbose_cuts_nothing_whatever_the_width() {
+        let owned = Owned::listener();
+        let out = in_terminal(50, &["by", &owned.name, "-v"]);
+        assert_eq!(
+            header_of(&out),
+            ["PID", "NAME", "USER", "CPU%", "MEM", "UPTIME", "PPID", "STATUS", "DIR", "COMMAND"],
+            "{out}"
+        );
+        assert!(!out.contains('…'), "{out}");
+        assert!(
+            out.contains(&owned.printed_dir()),
+            "the whole directory: {out}"
+        );
+        assert!(
+            out.contains(&format!("{}{}", owned.name, std::env::consts::EXE_SUFFIX)),
+            "the whole command: {out}"
+        );
+    }
+
+    #[test]
+    fn a_preview_shows_the_whole_command_line() {
+        let owned = Owned::listener();
+        let pid = owned.pid().to_string();
+        let out = in_terminal(50, &["kill", &pid, "--dry-run"]);
+        assert!(!out.contains('…'), "{out}");
+        assert!(
+            out.contains(&format!("{}{}", owned.name, std::env::consts::EXE_SUFFIX)),
+            "the whole command: {out}"
+        );
+        // ... where the same terminal cuts it in a list
+        let listed = in_terminal(50, &["by", &owned.name]);
+        assert!(listed.contains('…'), "{listed}");
     }
 }

@@ -672,6 +672,49 @@ fn the_one_shot_table_can_be_verbose() {
     assert!(text.contains(&owned.name), "{text}");
 }
 
+/// The column names of the table `proc <args>` prints
+fn table_header(args: &[&str]) -> Vec<String> {
+    let output = proc_cmd().args(args).timeout(LIMIT).output().unwrap();
+    assert!(output.status.success(), "{args:?}");
+    let text = String::from_utf8(output.stdout).unwrap();
+    text.lines()
+        .find(|line| line.contains("PID") && line.contains("COMMAND"))
+        .unwrap_or_else(|| panic!("no table header for {args:?}:\n{text}"))
+        .split_whitespace()
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn watch_uses_the_same_columns() {
+    let owned = Owned::listener();
+    let pid = owned.pid().to_string();
+    let dir = owned.dir();
+    // The same header as `by` prints, default, with -v and scoped to a directory
+    for extra in [vec![], vec!["--verbose"], vec!["--in", &dir]] {
+        let mut watch = vec!["watch", &pid];
+        watch.extend(&extra);
+        let mut by = vec!["by", &owned.name];
+        by.extend(&extra);
+        let columns = table_header(&watch);
+        assert_eq!(columns, table_header(&by), "{extra:?}");
+        assert_eq!(columns[0], "PID");
+        assert_eq!(
+            columns[1],
+            if extra.contains(&"--in") {
+                "DIR"
+            } else {
+                "NAME"
+            }
+        );
+        assert_eq!(columns.last().unwrap(), "COMMAND");
+        assert_eq!(
+            columns.contains(&"PPID".to_string()),
+            extra == ["--verbose"]
+        );
+    }
+}
+
 #[test]
 fn watch_with_a_bad_interval_is_refused() {
     let output = proc_cmd()

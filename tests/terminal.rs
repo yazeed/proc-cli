@@ -538,8 +538,14 @@ fn fresh_dir() -> (tempfile::TempDir, PathBuf) {
 impl Owned {
     /// The listener example: owns a port, sleeps, ends on SIGTERM
     fn listener() -> Self {
+        Self::listener_with_args(&[])
+    }
+
+    /// The listener with words on its command line (it ignores them)
+    fn listener_with_args(args: &[&str]) -> Self {
         let (tmp, dir) = fresh_dir();
         let mut child = Command::new(listener_path())
+            .args(args)
             .current_dir(&dir)
             .stdout(Stdio::piped())
             .stdin(Stdio::null())
@@ -893,6 +899,19 @@ fn kill_asks_first() {
 }
 
 #[test]
+fn the_prompt_shows_the_whole_command_line() {
+    // A command line longer than the 120-column terminal: the list cuts it,
+    // the question's list is what a person approves, so it does not
+    let note: &'static str = Box::leak(format!("--note={}", "word-".repeat(40)).into_boxed_str());
+    let mut p = Owned::listener_with_args(&[note]);
+    let args = ["kill", &p.pid()];
+    let run = answers_n(&args, note, "Cancelled");
+    assert_ok(&run);
+    assert!(p.alive());
+    assert!(!run.output.contains('…'), "{}", run.output);
+}
+
+#[test]
 fn stop_asks_first() {
     let mut p = Owned::listener();
     // Windows cannot ask a console program to close, so stop waits out the
@@ -1225,7 +1244,7 @@ fn watch_draws_the_new_size_after_a_resize() {
             // Five rows leave none for processes: the one process is counted instead
             Step::Resize(120, 5),
             Step::Expect(" ... and 1 more (use --limit to control)"),
-            // Back to a normal size, narrow enough to drop the uptime column
+            // Back to a normal size, narrow enough to cut the command
             Step::Resize(80, 40),
             Step::Expect("listener"),
             Step::Send("q"),
@@ -1263,27 +1282,47 @@ fn watch_shows_the_sort_in_its_header() {
 }
 
 #[test]
-fn watch_verbose_lists_the_details() {
+fn watch_shows_the_same_columns_as_list() {
+    let p = Owned::listener();
+    let pid = p.pid();
+    let run = run_in_pty(
+        &["watch", &pid],
+        &[
+            Step::Expect("PID"),
+            Step::Expect("NAME"),
+            Step::Expect("USER"),
+            Step::Expect("CPU%"),
+            Step::Expect("MEM"),
+            Step::Expect("UPTIME"),
+            Step::Expect("COMMAND"),
+            Step::Send("q"),
+        ],
+    );
+    assert_ok(&run);
+    assert!(!run.output.contains("ARGS"), "{}", run.output);
+}
+
+#[test]
+fn watch_verbose_adds_the_columns_and_cuts_nothing() {
     let p = Owned::listener();
     let pid = p.pid();
     let dir = p.dir();
     let run = run_in_pty(
         &["watch", &pid, "--verbose"],
         &[
-            Step::Expect("cwd: "),
-            Step::Expect("uptime: "),
+            Step::Expect("PPID"),
+            Step::Expect("STATUS"),
+            Step::Expect("DIR"),
+            Step::Expect("COMMAND"),
             Step::Send("q"),
         ],
     );
     assert_ok(&run);
+    // The whole directory is in the row. Windows may report it in its 8.3
+    // short form, in any case: the path shown and the one the test made must
+    // be the same directory
     #[cfg(unix)]
-    assert!(
-        run.output.contains(&format!("cwd: {dir}")),
-        "{}",
-        run.output
-    );
-    // Windows may report the directory in its 8.3 short form, in any case: the
-    // path shown and the one the test made must be the same directory
+    assert!(run.output.contains(&dir), "{}", run.output);
     #[cfg(windows)]
     {
         let same_dir = |shown: &str| {
@@ -1295,16 +1334,15 @@ fn watch_verbose_lists_the_details() {
         };
         let shown: Vec<&str> = run
             .output
-            .split("cwd: ")
-            .skip(1)
-            .map(|rest| rest.lines().next().unwrap_or("").trim())
+            .split_whitespace()
+            .filter(|word| word.contains(':') && word.contains('\\'))
             .collect();
         assert!(
             shown.iter().any(|path| same_dir(path)),
-            "no cwd line names {dir}: {shown:?}"
+            "no cell names {dir}: {shown:?}"
         );
     }
-    assert!(run.output.contains("cmd: "), "{}", run.output);
+    assert!(!run.output.contains("cwd: "), "{}", run.output);
 }
 
 // ---- signals and redirected output (Unix: they use a shell and signals) ----

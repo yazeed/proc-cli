@@ -36,7 +36,7 @@ pub struct FreeCommand {
     #[arg(long, short = 'j')]
     pub json: bool,
 
-    /// Show verbose output
+    /// Add PPID, STATUS and DIR to the table of processes it lists, and cut nothing
     #[arg(long, short = 'v')]
     pub verbose: bool,
 

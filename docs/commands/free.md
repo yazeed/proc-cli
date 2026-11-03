@@ -23,7 +23,7 @@ Several ports are separate arguments. Comma-separated lists (`:3000,:8080`) stil
 | `--dry-run` | | Show what would be freed |
 | `--wait <secs>` | | Seconds to wait for port availability (default: 10) |
 | `--json` | `-j` | Output as JSON |
-| `--verbose` | `-v` | Show extra details |
+| `--verbose` | `-v` | Add PPID, STATUS and DIR to the table of processes it lists, and cut nothing |
 
 ## Examples
 

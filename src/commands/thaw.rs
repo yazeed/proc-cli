@@ -39,7 +39,7 @@ pub struct ThawCommand {
     #[arg(long, short = 'j')]
     pub json: bool,
 
-    /// Show verbose output
+    /// Add PPID, STATUS and DIR to the table of processes it lists, and cut nothing
     #[arg(long, short = 'v')]
     pub verbose: bool,
 
@@ -68,7 +68,8 @@ impl ThawCommand {
     pub fn execute(&self) -> Result<()> {
         use nix::sys::signal::Signal;
 
-        let printer = Printer::from_flags(self.json, self.verbose);
+        let printer =
+            Printer::from_flags(self.json, self.verbose).scoped_to_dir(self.in_dir.is_some());
 
         let targets = flatten_targets(&self.target);
         let mode = NameMatch::from_flag(self.cmd);

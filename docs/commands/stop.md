@@ -29,7 +29,7 @@ Several targets are separate arguments. Comma-separated lists (`:3000,:8080`) st
 | `--start-time <secs>` | | Stop only if the PID still belongs to the process that started then (its `start_time` from the JSON, to the second). One PID target. A PID a new process holds exits 2 |
 | `--cmd` | | Match name targets and `--by` as a substring of the process name or full command line (like `pkill -f`) |
 | `--json` | `-j` | Output as JSON |
-| `--verbose` | `-v` | Show extra details |
+| `--verbose` | `-v` | Add PPID, STATUS and DIR to the table of processes it lists, and cut nothing |
 
 ## Examples
 

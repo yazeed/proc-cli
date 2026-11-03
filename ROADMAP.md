@@ -10,7 +10,7 @@ Each candidate lists what it would look like, how it fares against the feature t
 
 proc collects most of what a person wants to know about a process or port, but each view prints a different subset under different labels (`Directory:`, `dir:`, `cwd:`, `DIR`), `-v` means something different in each command, and `tree`, `why` and `wait` return cut-down JSON objects. On macOS the same process even has two names: `on :port` and `ports` print lsof's (`python3.14`), the rest sysinfo's (`python3`), so a name copied from `ports` doesn't match `by`. The plan (from a study of portview and an inventory of every view's output):
 
-- The tables (`list`, `by`, `in`, `for`, `orphans`, `stuck`, `watch`, previews) default to `PID NAME USER CPU% MEM UPTIME COMMAND`; `-v` adds PPID, STATUS and DIR and stops cutting values. `ports` moves to the same table code and gains NAME, UPTIME and COMMAND.
+- `ports` moves onto the shared process table code (`PID NAME USER CPU% MEM UPTIME COMMAND` is what the other tables print now) and gains NAME, UPTIME and COMMAND.
 - One name per process everywhere: the name `Process` records, with lsof's only for a process that is already gone. Name matching is unchanged.
 - JSON only grows: `parent_name`, `cpu_time_secs`, `open_files`, `child_count` on every process object (`tree`, `why` and `wait` get full ones), `exposure` and `connections` on every port.
 - Every place that shows `proc on :3000` also shows `proc on <pid>` and a name.

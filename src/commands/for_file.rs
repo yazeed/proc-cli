@@ -60,11 +60,11 @@ pub struct ForCommand {
     #[arg(long, short = 'j')]
     pub json: bool,
 
-    /// Print every value whole and every connection (default: cut to the terminal width, 5 peers)
+    /// Print every value whole and every connection (default: cut to the terminal width, 5 peers); a table of several hits gains PPID, STATUS and DIR
     #[arg(long, short = 'v')]
     pub verbose: bool,
 
-    /// Print full directories and arguments instead of fitting the terminal width
+    /// Print the directory and the command line whole instead of fitting the terminal width
     #[arg(long, short = 'w')]
     pub wide: bool,
 
@@ -270,6 +270,7 @@ impl ForCommand {
         let processes: Vec<Process> = results.iter().map(|(p, _)| p.clone()).collect();
         Printer::from_flags(false, self.verbose)
             .wide(self.wide)
+            .scoped_to_dir(self.in_dir.is_some())
             .print_processes_as("for", &processes, Some(&format!("for {}", file_display)));
 
         let listening: Vec<_> = results

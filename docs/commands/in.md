@@ -16,6 +16,8 @@ proc in . --by node --cmd  # ... or with node anywhere in their command line
 
 The directory can be one that was deleted, such as a removed git worktree: processes still running there are listed. A path that doesn't exist and has nothing running in it is treated as a typo and exits 4. An existing directory is resolved first (symlinks followed), so `/tmp/x` on macOS finds processes the OS reports in `/private/tmp/x`, and the output shows the resolved path.
 
+The table is the one `proc list` prints, with the directory as its second column: `PID DIR NAME USER CPU% MEM UPTIME COMMAND`. `--verbose` adds PPID and STATUS and cuts nothing.
+
 ## Options
 
 | Flag | Short | Description |
@@ -30,8 +32,8 @@ The directory can be one that was deleted, such as a removed git worktree: proce
 | `--sort <key>` | `-s` | Sort by: cpu, mem (biggest first); pid, name (ascending). Ties come by PID (default: cpu) |
 | `--limit <n>` | `-n` | Limit results |
 | `--json` | `-j` | Output as JSON |
-| `--verbose` | `-v` | Show command line, cwd, parent PID, uptime |
-| `--wide` | `-w` | Print full directories and arguments instead of fitting the terminal |
+| `--verbose` | `-v` | Add PPID, STATUS and DIR to the table, and cut nothing |
+| `--wide` | `-w` | Print the directory and the command line whole instead of fitting the terminal |
 
 ## Examples
 

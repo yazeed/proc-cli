@@ -52,11 +52,11 @@ pub struct InCommand {
     #[arg(long, short = 'j')]
     pub json: bool,
 
-    /// Show verbose output with command line, cwd, parent PID, and uptime
+    /// Add PPID, STATUS and DIR to the table, and cut nothing
     #[arg(long, short = 'v')]
     pub verbose: bool,
 
-    /// Print full directories and arguments instead of fitting the terminal width
+    /// Print the directory and the command line whole instead of fitting the terminal width
     #[arg(long, short = 'w')]
     pub wide: bool,
 
@@ -91,7 +91,10 @@ impl InCommand {
         } else {
             OutputFormat::Human
         };
-        let printer = Printer::new(format, self.verbose).wide(self.wide);
+        // `in` is scoped to a directory by definition
+        let printer = Printer::new(format, self.verbose)
+            .wide(self.wide)
+            .scoped_to_dir(true);
 
         // Get base process list
         let mut processes = if let Some(ref name) = self.by_name {

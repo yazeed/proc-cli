@@ -7,7 +7,7 @@ permalink: /commands/kill
 
 Send SIGKILL to processes. Asks for confirmation unless `--yes`. Alias: `k`.
 
-The question comes with the list of what it would kill, on the terminal. If stdout is a file or a pipe, the list goes to stderr beside the question; if it cannot be shown at all, nothing is asked and nothing is killed (exit 4, `needs_confirmation`). A signal or `Ctrl+C` at the question ends proc with the terminal put back (130 for `Ctrl+C`).
+The question comes with the list of what it would kill, on the terminal: the same table as `proc list`, with the whole command line. If stdout is a file or a pipe, the list goes to stderr beside the question; if it cannot be shown at all, nothing is asked and nothing is killed (exit 4, `needs_confirmation`). A signal or `Ctrl+C` at the question ends proc with the terminal put back (130 for `Ctrl+C`).
 
 ```bash
 proc kill :3000            # kill every process on port 3000
@@ -31,7 +31,7 @@ A name is the whole process name, ignoring case, the way `killall` and `pkill` r
 | `--start-time <secs>` | | Kill only if the PID still belongs to the process that started then (its `start_time` from the JSON, to the second). One PID target. A PID a new process holds exits 2 |
 | `--cmd` | | Match name targets and `--by` as a substring of the process name or full command line (like `pkill -f`) |
 | `--json` | `-j` | Output as JSON |
-| `--verbose` | `-v` | Show extra details |
+| `--verbose` | `-v` | Add PPID, STATUS and DIR to the table of processes it lists, and cut nothing |
 
 ## Examples
 

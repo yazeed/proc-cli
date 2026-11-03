@@ -26,8 +26,8 @@ proc orphans --by node       # find orphaned processes named node
 | `--by <name>` | `-b` | Filter by process name (the whole name, ignoring case) |
 | `--cmd` | | Match `--by` as a substring of the process name or full command line (like `pkill -f`) |
 | `--json` | `-j` | Output as JSON |
-| `--verbose` | `-v` | Show extra details |
-| `--wide` | `-w` | Print full directories and arguments instead of fitting the terminal |
+| `--verbose` | `-v` | Add PPID, STATUS and DIR to the table, and cut nothing |
+| `--wide` | `-w` | Print the directory and the command line whole instead of fitting the terminal |
 
 ## Examples
 

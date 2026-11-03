@@ -17,16 +17,13 @@ use crate::core::process::{
 };
 use crate::core::{
     flatten_targets, parse_target, resolve_in_dir, sort_processes, Hit, NameMatch, Process,
-    ProcessStatus, SortKey, TargetType,
+    SortKey, TargetType,
 };
 use crate::error::Result;
-use crate::ui::format::{
-    format_duration, format_memory, process_table_budget, truncate_path, truncate_string,
-};
+use crate::ui::output::screen_of;
+use crate::ui::table::{process_table, Screen, TableLayout};
 use crate::ui::{interrupt, out};
 use clap::{Args, ValueEnum};
-use comfy_table::presets::NOTHING;
-use comfy_table::{Attribute, Cell, CellAlignment, Color, ContentArrangement, Table};
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -86,11 +83,11 @@ pub struct WatchCommand {
     #[arg(long, short = 'j')]
     pub json: bool,
 
-    /// Show verbose output
+    /// Add PPID, STATUS and DIR to the table, and cut nothing
     #[arg(long, short = 'v')]
     pub verbose: bool,
 
-    /// Print full directories and arguments instead of fitting the terminal width
+    /// Print the directory and the command line whole instead of fitting the terminal width
     #[arg(long, short = 'w')]
     pub wide: bool,
 
@@ -383,7 +380,7 @@ impl WatchCommand {
             let (width, height) = terminal::size().unwrap_or((120, 40));
 
             // Build frame
-            let frame = self.render_frame(&processes, width, height);
+            let frame = self.render_frame(&processes, screen_of(width), height);
 
             // A write that fails ends the watch. `out` has the policy for what
             // that means: a reader that left changes nothing, and any other
@@ -418,7 +415,7 @@ impl WatchCommand {
     }
 
     /// Render a frame for the TUI
-    fn render_frame(&self, processes: &[Process], width: u16, height: u16) -> String {
+    fn render_frame(&self, processes: &[Process], screen: Screen, height: u16) -> String {
         let sort_label = match self.sort {
             WatchSortKey::Cpu => "CPU",
             WatchSortKey::Mem => "Memory",
@@ -453,215 +450,19 @@ impl WatchCommand {
 
         // Cap rows to terminal height minus header (2 lines) + table header (1) + padding (1)
         let max_rows = (height as usize).saturating_sub(5);
+        let display_count = processes.len().min(max_rows);
 
-        if self.verbose {
-            // Verbose mode: detailed per-process output
-            for (i, proc) in processes.iter().enumerate() {
-                if i >= max_rows {
-                    output.push_str(&format!(" ... and {} more", processes.len() - i));
-                    break;
-                }
-                let status_str = format!("{:?}", proc.status);
-                output.push_str(&format!(
-                    " {} {} [{}]  {:.1}% CPU  {}  {}",
-                    proc.pid,
-                    proc.name,
-                    status_str,
-                    proc.cpu_percent,
-                    format_memory(proc.memory_mb),
-                    proc.user.as_deref().unwrap_or("-")
-                ));
-                output.push('\n');
-                if let Some(ref cmd) = proc.command {
-                    output.push_str(&format!("    cmd: {}", cmd));
-                    output.push('\n');
-                }
-                if let Some(ref path) = proc.exe_path {
-                    output.push_str(&format!("    exe: {}", path));
-                    output.push('\n');
-                }
-                if let Some(ref cwd) = proc.cwd {
-                    output.push_str(&format!("    cwd: {}", cwd));
-                    output.push('\n');
-                }
-                if let Some(uptime) = proc.uptime_secs {
-                    output.push_str(&format!("    uptime: {}", format_duration(uptime)));
-                    output.push('\n');
-                }
-                output.push('\n');
-            }
-        } else {
-            // Table mode
-            // Same budget as the other process table, so the two cannot drift.
-            let budget = process_table_budget(width);
-            let show_uptime = budget.show_uptime;
+        // The same table as `list` prints: the layout comes from the same flags
+        let layout =
+            TableLayout::from_flags(screen, self.verbose, self.wide, self.in_dir.is_some());
+        output.push_str(&process_table(&processes[..display_count], &layout));
 
-            let mut table = Table::new();
-            // Disabled never reflows a cell, so one process is always one line.
-            // Fitting the terminal is done by truncating content below, not by
-            // letting comfy-table wrap.
-            table
-                .load_preset(NOTHING)
-                .set_content_arrangement(ContentArrangement::Disabled);
-
-            let mut header = vec![
-                Cell::new("PID")
-                    .fg(Color::Blue)
-                    .add_attribute(Attribute::Bold),
-                Cell::new("DIR")
-                    .fg(Color::Blue)
-                    .add_attribute(Attribute::Bold),
-                Cell::new("NAME")
-                    .fg(Color::Blue)
-                    .add_attribute(Attribute::Bold),
-                Cell::new("ARGS")
-                    .fg(Color::Blue)
-                    .add_attribute(Attribute::Bold),
-                Cell::new("CPU%")
-                    .fg(Color::Blue)
-                    .add_attribute(Attribute::Bold)
-                    .set_alignment(CellAlignment::Right),
-                Cell::new("MEM")
-                    .fg(Color::Blue)
-                    .add_attribute(Attribute::Bold)
-                    .set_alignment(CellAlignment::Right),
-            ];
-            if show_uptime {
-                header.push(
-                    Cell::new("UPTIME")
-                        .fg(Color::Blue)
-                        .add_attribute(Attribute::Bold)
-                        .set_alignment(CellAlignment::Right),
-                );
-            }
-            header.push(
-                Cell::new("STATUS")
-                    .fg(Color::Blue)
-                    .add_attribute(Attribute::Bold)
-                    .set_alignment(CellAlignment::Right),
-            );
-            table.set_header(header);
-
-            if !self.wide {
-                use comfy_table::ColumnConstraint::*;
-                use comfy_table::Width::*;
-                table
-                    .column_mut(0)
-                    .expect("PID column")
-                    .set_constraint(Absolute(Fixed(budget.pid as u16)));
-                table
-                    .column_mut(4)
-                    .expect("CPU% column")
-                    .set_constraint(Absolute(Fixed(budget.cpu as u16)));
-                table
-                    .column_mut(5)
-                    .expect("MEM column")
-                    .set_constraint(Absolute(Fixed(budget.mem as u16)));
-                let status_column = if show_uptime {
-                    table
-                        .column_mut(6)
-                        .expect("UPTIME column")
-                        .set_constraint(Absolute(Fixed(budget.uptime as u16)));
-                    7
-                } else {
-                    6
-                };
-                table
-                    .column_mut(status_column)
-                    .expect("STATUS column")
-                    .set_constraint(Absolute(Fixed(budget.status as u16)));
-            }
-
-            let display_count = processes.len().min(max_rows);
-            for proc in processes.iter().take(display_count) {
-                let status_str = format!("{:?}", proc.status);
-
-                let cwd = proc.cwd.as_deref().unwrap_or("-");
-                let path_display = if self.wide {
-                    cwd.to_string()
-                } else {
-                    truncate_path(cwd, budget.dir)
-                };
-                let name_display = if self.wide {
-                    proc.name.clone()
-                } else {
-                    truncate_string(&proc.name, budget.name)
-                };
-
-                let cmd_display = proc
-                    .command
-                    .as_ref()
-                    .map(|c| {
-                        let parts: Vec<&str> = c.split_whitespace().collect();
-                        if parts.len() > 1 {
-                            let args: Vec<String> = parts[1..]
-                                .iter()
-                                .map(|arg| {
-                                    if arg.contains('/') && !arg.starts_with('-') {
-                                        std::path::Path::new(arg)
-                                            .file_name()
-                                            .map(|f| f.to_string_lossy().to_string())
-                                            .unwrap_or_else(|| arg.to_string())
-                                    } else {
-                                        arg.to_string()
-                                    }
-                                })
-                                .collect();
-                            let result = args.join(" ");
-                            if self.wide {
-                                result
-                            } else {
-                                truncate_string(&result, budget.args)
-                            }
-                        } else {
-                            "-".to_string()
-                        }
-                    })
-                    .unwrap_or_else(|| "-".to_string());
-
-                let mem_display = format_memory(proc.memory_mb);
-
-                let status_color = match proc.status {
-                    ProcessStatus::Running => Color::Green,
-                    ProcessStatus::Sleeping => Color::Blue,
-                    ProcessStatus::Stopped => Color::Yellow,
-                    ProcessStatus::Zombie => Color::Red,
-                    _ => Color::White,
-                };
-
-                let mut row = vec![
-                    Cell::new(proc.pid).fg(Color::Cyan),
-                    Cell::new(&path_display).fg(Color::DarkGrey),
-                    Cell::new(&name_display).fg(Color::White),
-                    Cell::new(&cmd_display).fg(Color::DarkGrey),
-                    Cell::new(format!("{:.1}", proc.cpu_percent))
-                        .set_alignment(CellAlignment::Right),
-                    Cell::new(&mem_display).set_alignment(CellAlignment::Right),
-                ];
-                if show_uptime {
-                    let uptime_display = proc
-                        .uptime_secs
-                        .map(format_duration)
-                        .unwrap_or_else(|| "-".to_string());
-                    row.push(Cell::new(uptime_display).set_alignment(CellAlignment::Right));
-                }
-                row.push(
-                    Cell::new(&status_str)
-                        .fg(status_color)
-                        .set_alignment(CellAlignment::Right),
-                );
-                table.add_row(row);
-            }
-
-            output.push_str(&table.to_string());
-
-            if processes.len() > display_count {
-                output.push('\n');
-                output.push_str(&format!(
-                    " ... and {} more (use --limit to control)",
-                    processes.len() - display_count
-                ));
-            }
+        if processes.len() > display_count {
+            output.push('\n');
+            output.push_str(&format!(
+                " ... and {} more (use --limit to control)",
+                processes.len() - display_count
+            ));
         }
 
         output
@@ -706,7 +507,9 @@ impl WatchCommand {
 
         let processes = self.collect_processes(&sys);
 
-        let printer = crate::ui::Printer::from_flags(false, self.verbose);
+        let printer = crate::ui::Printer::from_flags(false, self.verbose)
+            .wide(self.wide)
+            .scoped_to_dir(self.in_dir.is_some());
         printer.print_processes(&processes);
 
         Ok(())
@@ -716,6 +519,7 @@ impl WatchCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::ProcessStatus;
     use crate::test_support::FailsAfter;
     use serde::ser::Error as _;
     use std::io;
@@ -984,7 +788,7 @@ mod tests {
             (WatchSortKey::Name, "Sort: Name"),
         ] {
             cmd.sort = sort;
-            let frame = cmd.render_frame(&[process(1, "a"), process(2, "b")], 120, 40);
+            let frame = cmd.render_frame(&[process(1, "a"), process(2, "b")], screen(120), 40);
             let first = frame.lines().next().unwrap();
             assert_eq!(
                 first,
@@ -997,7 +801,7 @@ mod tests {
     fn the_header_names_several_targets_as_typed_joined_by_spaces() {
         let mut cmd = watch_args();
         cmd.target = vec![":3000".into(), "node,python".into()];
-        let frame = cmd.render_frame(&[process(1, "a")], 120, 40);
+        let frame = cmd.render_frame(&[process(1, "a")], screen(120), 40);
         assert!(
             frame.starts_with(" Watching :3000 node,python | 1 processes |"),
             "{frame}"
@@ -1006,7 +810,7 @@ mod tests {
 
     #[test]
     fn with_no_target_the_header_says_all() {
-        let frame = watch_args().render_frame(&[process(1, "a")], 120, 40);
+        let frame = watch_args().render_frame(&[process(1, "a")], screen(120), 40);
         assert!(
             frame.starts_with(" Watching all | 1 processes |"),
             "{frame}"
@@ -1015,7 +819,7 @@ mod tests {
 
     #[test]
     fn no_processes_says_so() {
-        let frame = watch_args().render_frame(&[], 120, 40);
+        let frame = watch_args().render_frame(&[], screen(120), 40);
         assert_eq!(
             frame.lines().last().unwrap(),
             " No matching processes found."
@@ -1023,103 +827,99 @@ mod tests {
         assert!(frame.contains("0 processes"));
     }
 
-    #[test]
-    fn the_table_lists_each_process_with_its_columns() {
+    /// The time the frames are drawn at
+    const NOW: u64 = 1_000_000;
+
+    /// A screen `width` columns wide, at [`NOW`]
+    fn screen(width: u16) -> Screen {
+        Screen {
+            width,
+            now_secs: NOW,
+        }
+    }
+
+    /// A process with every column known
+    fn known_process() -> Process {
         let mut p = process(4242, "server");
+        p.user = Some("zee".into());
         p.cwd = Some("/srv/app".into());
         p.command = Some("/usr/bin/server --port 80".into());
-        p.uptime_secs = Some(3725);
+        p.parent_pid = Some(7);
+        p.start_time = Some(NOW - 3725);
         p.cpu_percent = 12.34;
         p.memory_mb = 256.0;
-        let frame = plain(&watch_args().render_frame(&[p], 120, 40));
-        let header = lines_with(&frame, "PID")[0];
-        for column in [
-            "PID", "DIR", "NAME", "ARGS", "CPU%", "MEM", "UPTIME", "STATUS",
-        ] {
-            assert!(header.contains(column), "{column} in {header:?}");
-        }
-        let row = lines_with(&frame, "4242")[0];
-        for cell in [
-            "/srv/app",
-            "server",
-            "--port 80",
-            "12.3",
-            "256.0MB",
-            "1h 2m",
-            "Sleeping",
-        ] {
-            assert!(row.contains(cell), "{cell} in {row:?}");
-        }
+        p
+    }
+
+    /// The cells of the lines of `frame` that hold `needle`, one list per line
+    fn cells_with(frame: &str, needle: &str) -> Vec<Vec<String>> {
+        lines_with(frame, needle)
+            .iter()
+            .map(|line| line.split_whitespace().map(str::to_string).collect())
+            .collect()
     }
 
     #[test]
-    fn a_narrow_terminal_drops_the_uptime_column() {
-        let mut p = process(4242, "server");
-        p.uptime_secs = Some(3725);
-        let narrow = plain(&watch_args().render_frame(&[p.clone()], 99, 40));
-        assert!(!narrow.contains("UPTIME"), "{narrow}");
-        assert!(!narrow.contains("1h 2m"), "{narrow}");
-        let wide = plain(&watch_args().render_frame(&[p], 100, 40));
-        assert!(wide.contains("UPTIME"), "{wide}");
-        assert!(wide.contains("1h 2m"), "{wide}");
-    }
-
-    #[test]
-    fn an_unknown_uptime_is_a_dash() {
-        let frame = plain(&watch_args().render_frame(&[process(4242, "server")], 120, 40));
-        let row = lines_with(&frame, "4242")[0];
-        // directory, args and uptime are all unknown
+    fn watch_uses_the_same_columns() {
+        let frame = plain(&watch_args().render_frame(&[known_process()], screen(120), 40));
         assert_eq!(
-            row.split_whitespace().collect::<Vec<_>>(),
-            ["4242", "-", "server", "-", "1.5", "12.0MB", "-", "Sleeping"]
+            cells_with(&frame, "PID"),
+            [["PID", "NAME", "USER", "CPU%", "MEM", "UPTIME", "COMMAND"]]
         );
+        assert_eq!(
+            cells_with(&frame, "4242"),
+            [[
+                "4242",
+                "server",
+                "zee",
+                "12.3",
+                "256.0MB",
+                "1h",
+                "2m",
+                "/usr/bin/server",
+                "--port",
+                "80"
+            ]]
+        );
+        // ... and they are the shared table's, the one `list` prints
+        let layout = TableLayout::from_flags(screen(120), false, false, false);
+        let table = plain(&process_table(&[known_process()], &layout));
+        assert!(frame.contains(&table), "{frame}\n{table}");
     }
 
     #[test]
-    fn arguments_show_file_names_not_paths() {
-        let mut p = process(4242, "node");
-        p.command = Some("/usr/bin/node /srv/app/server.js --flag ./cfg/x.json plain".into());
-        let mut cmd = watch_args();
-        cmd.wide = true;
-        let frame = plain(&cmd.render_frame(&[p], 120, 40));
-        let row = lines_with(&frame, "4242")[0];
-        assert!(row.contains("server.js --flag x.json plain"), "{row:?}");
-        assert!(!row.contains("/srv/app"), "{row:?}");
-    }
+    fn the_flags_choose_the_columns_as_they_do_for_list() {
+        let mut verbose = watch_args();
+        verbose.verbose = true;
+        let frame = plain(&verbose.render_frame(&[known_process()], screen(30), 40));
+        assert_eq!(
+            cells_with(&frame, "PID")[0],
+            ["PID", "NAME", "USER", "CPU%", "MEM", "UPTIME", "PPID", "STATUS", "DIR", "COMMAND"]
+        );
+        // nothing is cut, however narrow the screen
+        assert!(frame.contains("/usr/bin/server --port 80"), "{frame}");
 
-    #[test]
-    fn a_command_with_no_arguments_has_a_dash_for_args() {
-        let mut p = process(4242, "tool");
-        p.command = Some("/usr/bin/tool".into());
-        let frame = plain(&watch_args().render_frame(&[p], 120, 40));
-        let row = lines_with(&frame, "4242")[0];
-        let after_name = row.split("tool").nth(1).unwrap();
-        assert!(after_name.trim_start().starts_with('-'), "{row:?}");
-    }
-
-    #[test]
-    fn long_text_is_cut_to_the_terminal_unless_wide() {
-        let long_dir = format!("/{}/deep", "d".repeat(80));
-        let long_name = "n".repeat(40);
-        let long_arg = "a".repeat(80);
-        let mut p = process(4242, &long_name);
-        p.cwd = Some(long_dir.clone());
-        p.command = Some(format!("tool {long_arg}"));
-
-        let cut = plain(&watch_args().render_frame(&[p.clone()], 80, 40));
-        let row = lines_with(&cut, "4242")[0];
-        assert!(row.contains('…'), "{row:?}");
-        assert!(!row.contains(&long_name), "{row:?}");
-        assert!(!row.contains(&long_arg), "{row:?}");
+        let mut scoped = watch_args();
+        scoped.in_dir = Some(".".into());
+        let frame = plain(&scoped.render_frame(&[known_process()], screen(120), 40));
+        assert_eq!(
+            cells_with(&frame, "PID")[0],
+            ["PID", "DIR", "NAME", "USER", "CPU%", "MEM", "UPTIME", "COMMAND"]
+        );
 
         let mut wide = watch_args();
         wide.wide = true;
-        let full = plain(&wide.render_frame(&[p], 80, 40));
-        let row = lines_with(&full, "4242")[0];
-        assert!(row.contains(&long_dir), "{row:?}");
-        assert!(row.contains(&long_name), "{row:?}");
-        assert!(row.contains(&long_arg), "{row:?}");
-        assert!(!row.contains('…'), "{row:?}");
+        let frame = plain(&wide.render_frame(&[known_process()], screen(30), 40));
+        assert!(frame.contains("/usr/bin/server --port 80"), "{frame}");
+    }
+
+    #[test]
+    fn a_narrow_terminal_cuts_the_command_and_keeps_the_uptime() {
+        let frame = plain(&watch_args().render_frame(&[known_process()], screen(60), 40));
+        let row = lines_with(&frame, "4242")[0];
+        assert!(row.contains("1h 2m"), "{row:?}");
+        assert!(row.contains('…'), "{row:?}");
+        assert!(row.chars().count() <= 60, "{row:?}");
     }
 
     #[test]
@@ -1134,7 +934,9 @@ mod tests {
         ] {
             let mut p = process(4242, "x");
             p.status = status;
-            let frame = plain(&watch_args().render_frame(&[p], 120, 40));
+            let mut cmd = watch_args();
+            cmd.verbose = true;
+            let frame = plain(&cmd.render_frame(&[p], screen(120), 40));
             assert!(lines_with(&frame, "4242")[0].contains(word), "{word}");
         }
     }
@@ -1143,63 +945,28 @@ mod tests {
     fn rows_beyond_the_screen_are_counted_not_drawn() {
         let processes: Vec<Process> = (1..=10).map(|i| process(1000 + i, "p")).collect();
         // 12 rows leave 7 for processes
-        let frame = plain(&watch_args().render_frame(&processes, 120, 12));
+        let frame = plain(&watch_args().render_frame(&processes, screen(120), 12));
         assert_eq!(lines_with(&frame, " p ").len(), 7, "{frame}");
         assert_eq!(
             frame.lines().last().unwrap(),
             " ... and 3 more (use --limit to control)"
         );
-        let all = plain(&watch_args().render_frame(&processes, 120, 40));
+        let all = plain(&watch_args().render_frame(&processes, screen(120), 40));
         assert!(!all.contains("more"), "{all}");
     }
 
     #[test]
-    fn verbose_lists_every_field_of_each_process() {
-        let mut p = process(4242, "server");
-        p.status = ProcessStatus::Running;
-        p.user = Some("zee".into());
-        p.command = Some("/usr/bin/server --port 80".into());
-        p.exe_path = Some("/usr/bin/server".into());
-        p.cwd = Some("/srv/app".into());
-        p.uptime_secs = Some(65);
-        let mut cmd = watch_args();
-        cmd.verbose = true;
-        let frame = cmd.render_frame(&[p], 120, 40);
-        let lines: Vec<&str> = frame.lines().collect();
-        assert_eq!(
-            lines[2..],
-            [
-                " 4242 server [Running]  1.5% CPU  12.0MB  zee",
-                "    cmd: /usr/bin/server --port 80",
-                "    exe: /usr/bin/server",
-                "    cwd: /srv/app",
-                "    uptime: 1m 5s",
-                "",
-            ]
-        );
-    }
-
-    #[test]
-    fn verbose_leaves_out_what_a_process_does_not_have() {
-        let mut cmd = watch_args();
-        cmd.verbose = true;
-        let frame = cmd.render_frame(&[process(4242, "bare")], 120, 40);
-        let lines: Vec<&str> = frame.lines().collect();
-        assert_eq!(
-            lines[2..],
-            [" 4242 bare [Sleeping]  1.5% CPU  12.0MB  -", ""]
-        );
-    }
-
-    #[test]
-    fn verbose_counts_the_processes_that_do_not_fit() {
+    fn verbose_counts_the_processes_that_do_not_fit_as_well() {
         let processes: Vec<Process> = (1..=5).map(|i| process(1000 + i, "p")).collect();
         let mut cmd = watch_args();
         cmd.verbose = true;
         // 7 rows leave 2 for processes
-        let frame = cmd.render_frame(&processes, 120, 7);
-        assert_eq!(lines_with(&frame, "[Sleeping]").len(), 2, "{frame}");
-        assert!(frame.ends_with(" ... and 3 more"), "{frame:?}");
+        let frame = plain(&cmd.render_frame(&processes, screen(120), 7));
+        assert_eq!(lines_with(&frame, " p ").len(), 2, "{frame}");
+        assert!(
+            frame.ends_with(" ... and 3 more (use --limit to control)"),
+            "{frame:?}"
+        );
     }
 
     // ---- what is collected ----

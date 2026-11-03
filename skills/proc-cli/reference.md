@@ -389,7 +389,7 @@ Both list candidates. Neither proves that a process is hung or abandoned. Never 
 - **Deleted directories.** A process can keep running in a removed directory (a deleted worktree). `proc in <dir>` lists them and `cwd` shows the plain path.
 - **`proc on 3000`** looks up PID 3000, not port 3000. Ports need the colon.
 - **`proc free`** accepts ports only (`proc free nginx` exits 4).
-- **Human output** is for the user, not for parsing: one process per line, long paths shortened. `--wide` shows full paths.
+- **Human output** is for the user, not for parsing. Every process table has the columns `PID NAME USER CPU% MEM UPTIME COMMAND` (`DIR` second under `--in`), one process per line, with COMMAND cut to the terminal width and `-` for a value proc cannot read. `--verbose` adds `PPID STATUS DIR` and cuts nothing; `--wide` prints the directory and command whole. The list in front of a `--dry-run` or a question always has the whole command line.
 
 ## Platform differences
 

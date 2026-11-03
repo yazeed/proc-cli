@@ -196,6 +196,8 @@ A process named twice is handled once, except by the read-only `on` and `why`, w
 
 **`--in`.** `--in` (short `-i`) takes the next word as its directory unless that word starts with `-`; a bare `--in` is the current directory. Put it after the targets (`proc kill 1234 5678 --in .`) or write `--in=DIR`.
 
+**Tables.** `list`, `by`, `in`, `for` (several hits), `orphans`, `stuck`, `watch` and the list in front of every `--dry-run` or question print one table: `PID NAME USER CPU% MEM UPTIME COMMAND`. A value proc cannot read is `-`. COMMAND takes the width the other columns leave and ends with `…` where it is cut; the list you approve prints it whole. With `--in`, the directory is the second column. `--verbose` keeps the table, adds `PPID STATUS DIR` and cuts nothing.
+
 ## Filters
 
 Not every filter is on every command. `--in`, `--by` (short `-b`) and `--cmd` work on nearly all of them, including the ones that change processes. The rest narrow what the finding commands show:
@@ -226,8 +228,8 @@ Not every filter is on every command. `--in`, `--by` (short `-b`) and `--cmd` wo
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--json` | `-j` | JSON output |
-| `--verbose` | `-v` | Show paths, cwd, full commands |
-| `--wide` | `-w` | Full directories and arguments instead of fitting the terminal (`list`, `by`, `in`, `for`, `stuck`, `orphans`, `watch`) |
+| `--verbose` | `-v` | Print every value whole. In a process table it adds PPID, STATUS and DIR and cuts nothing |
+| `--wide` | `-w` | The directory and the command line whole, instead of fitting the terminal (`list`, `by`, `in`, `for`, `stuck`, `orphans`, `watch`) |
 | `--yes` | `-y` | Skip confirmation; required with `--json` or without a terminal, where nobody can be asked |
 | `--dry-run` | | Preview without executing |
 | `--force` | `-f` | Force termination if recovery fails (`unstick`) |

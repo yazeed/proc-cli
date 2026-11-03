@@ -131,7 +131,7 @@ fn cut_keeping_pid(value: &str, room: usize) -> String {
 }
 
 /// A text field that is known: present and not empty
-fn known(field: &Option<String>) -> Option<&str> {
+pub(crate) fn known(field: &Option<String>) -> Option<&str> {
     field.as_deref().filter(|text| !text.is_empty())
 }
 

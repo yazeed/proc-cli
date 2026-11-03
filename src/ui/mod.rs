@@ -8,9 +8,10 @@ pub mod interrupt;
 pub mod out;
 pub mod output;
 pub mod prompt;
+pub mod table;
 
 pub use format::{
-    colorize_status, format_duration, format_memory, plural, process_table_budget, truncate_path,
-    truncate_string, uptime_label, ProcessTableBudget,
+    colorize_status, format_duration, format_memory, plural, truncate_path, truncate_string,
+    uptime_label,
 };
 pub use output::{must_confirm, print_note, OutputFormat, Printer};

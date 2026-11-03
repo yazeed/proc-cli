@@ -14,7 +14,7 @@ proc by python --in .      # python in current directory
 proc by node --min-cpu 5   # node using >5% CPU
 ```
 
-`by` takes one name, matched against the whole process name (also the file name of its executable and of its first argument, so a long name Linux cuts to 15 characters still matches), ignoring case. On Windows a trailing `.exe` is optional. `--cmd` matches any part of the name or the full command line instead, like `pkill -f`. A path is not a name: `proc by ./server` finds nothing, so use `--cmd`, or [`proc for <file>`](for) for an executable. For several names, use `proc list node python`. The table includes uptime on terminals at least 100 columns wide; `--verbose` and `--json` always include it.
+`by` takes one name, matched against the whole process name (also the file name of its executable and of its first argument, so a long name Linux cuts to 15 characters still matches), ignoring case. On Windows a trailing `.exe` is optional. `--cmd` matches any part of the name or the full command line instead, like `pkill -f`. A path is not a name: `proc by ./server` finds nothing, so use `--cmd`, or [`proc for <file>`](for) for an executable. For several names, use `proc list node python`. The table is the one `proc list` prints (PID, NAME, USER, CPU%, MEM, UPTIME, COMMAND; `--in` puts the directory second, `--verbose` adds PPID, STATUS and DIR and cuts nothing).
 
 ## Options
 
@@ -30,8 +30,8 @@ proc by node --min-cpu 5   # node using >5% CPU
 | `--sort <key>` | `-s` | Sort by: cpu, mem (biggest first); pid, name (ascending). Ties come by PID (default: cpu) |
 | `--limit <n>` | `-n` | Limit results |
 | `--json` | `-j` | Output as JSON |
-| `--verbose` | `-v` | Show command line, cwd, parent PID, uptime |
-| `--wide` | `-w` | Print full directories and arguments instead of fitting the terminal |
+| `--verbose` | `-v` | Add PPID, STATUS and DIR to the table, and cut nothing |
+| `--wide` | `-w` | Print the directory and the command line whole instead of fitting the terminal |
 
 ## Examples
 

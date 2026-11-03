@@ -34,11 +34,11 @@ pub struct OrphansCommand {
     #[arg(long, short = 'j')]
     pub json: bool,
 
-    /// Show verbose output
+    /// Add PPID, STATUS and DIR to the table, and cut nothing
     #[arg(long, short = 'v')]
     pub verbose: bool,
 
-    /// Print full directories and arguments instead of fitting the terminal width
+    /// Print the directory and the command line whole instead of fitting the terminal width
     #[arg(long, short = 'w')]
     pub wide: bool,
 
@@ -60,7 +60,9 @@ impl OrphansCommand {
     /// Executes the orphans command, finding processes whose parent is PID 1.
     #[cfg(unix)]
     pub fn execute(&self) -> Result<()> {
-        let printer = Printer::from_flags(self.json, self.verbose).wide(self.wide);
+        let printer = Printer::from_flags(self.json, self.verbose)
+            .wide(self.wide)
+            .scoped_to_dir(self.in_dir.is_some());
 
         let mut processes = Process::find_orphans()?;
 
@@ -114,7 +116,7 @@ impl OrphansCommand {
         // Kill: JSON prints a single action result; humans see the list first.
         // When they are asked, the question shows it, beside the question.
         if !self.json && !matches!(asking, Ok(true)) {
-            printer.print_processes_under_headline("orphans", &processes);
+            printer.print_processes_to_approve(&processes);
         }
 
         if asking? {
@@ -123,7 +125,7 @@ impl OrphansCommand {
                 processes.len(),
                 plural(processes.len())
             );
-            let list = || printer.print_processes_under_headline("orphans", &processes);
+            let list = || printer.print_processes_to_approve(&processes);
             let confirmed = prompt::ask("orphans --kill", &processes, None, &question, list)?;
 
             if !confirmed {
