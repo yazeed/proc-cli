@@ -18,6 +18,8 @@ proc unstick --force       # terminate if recovery fails
 
 Several targets are separate arguments. Comma-separated lists (`1234,:3000`) still work but are deprecated.
 
+With `--json`, each process in `processes` is a whole process object (its `outcome` is beside the usual fields), as `list` prints it.
+
 ## Options
 
 | Flag | Short | Description |

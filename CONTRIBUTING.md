@@ -116,11 +116,13 @@ proc/
 │   ├── commands/         # One file per command
 │   │   ├── mod.rs
 │   │   ├── by.rs, find_in.rs, for_file.rs, list.rs, on.rs, ports.rs
+│   │   ├── held.rs       # What on, info, for and why share: ports, connections, the card
 │   │   ├── info.rs, tree.rs, why.rs, stuck.rs, orphans.rs, watch.rs, wait.rs
 │   │   └── kill.rs, stop.rs, free.rs, freeze.rs, thaw.rs, unstick.rs
 │   ├── core/             # Core abstractions
 │   │   ├── mod.rs
 │   │   ├── apply.rs      # Run an action on each target
+│   │   ├── connections.rs # Connections to a listening port: counts, states, peers
 │   │   ├── filters.rs    # Shared filter utilities
 │   │   ├── name_match.rs # Exact name vs --cmd matching
 │   │   ├── port.rs
@@ -128,8 +130,10 @@ proc/
 │   │   └── target.rs     # Target parsing and resolution
 │   └── ui/               # Output formatting
 │       ├── mod.rs
+│       ├── card.rs       # The process card on, info, for and why print
 │       ├── format.rs
-│       └── output.rs
+│       ├── output.rs
+│       └── table.rs      # The one process table
 ├── tests/                # Integration tests
 ├── scripts/              # Coverage tooling
 ├── Cargo.toml

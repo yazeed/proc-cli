@@ -19,7 +19,8 @@
     `proc on` shows the process listening on a port as one card: its name and PID, command line, the folder it was started in, the executable, user, parent, CPU, memory, when it started, whether the port is reachable from the network or only from this machine, and who is connected to it. `proc on 1234` shows the same card for a PID.
 
     ```bash
-    proc on :8080
+    proc on :8080     # what is on a port
+    proc on 1234      # what is PID 1234, and what does it listen on
     ```
 
     Without proc: `lsof -i :8080` on macOS, `ss -ltnp 'sport = :8080'` on Linux, or `netstat -ano | findstr :8080` on Windows.

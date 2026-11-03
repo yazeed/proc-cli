@@ -31,6 +31,7 @@ A dev server won't start because port 3000 is taken. proc finds the old tmux ses
 | Task | proc | Without proc |
 |------|------|-------------|
 | What's on port 3000? | `proc on :3000` | `lsof -i :3000 -P -n` |
+| What is PID 1234, and what does it listen on? | `proc on 1234` | `ps -p 1234 -o pid,ppid,user,etime,command` + `lsof -a -p 1234 -iTCP -sTCP:LISTEN` |
 | Why is it there? | `proc why :3000` | `lsof -i :3000` + `ps -o ppid=` chain |
 | Kill it | `proc kill :3000` | `lsof -i :3000 -t \| xargs kill -9` |
 | Free the port and check | `proc free :3000` | `lsof -i :3000 -t \| xargs kill && sleep 1 && lsof -i :3000` |
@@ -195,6 +196,8 @@ A process named twice is handled once, except by the read-only `on` and `why`, w
 **Names.** A name matches the whole process name, ignoring case, the way `killall` and `pkill -x` read it. `proc kill node` stops the processes named `node` and leaves `Claude Helper` alone, and `--by` follows the same rule. The file name of the executable and of the first argument count as names too, so a long name that Linux cuts to 15 characters still matches, and on Windows a trailing `.exe` is optional. Add `--cmd` to match any part of the name or the full command line instead, like `pkill -f`: `proc kill serve --cmd`. A path is not a name: `proc kill ./server` finds nothing, so use `--cmd`, or `proc for <file>` for an executable. proc doesn't expand wildcards; an unquoted `node*` is expanded by your shell into file names, so use `--cmd` for partial matches.
 
 **`--in`.** `--in` (short `-i`) takes the next word as its directory unless that word starts with `-`; a bare `--in` is the current directory. Put it after the targets (`proc kill 1234 5678 --in .`) or write `--in=DIR`.
+
+**The process card.** `on` (by port, PID or name), `info`, `for` with one hit and `why` print the same card for a process: `Process:`, `Command:`, `Directory:`, `Path:`, `User:`, `Parent:`, `Status:`, `Resources:`, `Started:`, `Children:`, then `Listening:` (every port, with its exposure) and `Connections:` for a process that listens. `proc on 1234` is the card for a PID, `proc on :3000` the card for each holder of a port.
 
 **Tables.** `list`, `by`, `in`, `for` (several hits), `orphans`, `stuck`, `watch` and the list in front of every `--dry-run` or question print one table: `PID NAME USER CPU% MEM UPTIME COMMAND`. A value proc cannot read is `-`. COMMAND takes the width the other columns leave and ends with `…` where it is cut; the list you approve prints it whole. With `--in`, the directory is the second column. `--verbose` keeps the table, adds `PPID STATUS DIR` and cuts nothing.
 

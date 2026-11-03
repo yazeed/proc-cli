@@ -14,7 +14,7 @@ proc tree :3000            # tree from port 3000's process
 proc tree 1234 --ancestors # path up to root
 ```
 
-Each line shows the process's status, name, PID, CPU, memory and uptime (`up 3m 12s`); `--json` includes `uptime_secs`.
+Each line shows the process's status, name, PID, CPU, memory and uptime (`up 3m 12s`); `--json` includes `uptime_secs`. Each process in the JSON is a whole process object, the same one `list` and `on` print: every node of the tree, and every entry of the `--ancestors` chain, has `cwd`, `command`, `exe_path`, `user`, `parent_pid`, `start_time`, `parent_name`, `cpu_time_secs`, `open_files` and `child_count`, left out where the OS does not give the value.
 
 ## Options
 

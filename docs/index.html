@@ -58,6 +58,7 @@ description: "Semantic CLI tool for process management. Target by port, PID, nam
     <p class="section-lede">The same jobs, without remembering which flags <code>lsof</code> needs or piping PIDs into <code>kill</code>.</p>
     <div class="swap">
       <div class="swap-row"><span class="swap-task">What's on port 3000?</span><span class="swap-old"><code>lsof -i :3000 -P -n</code></span><span class="swap-new"><code>proc on :3000</code></span></div>
+      <div class="swap-row"><span class="swap-task">What is PID 1234, and what does it listen on?</span><span class="swap-old"><code>ps -p 1234 -o pid,ppid,user,etime,command</code>, then <code>lsof -a -p 1234 -iTCP -sTCP:LISTEN</code></span><span class="swap-new"><code>proc on 1234</code></span></div>
       <div class="swap-row"><span class="swap-task">Why is it there?</span><span class="swap-old"><code>lsof -i :3000</code>, then <code>ps -o ppid=</code> up the chain</span><span class="swap-new"><code>proc why :3000</code></span></div>
       <div class="swap-row"><span class="swap-task">Free the port</span><span class="swap-old"><code>lsof -t -i:3000 | xargs kill && sleep 1 && lsof -i:3000</code></span><span class="swap-new"><code>proc free :3000</code></span></div>
       <div class="swap-row"><span class="swap-task">Wait for it to exit</span><span class="swap-old"><code>while ps aux | grep node | grep -v grep; do sleep 5; done</code></span><span class="swap-new"><code>proc wait node</code></span></div>

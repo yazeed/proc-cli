@@ -18,6 +18,8 @@ proc wait node python          # wait for all to exit
 
 Several targets are separate arguments. Comma-separated lists (`node,python`) still work but are deprecated.
 
+With `--json`, each process in `exited` and `still_running` is a whole process object, as `list` prints it. An `exited` one carries the last reading proc had of it before it went; a `still_running` one, the reading taken when `wait` began.
+
 ## Options
 
 | Flag | Short | Description |

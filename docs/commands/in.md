@@ -32,7 +32,7 @@ The table is the one `proc list` prints, with the directory as its second column
 | `--sort <key>` | `-s` | Sort by: cpu, mem (biggest first); pid, name (ascending). Ties come by PID (default: cpu) |
 | `--limit <n>` | `-n` | Limit results |
 | `--json` | `-j` | Output as JSON |
-| `--verbose` | `-v` | Add PPID, STATUS and DIR to the table, and cut nothing |
+| `--verbose` | `-v` | Add PPID and STATUS to the table, and cut nothing (DIR is always there) |
 | `--wide` | `-w` | Print the directory and the command line whole instead of fitting the terminal |
 
 ## Examples

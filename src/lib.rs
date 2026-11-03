@@ -9,6 +9,7 @@
 //! - **Multi-Target**: `proc kill :3000 :8080 node` - separate arguments (comma-separated targets still work, but are deprecated)
 //! - **Query Language**: `proc by node --in .` - composable filters
 //! - **Working Directory**: See which project folder a process is running from
+//! - **One Process Card**: `proc on :3000`, `proc on 1234`, `proc info`, `proc for` (one hit) and `proc why` show the same card: command, directory, path, user, parent, status, resources, start time, children, listening ports and their connections
 //! - **Terminal-Adaptive Tables**: Tables adjust to terminal width automatically
 //! - **Consistent Filters**: `--in`, `--by`, `--min-uptime`, `--parent`, `--range`, `--sort`, `--limit`
 //! - **PID Guards**: `proc stop 1234 --start-time 1700000000 --yes` - act only while the PID still belongs to the process you saw (with `--in` and `--by` for its directory and name)

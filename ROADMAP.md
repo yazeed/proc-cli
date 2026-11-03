@@ -4,19 +4,6 @@ This file is about what might come next. Nothing in it is promised. An idea ship
 
 Each candidate lists what it would look like, how it fares against the feature test so far, and what's still open.
 
-## Decided: the minor release after 2.2.0
-
-### One rich, consistent view of a process
-
-proc collects most of what a person wants to know about a process or port, but each view prints a different subset under different labels (`Directory:`, `dir:`, `cwd:`, `DIR`), `-v` means something different in each command, and `tree`, `why` and `wait` return cut-down JSON objects. On macOS the same process even has two names: `on :port` and `ports` print lsof's (`python3.14`), the rest sysinfo's (`python3`), so a name copied from `ports` doesn't match `by`. The plan (from a study of portview and an inventory of every view's output):
-
-- `ports` moves onto the shared process table code (`PID NAME USER CPU% MEM UPTIME COMMAND` is what the other tables print now) and gains NAME, UPTIME and COMMAND.
-- One name per process everywhere: the name `Process` records, with lsof's only for a process that is already gone. Name matching is unchanged.
-- JSON only grows: `parent_name`, `cpu_time_secs`, `open_files`, `child_count` on every process object (`tree`, `why` and `wait` get full ones), `exposure` and `connections` on every port.
-- Every place that shows `proc on :3000` also shows `proc on <pid>` and a name.
-
-**Feature test:** fits the domain, makes the common question (what is this and who is talking to it) one command, adds no mode or state, and keeps the JSON contract (additions only). **Open:** the cost of connections, child counts and open files per platform, measured before each is adopted (the target is no slower than `on` today, about 0.5 s).
-
 ## Decided: the next major release
 
 ### Remove comma-separated targets

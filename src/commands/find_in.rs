@@ -52,7 +52,7 @@ pub struct InCommand {
     #[arg(long, short = 'j')]
     pub json: bool,
 
-    /// Add PPID, STATUS and DIR to the table, and cut nothing
+    /// Add PPID and STATUS to the table, and cut nothing (DIR is always there)
     #[arg(long, short = 'v')]
     pub verbose: bool,
 
