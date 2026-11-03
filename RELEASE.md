@@ -17,6 +17,8 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps # The docs.rs pages build with no
 
 - [ ] CI is green on main, including "Coverage gate" (100% lines across Linux, macOS and Windows; see CONTRIBUTING.md "Coverage"), both "Nix" jobs (the flake builds proc and runs its tests in Nix's sandbox, macOS's included, and the nixpkgs package builds), both "Test (freebsd)"/"Test (netbsd)" jobs (the whole suite in a BSD VM, then the release binary built and run there) and the "Package .deb and .rpm" and "Install the packages" jobs (the four packages install, run and remove in Debian, Ubuntu and Fedora). A tag release does not wait for it. Locally: `scripts/coverage-local.sh`
 - [ ] The release workflow's dry run is green: `gh workflow run release.yml --ref main`, then `gh run watch`. It runs every build and package job (the BSD builds and the `.deb`/`.rpm` files run only in this workflow's form here) and assembles the release files with `checksums.txt`, and publishes nothing: the GitHub Release step and the crates.io, npm, Homebrew and Scoop jobs run only for a tag. Its version checks print instead of failing, since a branch build is a `-dev` build; the tag checks them
+- [ ] The dry run's "Check credentials" job passed and printed no warning. It tries every secret under "Required Secrets" and reads when each expires (GitHub reports a token's expiry, so no date is kept anywhere): one that is invalid or expired fails the job, and the tag's release then publishes nothing; one that expires within 30 days is a warning. Renew it now, set it with `gh secret set <NAME>`, and run the dry run again
+- [ ] The credentials outside CI still work: the PPA key on the maintainer's Mac (`gpg -K 227B9E7E7C22B6E88774325184D7BBF5E38CCC4D` lists it; it has no expiry date, and if one is ever set it shows as `[expires: ...]`) and, only if the COPR package's settings change in this release, the COPR API token (`grep expiration ~/.config/copr`; a new one comes from https://copr.fedorainfracloud.org/api/). A release itself needs neither token: COPR builds from the webhook
 
 ### Cross-Platform Check
 
@@ -170,6 +172,7 @@ After tag push, monitor GitHub Actions:
 - [ ] "Update the apt repository" passed: https://proc-cli.com/apt/dists/stable/main/binary-amd64/Packages lists the new version
 - [ ] "Update winget" opened the pull request for the new version on microsoft/winget-pkgs (until the first version is merged it skips, with a notice)
 - [ ] The PPA's builds for the new version succeeded on every release and both architectures (https://launchpad.net/~yazeedaloyoun/+archive/ubuntu/proc-cli/+packages)
+- [ ] "Update COPR" passed: the build for the new version succeeded on every chroot (https://copr.fedorainfracloud.org/coprs/yazeed/proc-cli/builds/)
 
 ## 7. Post-Release Verification
 
@@ -281,6 +284,9 @@ On tag push, GitHub Actions handles:
 8. **Docker**: Push to yazeed/proc-cli on Docker Hub, and the same build to yazeed/proc (the image's original name). A separate workflow (`docker.yml`) with its own tag check: it stops if the tag isn't `v` + Cargo.toml's version
 9. **apt repository**: `update-apt` runs `pages.yml`, which deploys proc-cli.com with `/apt` rebuilt from the `.deb` files of the last three releases and signed with `APT_SIGNING_KEY` (`pkg/apt/build-repo.sh`)
 10. **winget**: `update-winget` opens the pull request for the new version on microsoft/winget-pkgs from the `yazeed/winget-pkgs` fork, with `WINGET_TOKEN` (winget-releaser; the fork must keep that name). It skips, with a notice, until a first version of `yazeed.proc-cli` is in winget-pkgs
+11. **COPR**: `update-copr` sends the version to the project's custom webhook (`COPR_WEBHOOK`). COPR runs the package's build script (`pkg/copr/copr-build.sh`, kept in COPR), which fetches `pkg/copr/sources.sh` and the spec at the tag and makes the source RPM: the spec at that version with a changelog entry, the tag's tarball and every crate `Cargo.lock` names. COPR then builds it for each Fedora and EPEL chroot of `yazeed/proc-cli`; the job follows the build on COPR's API and fails if it fails. Fedora's new releases join the project by themselves ("Follow Fedora branching"). To change the script COPR keeps, edit the file and run `copr-cli edit-package-custom proc-cli --script pkg/copr/copr-build.sh --script-builddeps "curl cargo tar xz"`; `pkg/copr/srpm.sh X.Y.Z` builds the same source RPM locally
+
+The GitHub Release, and so every job after it, waits on `check-credentials`, which runs on every tag and dry run (step 1). Docker's workflow runs on its own and logs in itself.
 
 Nix has nothing to publish: the flake lives in the repository, so `nix run github:yazeed/proc-cli/vX.Y.Z` works as soon as the tag is pushed, and CI's Nix jobs have already built and tested the flake on main. The nixpkgs package (`nix run nixpkgs#proc-cli`) is moved to each release by hand until it is merged, and by the nixpkgs update bot after (see "After the tag: nixpkgs").
 
@@ -300,6 +306,7 @@ Configure in GitHub repo settings → Secrets:
 | `DOCKERHUB_TOKEN` | Docker Hub access token |
 | `APT_SIGNING_KEY` | The apt repository's signing key (`proc-cli apt repository`, fingerprint `19AD 1FFA 67E9 0A13 9579 7473 DC42 B7C2 51B0 33F3`), armored, no passphrase; used only for `/apt` |
 | `WINGET_TOKEN` | Classic PAT with `public_repo` and `workflow`, for the winget pull requests |
+| `COPR_WEBHOOK` | The custom webhook address of `yazeed/proc-cli`'s `proc-cli` package (COPR → the project's Integrations page); it does not expire |
 
 The PPA's signing key is not a secret here: it stays on the maintainer's Mac (see "After the tag: Ubuntu PPA").
 

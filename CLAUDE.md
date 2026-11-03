@@ -195,6 +195,8 @@ To find them, search for what the change makes untrue (the old flag, message, ex
 
 ## Releasing
 
+**Releasing is automated.** The maintainer does each channel's one-time setup (accounts, approvals, keys, secrets) and decides when to tag; everything after the tag runs by itself. A new install channel is finished when its update is a job in `release.yml` (or, where a key must stay off CI, one command in RELEASE.md), its credentials are checked by the `check-credentials` job, and RELEASE.md lists it under "Automated Publishing", "Required Secrets" and step 6. A manual step that could be a job is a gap to close, not a step to document.
+
 **ALWAYS follow [RELEASE.md](RELEASE.md) for every release.** Do not skip steps. This includes:
 
 1. Pre-release checks: `rustup update stable` and `cargo update` (first), `cargo +<rust-version> check --all-targets` (the oldest supported Rust, from Cargo.toml), `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, `cargo build --release`, `cargo audit`, `cargo check --target x86_64-pc-windows-msvc --all-targets`

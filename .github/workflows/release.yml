@@ -245,9 +245,78 @@ jobs:
             proc-${{ matrix.os }}-x86_64.tar.gz
           if-no-files-found: error
 
+  # Every credential a release uses, checked before anything is published:
+  # one that is invalid or expired stops the release here, and one that
+  # expires within 30 days is a warning. Expiry dates are read live (GitHub
+  # reports a token's in a response header), so none is stored anywhere.
+  check-credentials:
+    name: Check credentials
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check each credential
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+          COPR_WEBHOOK: ${{ secrets.COPR_WEBHOOK }}
+        run: |
+          failed=0
+          bad() { echo "::error::$1"; failed=1; }
+          soon=$(( $(date +%s) + 30 * 86400 ))
+
+          # GitHub tokens: valid, and when they expire (no header: never)
+          for name in HOMEBREW_TAP_TOKEN SCOOP_BUCKET_TOKEN WINGET_TOKEN; do
+            token=$(printenv "$name" || true)
+            [ -n "$token" ] || { bad "$name is not set"; continue; }
+            status=$(curl -sS -o /dev/null -D headers -w '%{http_code}' \
+              -H "Authorization: Bearer $token" https://api.github.com/user)
+            [ "$status" = 200 ] || { bad "$name is not accepted by GitHub (HTTP $status): renew it"; continue; }
+            expires=$(sed -n 's/^github-authentication-token-expiration: *//Ip' headers | tr -d '\r')
+            if [ -z "$expires" ]; then
+              echo "$name: valid, does not expire"
+            elif [ "$(date -d "$expires" +%s)" -lt "$soon" ]; then
+              echo "::warning::$name expires $expires: renew it before then"
+            else
+              echo "$name: valid until $expires"
+            fi
+          done
+
+          # Docker Hub: the token logs in, as the docker job's login does
+          if printf '%s' "$DOCKERHUB_TOKEN" |
+            docker login -u "$DOCKERHUB_USERNAME" --password-stdin > /dev/null 2>&1; then
+            echo "DOCKERHUB_TOKEN: valid"
+            docker logout > /dev/null
+          else
+            bad "DOCKERHUB_TOKEN does not log in to Docker Hub as $DOCKERHUB_USERNAME: renew it"
+          fi
+
+          # The apt repository's key: imports, and has not expired
+          if printf '%s\n' "$APT_SIGNING_KEY" | gpg --batch --import 2> /dev/null; then
+            expiry=$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^sec:/ { print $7; exit }')
+            if [ -z "$expiry" ]; then
+              echo "APT_SIGNING_KEY: valid, does not expire"
+            elif [ "$expiry" -lt "$soon" ]; then
+              echo "::warning::APT_SIGNING_KEY expires $(date -d "@$expiry" +%F): extend it before then"
+            else
+              echo "APT_SIGNING_KEY: valid until $(date -d "@$expiry" +%F)"
+            fi
+          else
+            bad "APT_SIGNING_KEY does not import as an OpenPGP key"
+          fi
+
+          # COPR: the custom webhook address (it never expires)
+          case "$COPR_WEBHOOK" in
+            https://copr.fedorainfracloud.org/webhooks/custom/*/proc-cli/) echo "COPR_WEBHOOK: set" ;;
+            *) bad "COPR_WEBHOOK is not the project's custom webhook address ending in /proc-cli/" ;;
+          esac
+          exit "$failed"
+
   create-release:
     name: Create Release
-    needs: [build-release, package-linux, build-bsd]
+    needs: [build-release, package-linux, build-bsd, check-credentials]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -546,3 +615,41 @@ jobs:
           release-tag: ${{ github.ref_name }}
           release-notes-url: https://github.com/yazeed/proc-cli/releases/tag/${{ github.ref_name }}
           token: ${{ secrets.WINGET_TOKEN }}
+
+  update-copr:
+    name: Update COPR
+    needs: create-release
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      # COPR builds the release itself (pkg/copr/copr-build.sh, the package's
+      # custom script), started by its custom webhook with the version; the
+      # build is then followed on COPR's public API until it ends
+      - name: Build the release in COPR
+        env:
+          COPR_WEBHOOK: ${{ secrets.COPR_WEBHOOK }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          version=${VERSION#v}
+          curl -fsS -X POST --data "$version" "$COPR_WEBHOOK"
+          api='https://copr.fedorainfracloud.org/api_3/build/list?ownername=yazeed&projectname=proc-cli&packagename=proc-cli&limit=10'
+          state=
+          for _ in $(seq 1 90); do
+            sleep 60
+            state=$(curl -fsS "$api" | python3 -c '
+          import json, sys
+          version = sys.argv[1]
+          for build in json.load(sys.stdin)["items"]:
+              source = build.get("source_package") or {}
+              if (source.get("version") or "").startswith(version + "-"):
+                  print(build["state"], build["id"])
+                  break
+          ' "$version" || true)
+            echo "COPR: ${state:-waiting for the build to start}"
+            case "$state" in
+              succeeded*) exit 0 ;;
+              failed*|canceled*) echo "::error::COPR build ${state#* } $state: https://copr.fedorainfracloud.org/coprs/build/${state#* }"; exit 1 ;;
+            esac
+          done
+          echo "::error::COPR did not finish the $version build in 90 minutes"
+          exit 1
