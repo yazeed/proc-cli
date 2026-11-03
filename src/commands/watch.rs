@@ -13,7 +13,7 @@
 //! Commas still work (`proc watch :3000,:8080`) but are deprecated.
 
 use crate::core::process::{
-    classify_sysinfo, refreshed_system, self_and_ancestors, sysinfo_locked,
+    classify_sysinfo, fill_family, refreshed_system, self_and_ancestors, sysinfo_locked,
 };
 use crate::core::{
     flatten_targets, parse_target, resolve_in_dir, sort_processes, Hit, NameMatch, Process,
@@ -325,6 +325,9 @@ impl WatchCommand {
         if let Some(min_mem) = self.min_mem {
             processes.retain(|p| p.memory_mb >= min_mem);
         }
+
+        // `sys` holds every process, so parents and children are known
+        fill_family(&mut processes, sys);
 
         // Sort
         sort_processes(&mut processes, self.sort.into());
@@ -753,6 +756,10 @@ mod tests {
             parent_pid: None,
             start_time: None,
             uptime_secs: None,
+            parent_name: None,
+            cpu_time_secs: None,
+            open_files: None,
+            child_count: None,
         }
     }
 

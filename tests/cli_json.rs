@@ -388,6 +388,72 @@ mod unix {
         assert!(now.saturating_sub(start).abs_diff(uptime) <= 2);
     }
 
+    /// A shell with one child, killed when the test ends (the child, a
+    /// `sleep 30`, ends by itself)
+    struct ShellWithChild(Child);
+
+    impl Drop for ShellWithChild {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    #[test]
+    fn a_process_names_its_parent_children_cpu_time_and_open_files() {
+        let shell = ShellWithChild(
+            StdCommand::new("sh")
+                .args(["-c", "sleep 30 & wait"])
+                .spawn()
+                .unwrap(),
+        );
+        let pid = shell.0.id().to_string();
+        // the shell starts its sleep after the exec: wait for it to show
+        let mut process = Value::Null;
+        for _ in 0..500 {
+            let (json, code) = run_json(&["info", &pid, "--json"]);
+            assert_eq!(code, 0, "{json}");
+            process = json["processes"][0].clone();
+            if process["child_count"] == 1 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(process["child_count"], 1, "{process}");
+        assert!(process["parent_name"].is_string(), "{process}");
+        assert!(process["cpu_time_secs"].is_u64(), "{process}");
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        assert!(process["open_files"].as_u64() >= Some(3), "{process}");
+
+        // the child names the shell as its parent
+        let (json, _) = run_json(&["by", "sleep", "--json"]);
+        let sleeper = json["processes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["parent_pid"].as_u64() == Some(u64::from(shell.0.id())))
+            .unwrap_or_else(|| panic!("no sleep under the shell: {json}"));
+        assert!(sleeper["parent_name"].is_string(), "{sleeper}");
+        assert_eq!(sleeper["child_count"], 0, "{sleeper}");
+    }
+
+    #[test]
+    fn a_fact_the_os_does_not_give_is_an_absent_key_never_null() {
+        let (json, code) = run_json(&["list", "--json"]);
+        assert_eq!(code, 0);
+        let processes = json["processes"].as_array().unwrap();
+        for p in processes {
+            for key in ["parent_name", "cpu_time_secs", "open_files", "child_count"] {
+                assert!(
+                    p.get(key).is_none_or(|value| !value.is_null()),
+                    "{key} is null for {p}"
+                );
+            }
+        }
+        // the table is loaded: every row knows its children
+        assert!(processes.iter().all(|p| p["child_count"].is_u64()));
+    }
+
     #[test]
     fn every_process_view_reports_uptime() {
         let sleeper = Sleeper::spawn();

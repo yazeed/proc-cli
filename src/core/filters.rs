@@ -545,6 +545,10 @@ mod match_tests {
             parent_pid: None,
             start_time: None,
             uptime_secs: None,
+            parent_name: None,
+            cpu_time_secs: None,
+            open_files: None,
+            child_count: None,
         }
     }
 
@@ -727,6 +731,10 @@ mod sort_tests {
             parent_pid: None,
             start_time: None,
             uptime_secs: None,
+            parent_name: None,
+            cpu_time_secs: None,
+            open_files: None,
+            child_count: None,
         }
     }
 

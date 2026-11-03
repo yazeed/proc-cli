@@ -521,6 +521,10 @@ fn zombies_in(buf: &[u8], known: &std::collections::HashSet<u32>) -> Vec<Process
                 parent_pid: Some(read_u32(p, E_PPID)),
                 start_time: (start > 0).then_some(start),
                 uptime_secs: (start > 0).then(|| now.saturating_sub(start)),
+                parent_name: None,
+                cpu_time_secs: None,
+                open_files: None,
+                child_count: None,
             })
         })
         .collect()
@@ -620,6 +624,22 @@ pub struct Process {
     /// Seconds the process has been running
     #[serde(skip_serializing_if = "Option::is_none")]
     pub uptime_secs: Option<u64>,
+    /// The name of the parent process, as `name` records it; absent where the
+    /// record was made without the process table, or when the parent is gone
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_name: Option<String>,
+    /// Whole seconds of CPU time the process has used so far (the reading
+    /// [`cpu_time_ms`] gives, divided by 1000); absent where the OS gives none
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_time_secs: Option<u64>,
+    /// How many files the process has open; absent where the OS doesn't say
+    /// (Windows, NetBSD without procfs, another user's process on macOS)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub open_files: Option<u64>,
+    /// How many processes have this one as their parent; absent where the
+    /// record was made without the process table
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub child_count: Option<u32>,
 }
 
 /// This process and its ancestors, as far up as ten levels (proc → shell →
@@ -750,6 +770,7 @@ impl Process {
         if processes.is_empty() {
             return Err(ProcError::name_not_found(pattern, in_command_line_only));
         }
+        fill_family(&mut processes, &sys);
 
         Ok(processes)
     }
@@ -760,10 +781,14 @@ impl Process {
 
         let sysinfo_pid = Pid::from_u32(pid);
 
-        Ok(sys
-            .processes()
-            .get(&sysinfo_pid)
-            .map(|proc| Process::from_sysinfo(sysinfo_pid, proc)))
+        // `refreshed_system` holds every process, so the parent and the
+        // children are known at the cost of one pass over the table
+        Ok(sys.processes().get(&sysinfo_pid).map(|proc| {
+            let mut found = [Process::from_sysinfo(sysinfo_pid, proc)];
+            fill_family(&mut found, &sys);
+            let [found] = found;
+            found
+        }))
     }
 
     /// Get all running processes (excludes proc's own process)
@@ -789,6 +814,7 @@ impl Process {
         // zombies are appended after them): PID ascending makes every list
         // that starts here the same on every run
         processes.sort_by_key(|p| p.pid);
+        fill_family(&mut processes, &sys);
 
         Ok(processes)
     }
@@ -934,6 +960,7 @@ impl Process {
             .collect();
         // sysinfo keeps its processes in a randomly ordered map: PID ascending
         found.sort_by_key(|p| p.pid);
+        fill_family(&mut found, &sys);
         Ok(found)
     }
 
@@ -1293,7 +1320,56 @@ impl Process {
             // other user's process), which would make the uptime about 56 years
             start_time: (proc.start_time() > 0).then(|| proc.start_time()),
             uptime_secs: (proc.start_time() > 0).then(|| proc.run_time()),
+            // the two that need other processes are filled by `fill_family`
+            parent_name: None,
+            cpu_time_secs: cpu_time_secs_read(cpu_time_ms(pid, proc), proc.memory()),
+            open_files: open_files_read(proc.open_files()),
+            child_count: None,
         }
+    }
+}
+
+/// The whole seconds of CPU time a process has used, from the `cpu_ms` read
+/// and its `memory` in bytes. On macOS and Windows sysinfo leaves both at 0 for
+/// a process it was not allowed to read (any other user's on macOS: measured,
+/// 232 of 1169 processes), and a process that is read has memory in use. So a
+/// 0 with no memory is "not read", absent from the record, not "no CPU used".
+fn cpu_time_secs_read(cpu_ms: u64, memory: u64) -> Option<u64> {
+    let unread = cfg!(any(target_os = "macos", windows)) && cpu_ms == 0 && memory == 0;
+    (!unread).then_some(cpu_ms / 1000)
+}
+
+/// How many files a process has open, from what sysinfo returned. On macOS
+/// `proc_pidinfo` answers 0 (with errno EPERM, checked on PID 1) for a process
+/// that is not the user's, and a live process has files open, so there a 0 is
+/// "not read". On Windows sysinfo counts every kernel handle (events, mutexes
+/// and the rest, not only files), which is not "open files", so there it is
+/// not given. Elsewhere sysinfo returns `None` when it can't read (NetBSD reads
+/// `/proc/<pid>/fd`, so it needs procfs mounted).
+fn open_files_read(count: Option<usize>) -> Option<u64> {
+    count
+        .filter(|&count| !cfg!(target_os = "macos") || count > 0)
+        .filter(|_| !cfg!(windows))
+        .map(|count| count as u64)
+}
+
+/// Fill `parent_name` and `child_count` of `processes` from the full process
+/// table `sys`, which holds their parents and children whether or not the list
+/// being built kept them. Counts the table once, so the cost is one pass over
+/// it however long `processes` is. Linux threads are no children.
+pub(crate) fn fill_family(processes: &mut [Process], sys: &System) {
+    let mut children: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+    for proc in sys.processes().values().filter(|p| !is_thread(p)) {
+        if let Some(parent) = proc.parent() {
+            *children.entry(parent.as_u32()).or_insert(0) += 1;
+        }
+    }
+    for process in processes {
+        process.child_count = Some(children.get(&process.pid).copied().unwrap_or(0));
+        process.parent_name = process
+            .parent_pid
+            .and_then(|parent| sys.process(Pid::from_u32(parent)))
+            .map(|parent| escape_control(&parent.name().to_string_lossy()).into_owned());
     }
 }
 
@@ -1836,6 +1912,10 @@ mod tests {
             parent_pid: Some(1),
             start_time: None,
             uptime_secs: None,
+            parent_name: None,
+            cpu_time_secs: None,
+            open_files: None,
+            child_count: None,
         };
 
         // System daemons with cwd "/" and system exe paths
@@ -1962,10 +2042,151 @@ mod tests {
             parent_pid: None,
             start_time: None,
             uptime_secs: None,
+            parent_name: None,
+            cpu_time_secs: None,
+            open_files: None,
+            child_count: None,
         };
 
         let result = proc.send_signal(Signal::SIGCONT);
         assert!(result.is_err());
+    }
+
+    /// `sh -c 'sleep 30 & wait'`: a shell with exactly one child, a `sleep`.
+    /// Returns the shell, which the caller kills and reaps (the sleep ends with
+    /// its own 30 s; the shell's death leaves it to init).
+    #[cfg(unix)]
+    fn shell_with_one_child() -> std::process::Child {
+        std::process::Command::new("sh")
+            .args(["-c", "sleep 30 & wait"])
+            .spawn()
+            .unwrap()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_process_records_its_parents_name_and_its_children() {
+        let mut shell = shell_with_one_child();
+        let shell_pid = shell.id();
+        // the shell starts its sleep after the exec: wait for the child to show
+        let child_of_shell = || {
+            Process::find_all().unwrap().into_iter().find(|p| {
+                p.parent_pid == Some(shell_pid) && p.pid != shell_pid && p.name == "sleep"
+            })
+        };
+        let sleeper = std::iter::repeat_with(|| {
+            std::thread::sleep(Duration::from_millis(10));
+            child_of_shell()
+        })
+        .take(500)
+        .find(Option::is_some)
+        .flatten();
+        let all = Process::find_all().unwrap();
+        let by_pid = Process::find_by_pid(shell_pid).unwrap();
+        let _ = shell.kill();
+        let _ = shell.wait();
+
+        let sleeper = sleeper.expect("the shell never started its sleep");
+        let shell_record = all.iter().find(|p| p.pid == shell_pid).unwrap();
+        assert_eq!(shell_record.child_count, Some(1), "{shell_record:?}");
+        assert_eq!(
+            sleeper.parent_name.as_deref(),
+            Some(shell_record.name.as_str())
+        );
+        // a leaf has no children, which is a count of 0, not an unknown
+        assert_eq!(sleeper.child_count, Some(0), "{sleeper:?}");
+        // a lookup by PID reads the whole table too, and fills the same facts
+        let by_pid = by_pid.unwrap();
+        assert_eq!(by_pid.child_count, Some(1), "{by_pid:?}");
+        assert_eq!(by_pid.parent_name, shell_record.parent_name);
+    }
+
+    #[test]
+    fn cpu_time_and_open_files_are_read_for_own_processes() {
+        let me = Process::find_by_pid(std::process::id()).unwrap().unwrap();
+        assert!(me.cpu_time_secs.is_some(), "{me:?}");
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        assert!(me.open_files >= Some(3), "stdin, stdout, stderr: {me:?}");
+        // the full list carries them too (it leaves proc's own process out)
+        let others = Process::find_all().unwrap();
+        assert!(others.iter().any(|p| p.cpu_time_secs.is_some()));
+    }
+
+    #[test]
+    fn cpu_time_is_whole_seconds_of_the_cpu_time_read() {
+        // The same reading `cpu_time_ms` gives, divided by 1000
+        let sys = refreshed_system();
+        let me = Pid::from_u32(std::process::id());
+        let record = Process::from_sysinfo(me, sys.process(me).unwrap());
+        let ms = cpu_time_ms(me, sys.process(me).unwrap());
+        let secs = record.cpu_time_secs.unwrap();
+        // proc reads the CPU time again for the record, a moment later
+        assert!(secs >= ms / 1000 && secs <= ms / 1000 + 1, "{secs} vs {ms}");
+    }
+
+    #[test]
+    fn a_reading_of_zero_from_an_unread_process_is_unknown() {
+        // a process that used 1.5 s of CPU, and one that used none but is read
+        assert_eq!(cpu_time_secs_read(1500, 10 << 20), Some(1));
+        assert_eq!(cpu_time_secs_read(0, 10 << 20), Some(0));
+        // used nothing and has no memory: macOS and Windows did not read it
+        assert_eq!(
+            cpu_time_secs_read(0, 0),
+            if cfg!(any(target_os = "macos", windows)) {
+                None
+            } else {
+                Some(0)
+            }
+        );
+        // Windows counts handles, not files
+        assert_eq!(
+            open_files_read(Some(7)),
+            if cfg!(windows) { None } else { Some(7) }
+        );
+        assert_eq!(open_files_read(None), None);
+        // macOS answers 0 for a process that is not the user's
+        assert_eq!(
+            open_files_read(Some(0)),
+            if cfg!(target_os = "macos") {
+                None
+            } else {
+                Some(0)
+            }
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn another_users_process_has_no_cpu_time_or_open_files_on_macos() {
+        // PID 1 (launchd) is root's: sysinfo cannot read it from here, unless
+        // the test itself runs as root
+        if nix::unistd::geteuid().is_root() {
+            return;
+        }
+        let launchd = Process::find_by_pid(1).unwrap().unwrap();
+        assert_eq!(launchd.cpu_time_secs, None, "{launchd:?}");
+        assert_eq!(launchd.open_files, None, "{launchd:?}");
+        // the family comes from the table, not from reading the process
+        assert!(launchd.child_count > Some(0), "{launchd:?}");
+    }
+
+    #[test]
+    fn unknown_facts_are_absent_from_json() {
+        let json = serde_json::to_value(ghost()).unwrap();
+        for key in ["parent_name", "cpu_time_secs", "open_files", "child_count"] {
+            assert!(json.get(key).is_none(), "{key} must be absent: {json}");
+        }
+        // known facts are present, under the spec's names
+        let mut known = ghost();
+        known.parent_name = Some("zsh".to_string());
+        known.cpu_time_secs = Some(7);
+        known.open_files = Some(9);
+        known.child_count = Some(2);
+        let json = serde_json::to_value(known).unwrap();
+        assert_eq!(json["parent_name"], "zsh");
+        assert_eq!(json["cpu_time_secs"], 7);
+        assert_eq!(json["open_files"], 9);
+        assert_eq!(json["child_count"], 2);
     }
 
     /// A record of a process that doesn't exist
@@ -1985,6 +2206,10 @@ mod tests {
             parent_pid: None,
             start_time: None,
             uptime_secs: None,
+            parent_name: None,
+            cpu_time_secs: None,
+            open_files: None,
+            child_count: None,
         }
     }
 
