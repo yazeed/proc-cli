@@ -9,7 +9,7 @@
 
 use super::held::{card_options, held_during, known, write_process_card, HeldPort};
 use crate::core::{
-    resolve_in_dir, sort_processes, with_ports, NameMatch, PortInfo, Process, SortKey, StatusFilter,
+    resolve_in_dir, sort_processes, NameMatch, PortInfo, Process, SortKey, StatusFilter,
 };
 use crate::error::{ProcError, Result};
 use crate::out_println;
@@ -134,8 +134,9 @@ impl ForCommand {
             return Ok(());
         }
 
-        // For each process, get ports
-        let results = with_ports(processes)?;
+        // For each process, get ports (a port table that cannot be read
+        // leaves them out)
+        let results = with_known_ports(processes, PortInfo::get_all_listening());
         if self.json {
             self.print_json(&results)?;
         } else {
@@ -264,7 +265,7 @@ impl ForCommand {
     }
 
     /// Several processes: the standard process table, then who listens where
-    fn print_human(&self, results: &[(Process, Vec<PortInfo>)]) {
+    fn print_human(&self, results: &[(Process, Option<Vec<PortInfo>>)]) {
         let file_display = &self.file;
         let processes: Vec<Process> = results.iter().map(|(p, _)| p.clone()).collect();
         Printer::from_flags(false, self.verbose)
@@ -273,7 +274,7 @@ impl ForCommand {
 
         let listening: Vec<_> = results
             .iter()
-            .flat_map(|(proc, ports)| ports.iter().map(move |p| (proc, p)))
+            .flat_map(|(proc, ports)| ports.iter().flatten().map(move |p| (proc, p)))
             .collect();
         if !listening.is_empty() {
             out_println!("  {}", "Listening:".bright_black());
@@ -293,13 +294,13 @@ impl ForCommand {
         }
     }
 
-    fn print_json(&self, results: &[(Process, Vec<PortInfo>)]) -> Result<()> {
+    fn print_json(&self, results: &[(Process, Option<Vec<PortInfo>>)]) -> Result<()> {
         let printer = Printer::from_flags(true, self.verbose);
         let items: Vec<ProcessForJson> = results
             .iter()
             .map(|(proc, ports)| ProcessForJson {
                 process: proc,
-                ports,
+                ports: ports.as_deref(),
             })
             .collect();
 
@@ -316,7 +317,30 @@ impl ForCommand {
 #[derive(Serialize)]
 struct ProcessForJson<'a> {
     process: &'a Process,
-    ports: &'a [PortInfo],
+    /// Absent where the port table could not be read
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ports: Option<&'a [PortInfo]>,
+}
+
+/// Each process with the ports it listens on from `table`; every process has
+/// `None` when the table could not be read, so a view leaves the ports out
+/// rather than say there are none
+fn with_known_ports(
+    processes: Vec<Process>,
+    table: Result<Vec<PortInfo>>,
+) -> Vec<(Process, Option<Vec<PortInfo>>)> {
+    processes
+        .into_iter()
+        .map(|process| {
+            let ports = table.as_ref().ok().map(|all| {
+                all.iter()
+                    .filter(|port| port.pid == process.pid)
+                    .cloned()
+                    .collect()
+            });
+            (process, ports)
+        })
+        .collect()
 }
 
 #[derive(Serialize)]
@@ -399,5 +423,82 @@ mod tests {
         let mut processes = vec![bare_process()];
         cmd.apply_filters(&mut processes).unwrap();
         assert!(processes.is_empty());
+    }
+
+    fn listening(pid: u32, port: u16) -> PortInfo {
+        PortInfo {
+            port,
+            protocol: crate::core::Protocol::Tcp,
+            pid,
+            process_name: "x".to_string(),
+            address: Some("127.0.0.1".to_string()),
+        }
+    }
+
+    #[test]
+    fn each_process_gets_its_own_ports_from_the_table() {
+        let mut other = bare_process();
+        other.pid = 2;
+        let table = vec![listening(1, 4000), listening(2, 4001), listening(1, 4002)];
+        let results = with_known_ports(vec![bare_process(), other], Ok(table));
+        let ports = |at: usize| -> Vec<u16> {
+            results[at]
+                .1
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|p| p.port)
+                .collect()
+        };
+        assert_eq!(ports(0), vec![4000, 4002]);
+        assert_eq!(ports(1), vec![4001]);
+    }
+
+    #[test]
+    fn a_port_table_that_cannot_be_read_leaves_the_ports_out() {
+        let results = with_known_ports(
+            vec![bare_process()],
+            Err(ProcError::SystemError("no lsof".to_string())),
+        );
+        assert_eq!(results.len(), 1);
+        assert!(results[0].1.is_none());
+        // the JSON has no `ports` key, never null; with ports it is as before
+        let json = serde_json::to_value(ProcessForJson {
+            process: &results[0].0,
+            ports: results[0].1.as_deref(),
+        })
+        .unwrap();
+        assert_eq!(json["process"]["pid"], 1);
+        assert!(json.get("ports").is_none(), "{json}");
+        let port = [listening(1, 4000)];
+        let json = serde_json::to_value(ProcessForJson {
+            process: &results[0].0,
+            ports: Some(&port),
+        })
+        .unwrap();
+        assert_eq!(json["ports"][0]["port"], 4000);
+        assert_eq!(json["ports"], serde_json::json!([port[0]]));
+    }
+
+    #[test]
+    fn a_failed_write_ends_the_one_hit_view() {
+        let cmd = command();
+        let opts = CardOptions {
+            verbose: false,
+            width: 100,
+            now_secs: 1_000,
+        };
+        let ports = [HeldPort {
+            port: listening(1, 4000),
+            connections: None,
+        }];
+        let process = bare_process();
+        crate::test_support::assert_stops_at_a_failed_write(|w| {
+            cmd.print_one(w, &process, Some(&ports), &opts)
+        });
+        // ports not known
+        crate::test_support::assert_stops_at_a_failed_write(|w| {
+            cmd.print_one(w, &process, None, &opts)
+        });
     }
 }

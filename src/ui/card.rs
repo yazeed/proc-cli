@@ -52,29 +52,11 @@ pub struct CardOptions {
     pub now_secs: u64,
 }
 
-/// Writes the card for `process`, its listening `ports` and their connections
+/// Writes the card for `process`, its listening `ports` and their connections.
+/// `ports` is `None` where they are not known (the OS gave no port table): no
+/// `Listening:` and no `Connections:` then, since `Listening: none`, which is
+/// what `Some(&[])` prints, would say the process listens on nothing.
 pub fn write_card(
-    out: &mut impl Write,
-    process: &Process,
-    ports: &[CardPort],
-    opts: &CardOptions,
-) -> io::Result<()> {
-    write_card_lines(out, process, Some(ports), opts)
-}
-
-/// Writes the card for `process` when the ports it listens on are not known
-/// (the OS gave no port table): no `Listening:` and no `Connections:`, since
-/// `Listening: none` would say the process listens on nothing
-pub fn write_card_without_ports(
-    out: &mut impl Write,
-    process: &Process,
-    opts: &CardOptions,
-) -> io::Result<()> {
-    write_card_lines(out, process, None, opts)
-}
-
-/// The card; `ports` is `None` where they are not known
-fn write_card_lines(
     out: &mut impl Write,
     process: &Process,
     ports: Option<&[CardPort]>,
@@ -565,7 +547,7 @@ mod tests {
     /// The card with colour codes removed
     fn render(process: &Process, ports: &[CardPort], opts: &CardOptions) -> Vec<String> {
         let mut out = Vec::new();
-        write_card(&mut out, process, ports, opts).unwrap();
+        write_card(&mut out, process, Some(ports), opts).unwrap();
         let text = String::from_utf8(out).unwrap();
         plain(&text).lines().map(str::to_string).collect()
     }
@@ -988,7 +970,7 @@ mod tests {
         let mut process = full();
         process.start_time = Some(noon() - 13);
         crate::test_support::assert_stops_at_a_failed_write(|out| {
-            write_card(out, &process, &ports, &options(80, false))
+            write_card(out, &process, Some(&ports), &options(80, false))
         });
     }
 }

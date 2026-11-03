@@ -50,7 +50,7 @@ $ proc info 39158
                127.0.0.1:53781 → python3 (PID 43581)
 ```
 
-With `--json`, each process in `processes` has `ports`: the ports it listens on, each with `exposure` and `connections` (`total` and `by_state`, no peers), or an empty list. The keys it had are unchanged.
+With `--json`, each process in `processes` has `ports`: the ports it listens on, each with `exposure` and `connections` (`total` and `by_state`, no peers), or an empty list. The keys it had are unchanged. If the OS gives no port table (for example macOS without `lsof` on the PATH), the card has no `Listening:` or `Connections:` line and the JSON has no `ports` key; the rest is as usual.
 
 ## Examples
 

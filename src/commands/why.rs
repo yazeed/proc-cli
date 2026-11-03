@@ -59,7 +59,7 @@ impl WhyCommand {
         let mut found_any = false;
         let mut first_error: Option<ProcError> = None;
         let mut not_found: Vec<String> = Vec::new();
-        // Read once for every process shown (see `with_ports`)
+        // Read once for every port target and every process shown in the JSON
         let listening = std::cell::OnceCell::new();
 
         // What the human view prints for each target, once all are resolved: the
@@ -72,9 +72,13 @@ impl WhyCommand {
             // Collect port context for port targets; every holder of the port is
             // traced below, the context is the port they share
             let port_context: Option<PortInfo> = if let TargetType::Port(port) = &parsed {
-                PortInfo::holders_of(*port)
-                    .ok()
-                    .and_then(|holders| holders.into_iter().next())
+                // The table is sorted by port then PID: the first row of the
+                // port is its first holder
+                listening
+                    .get_or_init(|| PortInfo::get_all_listening().unwrap_or_default())
+                    .iter()
+                    .find(|p| p.port == *port)
+                    .cloned()
             } else {
                 None
             };

@@ -235,7 +235,7 @@ The same machine gives the same order on every run, so a list can be compared wi
 { "action": "info", "success": true, "found_count": 1, "not_found_count": 0, "processes": [<Process> + "ports": [<Port>, ...], ...], "not_found": [] }
 ```
 
-Each process object has the process's keys and, beside them, `ports`: the ports it listens on (an empty list for none), each with `exposure` and `connections` (`total` and `by_state` only, no `peers`; absent where the OS reads none, as on FreeBSD and NetBSD), as for `on <pid>`.
+Each process object has the process's keys and, beside them, `ports`: the ports it listens on (an empty list for none; the key is absent when the OS gave no port table, for example macOS without `lsof` on the PATH), each with `exposure` and `connections` (`total` and `by_state` only, no `peers`; absent where the OS reads none, as on FreeBSD and NetBSD), as for `on <pid>`.
 
 No target found: `success: false`, exit 2. Some found: `success: true`, the rest in `not_found`.
 
@@ -366,7 +366,7 @@ Without a target, `--in`, `--by` and the other filters narrow the view: an empty
 
 ### for
 
-`{"action": "for", "success": true, "count": 2, "results": [{"process": <Process>, "ports": [<Port>, ...]}]}`
+`{"action": "for", "success": true, "count": 2, "results": [{"process": <Process>, "ports": [<Port>, ...]}]}`. `ports` is absent when the OS gave no port table (for example macOS without `lsof` on the PATH).
 
 ### watch
 

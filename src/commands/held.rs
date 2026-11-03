@@ -4,7 +4,7 @@
 
 use crate::core::connections::{connections_for, Connections, Peer};
 use crate::core::{PortInfo, Process};
-use crate::ui::card::{write_card, write_card_without_ports, CardOptions, CardPort};
+use crate::ui::card::{write_card, CardOptions, CardPort};
 use crate::ui::output::terminal_width;
 use colored::*;
 use serde::{Serialize, Serializer};
@@ -93,23 +93,20 @@ pub(crate) fn write_process_card(
     held: Option<&[HeldPort]>,
     opts: &CardOptions,
 ) -> std::io::Result<()> {
-    let Some(held) = held else {
-        write_card_without_ports(out, process, opts)?;
-        return writeln!(out);
-    };
     let mut seen = HashSet::new();
-    let ports: Vec<CardPort> = held
-        .iter()
-        .map(|entry| CardPort {
-            port: &entry.port,
-            connections: if seen.insert(entry.port.port) {
-                entry.connections.as_ref()
-            } else {
-                None
-            },
-        })
-        .collect();
-    write_card(out, process, &ports, opts)?;
+    let ports: Option<Vec<CardPort>> = held.map(|held| {
+        held.iter()
+            .map(|entry| CardPort {
+                port: &entry.port,
+                connections: if seen.insert(entry.port.port) {
+                    entry.connections.as_ref()
+                } else {
+                    None
+                },
+            })
+            .collect()
+    });
+    write_card(out, process, ports.as_deref(), opts)?;
     writeln!(out)
 }
 

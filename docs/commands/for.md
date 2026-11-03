@@ -13,7 +13,7 @@ proc for /usr/bin/node     # processes using this executable
 proc for ~/bin/myapp       # tilde expansion
 ```
 
-One process gets the same card as `proc on`, under the line `✓ Found 1 process for ./server`: its command line, directory, path, user, parent, status, resources, start time, children, the ports it listens on and the connections to them. Several get the standard process table, followed by the ports they listen on. `--json` is the same for one process or several.
+One process gets the same card as `proc on`, under the line `✓ Found 1 process for ./server`: its command line, directory, path, user, parent, status, resources, start time, children, the ports it listens on and the connections to them. Several get the standard process table, followed by the ports they listen on. `--json` is the same for one process or several. If the OS gives no port table (for example macOS without `lsof` on the PATH), the card and the table leave the ports out, and `--json` has no `ports` key for those processes.
 
 ## Options
 
