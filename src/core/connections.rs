@@ -14,7 +14,8 @@
 //! the server's end while the server has not accepted it, because `lsof` lists
 //! only sockets some process has open), and is counted once. Its state is the
 //! server's end when that is listed; when only the client's end is seen, the
-//! server's state is read from it (`server_state`).
+//! server's state is read from it (`server_state`). A client in TIME_WAIT is
+//! reported as `time_wait`, because the server's end is already gone.
 
 // the BSDs read no sockets, so nothing there parses a table
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows", test))]
@@ -217,7 +218,6 @@ fn server_state(client: &str) -> String {
         "fin_wait1" | "fin_wait2" => "close_wait",
         "close_wait" => "fin_wait2",
         "last_ack" => "time_wait",
-        "time_wait" => "last_ack",
         other => other,
     }
     .to_string()
@@ -736,18 +736,14 @@ evil\\x1b[2J 8 zee 9u IPv4 0xe 0t0 TCP 127.0.0.1:50001->127.0.0.1:3000 (ESTABLIS
         // nginx's master and worker both hold port 80
         let c = assemble(&socks, 80, &[1, 31], 50, names);
         assert_eq!(c.total, 5);
-        assert_eq!(
-            states(&c),
-            vec![("established", 3), ("last_ack", 1), ("time_wait", 1)]
-        );
+        assert_eq!(states(&c), vec![("established", 3), ("time_wait", 2)]);
         assert_eq!(
             rows(&c),
             vec![
                 // no owner for a TIME_WAIT socket: the listener's address says
                 // whose it is (both wildcards, so the lower pid), and nobody is
                 // named
-                // only the client's end, in TIME_WAIT: the server's is the mirror
-                (1, "last_ack", "127.0.0.1", 0xC342, None),
+                (1, "time_wait", "127.0.0.1", 0xC342, None),
                 (1, "time_wait", "::1", 0xD178, None),
                 // the worker holds the accepted sockets; the clients hold theirs
                 (31, "established", "127.0.0.1", 0xA455, Some(88)),
@@ -923,7 +919,7 @@ Active Connections
             ("fin_wait2", "close_wait"),
             ("close_wait", "fin_wait2"),
             ("last_ack", "time_wait"),
-            ("time_wait", "last_ack"),
+            ("time_wait", "time_wait"),
             ("closing", "closing"),
             ("idle", "idle"),
         ] {
@@ -1029,10 +1025,7 @@ node 9 zee 4u IPv4 0xb 0t0 TCP 127.0.0.1:3000 (LISTEN)
         let socks = super::linux_socks(&dir.path().join("net"), dir.path(), 80).unwrap();
         let c = assemble(&socks, 80, &[1, 31], 50, names);
         assert_eq!(c.total, 5);
-        assert_eq!(
-            states(&c),
-            vec![("established", 3), ("last_ack", 1), ("time_wait", 1)]
-        );
+        assert_eq!(states(&c), vec![("established", 3), ("time_wait", 2)]);
         assert_eq!(c.peers[2].peer.as_ref().map(|p| p.pid), Some(88));
         // a port nothing has a socket on
         let none = super::linux_socks(&dir.path().join("net"), dir.path(), 81).unwrap();
