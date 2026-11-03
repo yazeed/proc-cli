@@ -163,8 +163,10 @@ impl Column {
             Column::Dir => known(&process.cwd).unwrap_or(UNKNOWN).to_string(),
             Column::Name => process.name.clone(),
             Column::User => known(&process.user).unwrap_or(UNKNOWN).to_string(),
-            Column::Cpu => format!("{:.1}", process.cpu_percent),
-            Column::Mem => format_memory(process.memory_mb),
+            // what the OS did not give is `-`, never a 0 that reads as a measurement
+            Column::Cpu if process.cpu_read() => format!("{:.1}", process.cpu_percent),
+            Column::Mem if process.memory_read() => format_memory(process.memory_mb),
+            Column::Cpu | Column::Mem => UNKNOWN.to_string(),
             Column::Uptime => process.start_time.map_or_else(
                 || UNKNOWN.to_string(),
                 |start| format_duration(layout.screen.now_secs.saturating_sub(start)),
@@ -420,7 +422,7 @@ impl PortColumn {
                 .map_or_else(unknown, str::to_string),
             PortColumn::Mem => row
                 .process
-                .filter(|p| p.memory_mb > 0.0)
+                .filter(|p| p.memory_read())
                 .map_or_else(unknown, |p| format_memory(p.memory_mb)),
             PortColumn::Uptime => row
                 .process

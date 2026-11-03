@@ -7,7 +7,7 @@
 //!   proc for ~/bin/myapp         # Tilde expansion
 //!   proc for app.log --by node   # Only the process named node (--cmd: node anywhere in the command line)
 
-use super::held::{card_options, held_during, known, write_process_card, HeldPort};
+use super::held::{card_options, held_during, known, shown_ports, write_process_card, HeldPort};
 use crate::core::{
     resolve_in_dir, sort_processes, NameMatch, PortInfo, Process, SortKey, StatusFilter,
 };
@@ -123,7 +123,10 @@ impl ForCommand {
         if !self.json && processes.len() == 1 {
             // (a port table that cannot be read leaves the ports out)
             let (held, ()) = held_during(&[processes[0].pid], usize::MAX, || ());
-            let ports = known(held, 1).pop().flatten();
+            let ports = known(held, 1)
+                .pop()
+                .flatten()
+                .filter(|ports| shown_ports(&processes[0], ports).is_some());
             // A failed write is recorded by `out`, which decides the exit code
             out::recorded(self.print_one(
                 &mut out::stdout(),

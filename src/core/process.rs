@@ -743,6 +743,39 @@ pub(crate) fn classify_sysinfo(pattern: &str, proc: &sysinfo::Process, mode: Nam
 }
 
 impl Process {
+    /// Whether the OS gave this process's memory. A process the OS let proc read has
+    /// memory in use, so 0 is "not read" (any other user's process on macOS and
+    /// Windows), never "uses none". The one test every view uses for memory.
+    pub(crate) fn memory_read(&self) -> bool {
+        self.memory_mb > 0.0
+    }
+
+    /// Whether the OS let proc read this process's CPU use. Where it did not, sysinfo
+    /// leaves the CPU time absent and the memory at 0 (see [`cpu_time_secs_read`]), and
+    /// the 0.0% in `cpu_percent` is no reading. The one test every view uses for CPU.
+    pub(crate) fn cpu_read(&self) -> bool {
+        self.cpu_time_secs.is_some() || self.memory_read()
+    }
+
+    /// Whether proc can see this process's sockets, so that an empty list of ports means
+    /// it listens on nothing. On unix the socket sources (lsof, `/proc/<pid>/fd`) map the
+    /// sockets of the user's own processes, and of every process for root, and show
+    /// nothing at all for another user's process (`lsof -p 1` as a user prints nothing).
+    /// Windows reads every PID's sockets from netstat.
+    #[cfg(unix)]
+    pub(crate) fn sockets_visible(&self) -> bool {
+        let effective = nix::unistd::Uid::effective();
+        effective.is_root()
+            || Uid::try_from(effective.as_raw() as usize)
+                .is_ok_and(|uid| self.user.as_deref() == Some(user_name(&uid).as_str()))
+    }
+
+    /// Windows reads every PID's sockets from netstat.
+    #[cfg(not(unix))]
+    pub(crate) fn sockets_visible(&self) -> bool {
+        true
+    }
+
     /// The names a name target is compared with
     pub fn names(&self) -> Names<'_> {
         match &self.raw {
@@ -2276,6 +2309,42 @@ mod tests {
         assert_eq!(json["cpu_time_secs"], 7);
         assert_eq!(json["open_files"], 9);
         assert_eq!(json["child_count"], 2);
+    }
+
+    #[test]
+    fn a_zero_is_a_reading_only_with_something_beside_it() {
+        // nothing read: no memory, no CPU time
+        let mut p = ghost();
+        assert!(!p.memory_read() && !p.cpu_read());
+        // memory in use means the process was read
+        p.memory_mb = 0.5;
+        assert!(p.memory_read() && p.cpu_read());
+        // CPU time without memory (a zombie): the CPU was read, the memory was not
+        p.memory_mb = 0.0;
+        p.cpu_time_secs = Some(0);
+        assert!(!p.memory_read() && p.cpu_read());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sockets_are_visible_for_ones_own_processes_and_for_root() {
+        let me = nix::unistd::Uid::effective();
+        let mut p = ghost();
+        // an owner nobody has: only root sees its sockets
+        p.user = Some("no-such-user-for-proc-tests".to_string());
+        assert_eq!(p.sockets_visible(), me.is_root());
+        p.user = None;
+        assert_eq!(p.sockets_visible(), me.is_root());
+        // the user running proc
+        let name = nix::unistd::User::from_uid(me).unwrap().unwrap().name;
+        p.user = Some(name);
+        assert!(p.sockets_visible());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_sees_every_pids_sockets() {
+        assert!(ghost().sockets_visible());
     }
 
     /// A record of a process that doesn't exist

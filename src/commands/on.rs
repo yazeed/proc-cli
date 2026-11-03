@@ -14,7 +14,8 @@
 //! Commas still work (`proc on :3000,:8080`) but are deprecated.
 
 use super::held::{
-    card_options, measure_with_ports, write_process, write_process_card, ConnectionReader, HeldPort,
+    card_options, measure_with_ports, shown_ports, write_process, write_process_card,
+    ConnectionReader, HeldPort,
 };
 use crate::core::connections::Connections;
 use crate::core::{
@@ -366,7 +367,7 @@ impl OnCommand {
             out::recorded(write_process(
                 &mut out::stdout(),
                 &process,
-                Some(&ports),
+                shown_ports(&process, &ports),
                 &card_options(self.verbose),
             ));
         }
@@ -479,7 +480,7 @@ impl OnCommand {
         )?;
         writeln!(out)?;
         for (process, ports) in results {
-            write_process_card(out, process, Some(ports), opts)?;
+            write_process_card(out, process, shown_ports(process, ports), opts)?;
         }
         Ok(())
     }

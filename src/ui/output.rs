@@ -917,7 +917,7 @@ mod tests {
             [
                 "PID NAME USER CPU% MEM UPTIME PPID STATUS DIR COMMAND",
                 "42 node zee 1.2 12.5MB 1m 5s 7 Running /a/b node /x/y/server.js --port 3000",
-                "43 deno - 0.0 0KB - - Running - -"
+                "43 deno - - - - - Running - -"
             ]
         );
     }
@@ -965,9 +965,9 @@ mod tests {
         let row = rows(&out)[1].clone();
         let cells: Vec<&str> = row.split(' ').collect();
         assert_eq!(cells[1], crate::ui::truncate_path(dir, 15), "{out}");
-        let command = row.split_once(" - - 0.0 0KB - ").map(|(_, c)| c);
+        let command = row.split_once(" - - - - - ").map(|(_, c)| c);
         assert!(command.is_none(), "the order is DIR NAME USER ...: {row}");
-        let command = row.split_once("0KB - ").unwrap().1;
+        let command = row.split_once("node - - - - ").unwrap().1;
         assert_eq!(command.chars().count(), 24, "{out}");
         assert!(command.ends_with('…'), "{out}");
 
@@ -1009,12 +1009,13 @@ mod tests {
         p.command = Some(String::new());
         let verbose = Printer::new(OutputFormat::Human, true);
         let out = written(|w| verbose.write_process_rows(w, screen(120), &[p.clone()], false));
-        assert_eq!(rows(&out)[1], "42 node - 0.0 0KB - - Running - -");
+        // (this fixture is a process proc could not read: no CPU, no memory)
+        assert_eq!(rows(&out)[1], "42 node - - - - - Running - -");
         // Nothing at all known but the PID and name
         p.user = None;
         p.command = None;
         let out = written(|w| human().write_process_rows(w, screen(120), &[p], false));
-        assert_eq!(rows(&out)[1], "42 node - 0.0 0KB - -");
+        assert_eq!(rows(&out)[1], "42 node - - - - -");
     }
 
     #[test]

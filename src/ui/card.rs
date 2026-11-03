@@ -88,11 +88,15 @@ pub fn write_card(
         };
         card.put(out, "Parent:", &parent, cut_keeping_pid)?;
     }
-    let status = status_word(process.status);
-    card.put_painted(out, "Status:", status, truncate_string, |shown| {
-        colorize_status(&process.status, shown).to_string()
-    })?;
-    card.put(out, "Resources:", &resources(process), truncate_string)?;
+    // A status the OS did not give is left out, not printed as `unknown`
+    if let Some(status) = status_word(process.status) {
+        card.put_painted(out, "Status:", status, truncate_string, |shown| {
+            colorize_status(&process.status, shown).to_string()
+        })?;
+    }
+    if let Some(resources) = resources(process) {
+        card.put(out, "Resources:", &resources, truncate_string)?;
+    }
     if let Some(start) = process.start_time {
         card.put(
             out,
@@ -135,24 +139,28 @@ pub(crate) fn known(field: &Option<String>) -> Option<&str> {
     field.as_deref().filter(|text| !text.is_empty())
 }
 
-/// The status as the JSON and the filters spell it
-fn status_word(status: ProcessStatus) -> &'static str {
+/// The status as the JSON and the filters spell it; `None` when the OS gave none
+fn status_word(status: ProcessStatus) -> Option<&'static str> {
     match status {
-        ProcessStatus::Running => "running",
-        ProcessStatus::Sleeping => "sleeping",
-        ProcessStatus::Stopped => "stopped",
-        ProcessStatus::Zombie => "zombie",
-        ProcessStatus::Dead => "dead",
-        ProcessStatus::Unknown => "unknown",
+        ProcessStatus::Running => Some("running"),
+        ProcessStatus::Sleeping => Some("sleeping"),
+        ProcessStatus::Stopped => Some("stopped"),
+        ProcessStatus::Zombie => Some("zombie"),
+        ProcessStatus::Dead => Some("dead"),
+        ProcessStatus::Unknown => None,
     }
 }
 
-/// CPU, memory, CPU time and open files; the last two when the OS gave them
-fn resources(process: &Process) -> String {
-    let mut parts = vec![
-        format!("{:.1}% CPU", process.cpu_percent),
-        format_memory(process.memory_mb),
-    ];
+/// CPU, memory, CPU time and open files, each when the OS gave it (a value the OS
+/// does not give is left out, not shown as 0); `None` when it gave none
+fn resources(process: &Process) -> Option<String> {
+    let mut parts = Vec::new();
+    if process.cpu_read() {
+        parts.push(format!("{:.1}% CPU", process.cpu_percent));
+    }
+    if process.memory_read() {
+        parts.push(format_memory(process.memory_mb));
+    }
     if let Some(secs) = process.cpu_time_secs {
         parts.push(format!("{} CPU time", format_duration(secs)));
     }
@@ -161,7 +169,7 @@ fn resources(process: &Process) -> String {
         Some(1) => parts.push("1 open file".to_string()),
         Some(count) => parts.push(format!("{count} open files")),
     }
-    parts.join(", ")
+    (!parts.is_empty()).then(|| parts.join(", "))
 }
 
 /// `21:14:03 (up 13s)`, with the date in front when it was not today
@@ -631,6 +639,38 @@ mod tests {
         );
     }
 
+    /// A process proc could not read, as the OS gives it: `proc info 1` as a
+    /// user on macOS has no status, no memory, no CPU time and no ports
+    fn unread() -> Process {
+        let mut p = bare();
+        p.status = ProcessStatus::Unknown;
+        p.memory_mb = 0.0;
+        p
+    }
+
+    #[test]
+    fn a_process_proc_could_not_read_leaves_out_what_it_does_not_know() {
+        let mut out = Vec::new();
+        write_card(&mut out, &unread(), None, &options(80, false)).unwrap();
+        let lines: Vec<String> = plain(&String::from_utf8(out).unwrap())
+            .lines()
+            .map(str::to_string)
+            .collect();
+        // no `Status: unknown`, no `0.0% CPU, 0KB`, no `Listening: none`
+        assert_eq!(
+            lines,
+            vec!["  Process:     python3 (PID 39158)".to_string()]
+        );
+        // each part is left out on its own: a zombie has CPU time and no memory
+        let mut zombie = unread();
+        zombie.cpu_time_secs = Some(0);
+        let lines = render(&zombie, &[], &options(80, false));
+        assert!(
+            lines.contains(&"  Resources:   0.0% CPU, 0s CPU time".to_string()),
+            "{lines:?}"
+        );
+    }
+
     #[test]
     fn unknown_facts_leave_no_line() {
         // Another user's process on macOS: no directory, user, parent, start,
@@ -887,12 +927,16 @@ mod tests {
             ProcessStatus::Stopped,
             ProcessStatus::Zombie,
             ProcessStatus::Dead,
-            ProcessStatus::Unknown,
         ] {
             process.status = status;
             let lines = render(&process, &[], &options(120, false));
-            assert!(lines.contains(&format!("  Status:      {}", status_word(status))));
+            let word = status_word(status).unwrap();
+            assert!(lines.contains(&format!("  Status:      {word}")));
         }
+        // a status the OS did not give is no line at all
+        process.status = ProcessStatus::Unknown;
+        let lines = render(&process, &[], &options(120, false));
+        assert!(lines.iter().all(|l| !l.contains("Status:")), "{lines:?}");
     }
 
     #[test]

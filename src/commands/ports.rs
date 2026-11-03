@@ -288,7 +288,9 @@ fn enrich<'a>(
         user: process.and_then(|proc| known(&proc.user)),
         uptime_secs: process.and_then(|proc| proc.uptime_secs),
         // 0 is what an unread value is in `Process`: unknown, so no key
-        memory_mb: process.map(|proc| proc.memory_mb).filter(|mb| *mb > 0.0),
+        memory_mb: process
+            .filter(|proc| proc.memory_read())
+            .map(|proc| proc.memory_mb),
         connections: connections.map(Counts::of),
     }
 }

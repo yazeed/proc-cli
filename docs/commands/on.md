@@ -16,7 +16,7 @@ proc on :3000 :8080    # multiple targets
 
 Several targets are separate arguments. Comma-separated lists (`:3000,:8080`) still work but are deprecated.
 
-Every answer is the same card for a process: its command line, directory, path, user, parent, status, resources (CPU, memory, CPU time, open files), start time and uptime, children, the ports it listens on with who can reach them, and the connections to those ports. A line is left out when the OS does not give the value (another user's process on macOS gives no open files), never printed empty.
+Every answer is the same card for a process: its command line, directory, path, user, parent, status, resources (CPU, memory, CPU time, open files), start time and uptime, children, the ports it listens on with who can reach them, and the connections to those ports. A line is left out when the OS does not give the value (another user's process on macOS gives no open files, no status, no CPU or memory, and no ports: proc cannot see its sockets, so the card has no `Listening:`), never printed empty.
 
 ```text
 $ proc on :53581
@@ -43,7 +43,7 @@ $ proc on :53581
 ```
 
 - **By port:** the headline counts the processes holding the port and, when they are all bound alike, says who can reach it (`reachable from this machine only` or `reachable from the network`). A card follows for each holder, with the connections that came in on that holder's own sockets.
-- **By PID:** the headline names the process (`✓ python3 (PID 39158)`) and the card follows. `Listening:` lists every port it holds, or says `none`.
+- **By PID:** the headline names the process (`✓ python3 (PID 39158)`) and the card follows. `Listening:` lists every port it holds, or says `none`; for another user's process (unless proc runs as root) it is left out, since proc cannot see that process's sockets. The JSON `ports` is `[]` there, as before, and does not mean none.
 - **By name:** the headline counts the processes (`✓ 2 processes named 'node'`, or `matching` with `--cmd`) and a card follows for each.
 
 A port can be held by several processes at once (`127.0.0.1:3000` and `[::1]:3000` are different sockets). `proc on :3000` shows a card for each, and `--json` has them in `processes`, with `process` the holder with the lowest PID.

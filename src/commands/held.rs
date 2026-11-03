@@ -166,13 +166,27 @@ pub(crate) fn measure_with_ports(
 }
 
 /// [`measure_with_ports`] for a view that does not need the ports: each
-/// process's ports are `None` when the port table could not be read
+/// process's ports are `None` when the port table could not be read, or when
+/// proc cannot see the process's sockets (see [`shown_ports`])
 pub(crate) fn measure_with_known_ports(
     processes: &mut [Process],
     peer_limit: usize,
 ) -> Vec<Option<Vec<HeldPort>>> {
     let count = processes.len();
-    known(measure_with_ports(processes, peer_limit), count)
+    let held = known(measure_with_ports(processes, peer_limit), count);
+    held.into_iter()
+        .zip(processes.iter())
+        .map(|(ports, process)| ports.filter(|ports| shown_ports(process, ports).is_some()))
+        .collect()
+}
+
+/// The ports a view says `process` listens on: `None` where an empty list would
+/// be a claim proc cannot back. Another user's process (when proc is not root)
+/// has its sockets out of proc's sight, so no ports found is no answer, and the
+/// card leaves out `Listening:` and `Connections:`, as it does when the port
+/// table cannot be read. Ports that were found are shown whoever owns the process.
+pub(crate) fn shown_ports<'a>(process: &Process, ports: &'a [HeldPort]) -> Option<&'a [HeldPort]> {
+    (!ports.is_empty() || process.sockets_visible()).then_some(ports)
 }
 
 /// The ports of `count` processes as a view shows them: each `Some` when the
@@ -428,6 +442,33 @@ mod tests {
             open_files: None,
             child_count: None,
         }
+    }
+
+    #[test]
+    fn no_ports_found_is_an_answer_only_where_the_sockets_can_be_seen() {
+        // Another user's process: its sockets are out of sight unless proc is root
+        let seen_by = |user: &str| {
+            let mut process = without_cwd();
+            process.user = Some(user.to_string());
+            process
+        };
+        let stranger = seen_by("no-such-user-for-proc-tests");
+        // (visible only to root on unix, always on Windows)
+        let root = stranger.sockets_visible();
+        assert_eq!(shown_ports(&stranger, &[]).is_some(), root);
+        // ports that were found are shown, whoever owns the process
+        let found = [held(listener(), None)];
+        assert_eq!(shown_ports(&stranger, &found).map(<[_]>::len), Some(1));
+
+        // the same through the reading of a real process of that "other" user
+        let mut child = idle_child();
+        let mut record = record_of(&child);
+        record.user = stranger.user.clone();
+        let mut records = [record];
+        let ports = measure_with_known_ports(&mut records, 0);
+        let _ = child.kill();
+        let _ = child.wait();
+        assert_eq!(ports[0].is_some(), root, "{ports:?}");
     }
 
     /// A process with every detail the card can show

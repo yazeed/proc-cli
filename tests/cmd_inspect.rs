@@ -1655,3 +1655,36 @@ fn a_failure_the_command_already_reported_prints_nothing_more() {
     assert!(!out.is_empty());
     assert_eq!(stderr, "");
 }
+
+/// PID 1 is root's. As a user, macOS gives proc no status, no memory, no CPU
+/// time and none of its sockets, so nothing of those is shown, and an empty
+/// list of ports is not claimed to mean "listens on nothing". As root, proc
+/// reads it all, and there is nothing to check here.
+#[cfg(target_os = "macos")]
+#[test]
+fn another_users_process_shows_only_what_proc_could_read() {
+    if unsafe { libc::geteuid() } != 0 {
+        let (card, _, code) = run_text(&["info", "1"]);
+        assert_eq!(code, 0, "{card}");
+        assert!(card.contains("Process:"), "{card}");
+        for absent in ["Listening:", "Connections:", "Status:", "Resources:", "0KB"] {
+            assert!(!card.contains(absent), "{absent} in:\n{card}");
+        }
+        let (on, _, _) = run_text(&["on", "1"]);
+        assert!(!on.contains("Listening:") && !on.contains("0KB"), "{on}");
+
+        // `ports` is new in `info`, so it is absent; `on` has always had its list
+        let (info, _) = run_json(&["info", "1", "--json"]);
+        assert!(info["processes"][0].get("ports").is_none(), "{info}");
+        let (on, _) = run_json(&["on", "1", "--json"]);
+        assert_eq!(on["ports"], serde_json::json!([]), "{on}");
+
+        // the table: a dash where the OS gave no CPU and no memory
+        let (table, _, _) = run_text(&["by", "launchd"]);
+        let row = table
+            .lines()
+            .find(|l| l.split_whitespace().next() == Some("1"))
+            .unwrap_or_else(|| panic!("no row for PID 1:\n{table}"));
+        assert!(!row.contains("0KB") && !row.contains("0.0"), "{row}");
+    }
+}

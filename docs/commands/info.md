@@ -29,7 +29,7 @@ Several targets are separate arguments. Comma-separated lists (`:3000,:8080`) st
 
 ## Output
 
-Each process gets the same card as `proc on`: the headline names it (`✓ python3 (PID 39158)`), and the card follows with its command line, directory, path, user, parent, status, resources (CPU, memory, CPU time, open files), start time and uptime, children, and the ports it listens on (`Listening:`, or `none`). A process that listens shows `Connections:` too, a count by state and then 5 peers; a process that listens on nothing has no `Connections:` line. A line is left out when the OS does not give the value, never printed empty. `-v` prints every value whole and every connection.
+Each process gets the same card as `proc on`: the headline names it (`✓ python3 (PID 39158)`), and the card follows with its command line, directory, path, user, parent, status, resources (CPU, memory, CPU time, open files), start time and uptime, children, and the ports it listens on (`Listening:`, or `none`). A process that listens shows `Connections:` too, a count by state and then 5 peers; a process that listens on nothing has no `Connections:` line. A line is left out when the OS does not give the value, never printed empty: for another user's process (`proc info 1` as a user on macOS) the card has no `Status:`, no CPU or memory in `Resources:`, and no `Listening:` or `Connections:`, because proc could not read them and cannot see that process's sockets (as root it reads all). `-v` prints every value whole and every connection.
 
 ```text
 $ proc info 39158
@@ -50,7 +50,7 @@ $ proc info 39158
                127.0.0.1:53781 → python3 (PID 43581)
 ```
 
-With `--json`, each process in `processes` has `ports`: the ports it listens on, each with `exposure` and `connections` (`total` and `by_state`, no peers), or an empty list. The keys it had are unchanged. If the OS gives no port table (for example macOS without `lsof` on the PATH), the card has no `Listening:` or `Connections:` line and the JSON has no `ports` key; the rest is as usual.
+With `--json`, each process in `processes` has `ports`: the ports it listens on, each with `exposure` and `connections` (`total` and `by_state`, no peers), or an empty list. The keys it had are unchanged. If the OS gives no port table (for example macOS without `lsof` on the PATH), the card has no `Listening:` or `Connections:` line and the JSON has no `ports` key; the rest is as usual. The same holds for another user's process when proc is not root: its sockets are out of sight, so an empty list would claim a `none` proc cannot back.
 
 ## Examples
 

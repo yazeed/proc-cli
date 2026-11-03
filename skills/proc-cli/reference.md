@@ -235,7 +235,7 @@ The same machine gives the same order on every run, so a list can be compared wi
 { "action": "info", "success": true, "found_count": 1, "not_found_count": 0, "processes": [<Process> + "ports": [<Port>, ...], ...], "not_found": [] }
 ```
 
-Each process object has the process's keys and, beside them, `ports`: the ports it listens on (an empty list for none; the key is absent when the OS gave no port table, for example macOS without `lsof` on the PATH), each with `exposure` and `connections` (`total` and `by_state` only, no `peers`; absent where the OS reads none, as on FreeBSD and NetBSD), as for `on <pid>`.
+Each process object has the process's keys and, beside them, `ports`: the ports it listens on (an empty list for none; the key is absent when the OS gave no port table, for example macOS without `lsof` on the PATH, and for another user's process when proc does not run as root, because proc cannot see its sockets, so no ports found is no answer), each with `exposure` and `connections` (`total` and `by_state` only, no `peers`; absent where the OS reads none, as on FreeBSD and NetBSD), as for `on <pid>`.
 
 No target found: exit 2 with `success: false`, `found_count: 0`, `not_found_count` and `processes: []`, the targets in `not_found`. The same document carries `error` (`Not found: 99999999`), `exit_code: 2` and `reason: "not_found"`, so it reads as the error the other commands print (a PID that a guard rules out is the `ruled_out` error). Some found: `success: true`, the rest in `not_found`.
 
@@ -272,7 +272,7 @@ One port (`proc on :3000`):
 
 `connections` counts every TCP connection to the port, whichever holder's socket it came in on: `total`, `by_state` (`established`, `close_wait`, `time_wait` and so on, a state with none is left out) and `peers`, at most 50, each with the `holder_pid` whose socket it came in on, its `state`, the client's `remote_address` and `remote_port`, and `peer`, the process at the client's end (`pid`, and `name` when known) when that end is on this machine. `peers_truncated` is present, `true`, only when there are more connections than `peers` lists. `connections` is absent where proc reads none (FreeBSD and NetBSD) or the reading failed, never `null`; a port with none has `total: 0`.
 
-One PID (`proc on <pid>`): `{"action": "on", "query_type": "process_to_ports", "success": true, "process": <Process>, "ports": [<Port>, ...]}`. Each port object also has `connections` with `total` and `by_state` only (no `peers`): the connections that came in on this process's own sockets, so a port held by two processes counts each one's share.
+One PID (`proc on <pid>`): `{"action": "on", "query_type": "process_to_ports", "success": true, "process": <Process>, "ports": [<Port>, ...]}`. Each port object also has `connections` with `total` and `by_state` only (no `peers`): the connections that came in on this process's own sockets, so a port held by two processes counts each one's share. For another user's process, when proc does not run as root, `ports` is `[]` because proc cannot see that process's sockets, not because it listens on nothing; the human card leaves out `Listening:` then. `status` is `"unknown"` and `memory_mb` and `cpu_percent` are `0.0` for a process the OS did not let proc read (a status of `unknown` and no `cpu_time_secs` is the mark): treat them as unknown, not as measurements.
 
 One name, or several targets (`proc on :3000 1234 node`):
 
@@ -377,7 +377,7 @@ Without a target, `--in`, `--by` and the other filters narrow the view: an empty
 
 ### for
 
-`{"action": "for", "success": true, "count": 2, "results": [{"process": <Process>, "ports": [<Port>, ...]}]}`. Each port is the plain port object (with `exposure`, without `connections`). `ports` is absent when the OS gave no port table (for example macOS without `lsof` on the PATH).
+`{"action": "for", "success": true, "count": 2, "results": [{"process": <Process>, "ports": [<Port>, ...]}]}`. Each port is the plain port object (with `exposure`, without `connections`). `ports` is absent when the OS gave no port table (for example macOS without `lsof` on the PATH). For another user's process, when proc does not run as root, an empty `ports` means proc could not see its sockets.
 
 ### watch
 
