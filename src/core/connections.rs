@@ -118,26 +118,78 @@ impl Sock {
 /// `netstat -ano`. FreeBSD and NetBSD give no connections (see the module
 /// documentation).
 pub fn connections_to(port: u16, holders: &[u32], peer_limit: usize) -> Result<Connections> {
-    if holders.is_empty() {
-        return Ok(Connections::default());
-    }
-    let socks = read_socks(port)?;
-    Ok(assemble(
+    let mut found = connections_for(&[(port, holders)], peer_limit)?;
+    Ok(found.pop().map(|(_, found)| found).unwrap_or_default())
+}
+
+/// [`connections_to`] for several ports at once: each port with all its
+/// `holders` in, the connections of each out, in the order given. The socket
+/// table is read once for all the ports (a reading is a system call, or on
+/// Windows two `netstat` runs), and the peers of all of them are named in one
+/// lookup. A port with no holders gives `Connections::default()`.
+pub fn connections_for(
+    ports: &[(u16, &[u32])],
+    peer_limit: usize,
+) -> Result<Vec<(u16, Connections)>> {
+    let wanted: Vec<u16> = ports
+        .iter()
+        .filter(|(_, holders)| !holders.is_empty())
+        .map(|(port, _)| *port)
+        .collect();
+    let socks = if wanted.is_empty() {
+        Vec::new()
+    } else {
+        read_socks(&wanted)?
+    };
+    Ok(assemble_ports(
         &socks,
-        port,
-        holders,
+        ports,
         peer_limit,
         crate::core::process::names_by_pid,
     ))
 }
 
+/// The connections of each port in `ports` from the rows read for all of them.
+/// `names` is called once, with the PIDs of every peer listed.
+fn assemble_ports(
+    socks: &[Sock],
+    ports: &[(u16, &[u32])],
+    peer_limit: usize,
+    names: impl FnOnce(&[u32]) -> HashMap<u32, String>,
+) -> Vec<(u16, Connections)> {
+    // first the peers to name, then the connections with every name at hand
+    let mut peer_pids: Vec<u32> = Vec::new();
+    for (port, holders) in ports {
+        assemble(socks, *port, holders, peer_limit, |pids| {
+            peer_pids.extend(pids);
+            HashMap::new()
+        });
+    }
+    peer_pids.sort_unstable();
+    peer_pids.dedup();
+    let live = if peer_pids.is_empty() {
+        HashMap::new()
+    } else {
+        names(&peer_pids)
+    };
+    ports
+        .iter()
+        .map(|(port, holders)| {
+            let found = assemble(socks, *port, holders, peer_limit, |_| live.clone());
+            (*port, found)
+        })
+        .collect()
+}
+
 #[cfg(target_os = "macos")]
-fn read_socks(port: u16) -> Result<Vec<Sock>> {
+fn read_socks(ports: &[u16]) -> Result<Vec<Sock>> {
     // no state filter: the rows of both ends of a connection, and the listeners
-    // that say whose a connection nobody has accepted is
+    // that say whose a connection nobody has accepted is. One call for all the
+    // ports: a port list after TCP: is one filter
+    let list: Vec<String> = ports.iter().map(u16::to_string).collect();
     let output = crate::ui::interrupt::unblocked_in_child(&mut Command::new("lsof"))
         // `+c 0`: the whole command name, as the listing call has it
-        .args(["+c", "0", "-nP", &format!("-iTCP:{port}")])
+        .args(["+c", "0", "-nP", &format!("-iTCP:{}", list.join(","))])
         .output()
         .map_err(|e| ProcError::SystemError(format!("Failed to run lsof: {}", e)))?;
     Ok(parse_lsof_connections(&String::from_utf8_lossy(
@@ -146,39 +198,39 @@ fn read_socks(port: u16) -> Result<Vec<Sock>> {
 }
 
 #[cfg(target_os = "linux")]
-fn read_socks(port: u16) -> Result<Vec<Sock>> {
+fn read_socks(ports: &[u16]) -> Result<Vec<Sock>> {
     linux_socks(
         std::path::Path::new("/proc/net"),
         std::path::Path::new("/proc"),
-        port,
+        ports,
     )
 }
 
 #[cfg(target_os = "windows")]
-fn read_socks(port: u16) -> Result<Vec<Sock>> {
+fn read_socks(ports: &[u16]) -> Result<Vec<Sock>> {
     let [v4, v6] = PortInfo::netstat_tables()?;
     let mut socks = parse_netstat_connections(&[&v4, &v6]);
-    // both ends of a connection to the port, and its listeners
-    socks.retain(|s| s.local.1 == port || s.remote.1 == port);
+    // both ends of a connection to the ports, and their listeners
+    socks.retain(|s| ports.contains(&s.local.1) || ports.contains(&s.remote.1));
     Ok(socks)
 }
 
 #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
-fn read_socks(_port: u16) -> Result<Vec<Sock>> {
+fn read_socks(_ports: &[u16]) -> Result<Vec<Sock>> {
     Ok(Vec::new())
 }
 
 /// The sockets of `port` in the kernel tables under `net` (/proc/net), with the
 /// processes under `procs` (/proc) that have each open
 #[cfg(target_os = "linux")]
-fn linux_socks(net: &std::path::Path, procs: &std::path::Path, port: u16) -> Result<Vec<Sock>> {
+fn linux_socks(net: &std::path::Path, procs: &std::path::Path, ports: &[u16]) -> Result<Vec<Sock>> {
     let mut rows = Vec::new();
     for (text, v6) in PortInfo::proc_net_tables(net)? {
-        // both ends of a connection to the port, and its listeners
+        // both ends of a connection to the ports, and their listeners
         rows.extend(
             parse_proc_net_connections(&text, v6)
                 .into_iter()
-                .filter(|(_, s)| s.local.1 == port || s.remote.1 == port),
+                .filter(|(_, s)| ports.contains(&s.local.1) || ports.contains(&s.remote.1)),
         );
     }
     // a socket no process owns (TIME_WAIT) has inode 0, and no fd links to it
@@ -911,6 +963,87 @@ Active Connections
     }
 
     #[test]
+    fn several_ports_come_out_of_one_reading_each_with_its_own_connections() {
+        let ep = |a: &str, p: u16| (a.to_string(), p);
+        let socks = vec![
+            Sock::new(vec![1], "LISTEN", ep("127.0.0.1", 80), ep("0.0.0.0", 0)),
+            Sock::new(vec![2], "LISTEN", ep("127.0.0.1", 81), ep("0.0.0.0", 0)),
+            // two connections to 80, one to 81; the clients are pids 7 and 8
+            Sock::new(
+                vec![1],
+                "ESTABLISHED",
+                ep("127.0.0.1", 80),
+                ep("127.0.0.1", 5000),
+            ),
+            Sock::new(
+                vec![7],
+                "ESTABLISHED",
+                ep("127.0.0.1", 5000),
+                ep("127.0.0.1", 80),
+            ),
+            Sock::new(
+                vec![1],
+                "ESTABLISHED",
+                ep("127.0.0.1", 80),
+                ep("127.0.0.1", 5001),
+            ),
+            Sock::new(
+                vec![7],
+                "ESTABLISHED",
+                ep("127.0.0.1", 5001),
+                ep("127.0.0.1", 80),
+            ),
+            Sock::new(
+                vec![2],
+                "ESTABLISHED",
+                ep("127.0.0.1", 81),
+                ep("127.0.0.1", 5002),
+            ),
+            Sock::new(
+                vec![8],
+                "ESTABLISHED",
+                ep("127.0.0.1", 5002),
+                ep("127.0.0.1", 81),
+            ),
+        ];
+        let calls = std::cell::Cell::new(0);
+        let asked = std::cell::RefCell::new(Vec::new());
+        let found = assemble_ports(
+            &socks,
+            &[(80, &[1]), (81, &[2]), (82, &[]), (83, &[3])],
+            50,
+            |pids| {
+                calls.set(calls.get() + 1);
+                asked.borrow_mut().extend_from_slice(pids);
+                names(pids)
+            },
+        );
+        // every peer named in one lookup, each once
+        assert_eq!(calls.get(), 1);
+        assert_eq!(*asked.borrow(), vec![7, 8]);
+        let ports: Vec<u16> = found.iter().map(|(p, _)| *p).collect();
+        assert_eq!(ports, vec![80, 81, 82, 83], "in the order given");
+        assert_eq!(found[0].1.total, 2);
+        assert_eq!(found[0].1.peers[0].peer.as_ref().unwrap().pid, 7);
+        assert_eq!(
+            found[0].1.peers[0].peer.as_ref().unwrap().name.as_deref(),
+            Some("proc7")
+        );
+        assert_eq!(found[1].1.total, 1);
+        assert_eq!(found[1].1.peers[0].peer.as_ref().unwrap().pid, 8);
+        assert_eq!(found[2].1, Connections::default(), "no holders");
+        assert_eq!(found[3].1, Connections::default(), "nobody connected");
+        // nothing to name: no lookup
+        let none = assemble_ports(&socks, &[(83, &[3])], 50, |_| panic!("no peers"));
+        assert_eq!(none[0].1.total, 0);
+        // the public call with no holder anywhere reads nothing
+        assert_eq!(
+            connections_for(&[(80, &[]), (81, &[])], 50).unwrap(),
+            vec![(80, Connections::default()), (81, Connections::default())]
+        );
+    }
+
+    #[test]
     fn a_client_only_connection_has_the_servers_state() {
         for (client, server) in [
             ("established", "established"),
@@ -1022,16 +1155,16 @@ node 9 zee 4u IPv4 0xb 0t0 TCP 127.0.0.1:3000 (LISTEN)
                     .unwrap();
             }
         }
-        let socks = super::linux_socks(&dir.path().join("net"), dir.path(), 80).unwrap();
+        let socks = super::linux_socks(&dir.path().join("net"), dir.path(), &[80]).unwrap();
         let c = assemble(&socks, 80, &[1, 31], 50, names);
         assert_eq!(c.total, 5);
         assert_eq!(states(&c), vec![("established", 3), ("time_wait", 2)]);
         assert_eq!(c.peers[2].peer.as_ref().map(|p| p.pid), Some(88));
         // a port nothing has a socket on
-        let none = super::linux_socks(&dir.path().join("net"), dir.path(), 81).unwrap();
+        let none = super::linux_socks(&dir.path().join("net"), dir.path(), &[81]).unwrap();
         assert!(none.is_empty());
         // no tables: an error, as for the listening ports
         let missing = dir.path().join("nothing");
-        assert!(super::linux_socks(&missing, dir.path(), 80).is_err());
+        assert!(super::linux_socks(&missing, dir.path(), &[80]).is_err());
     }
 }

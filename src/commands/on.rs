@@ -13,7 +13,7 @@
 //!
 //! Commas still work (`proc on :3000,:8080`) but are deprecated.
 
-use crate::core::connections::{connections_to, Connections, Peer};
+use crate::core::connections::{connections_for, Connections, Peer};
 use crate::core::{
     flatten_targets, parse_target, resolve_in_dir, resolve_target, ruled_out_by, Exposure, Guards,
     NameMatch, PortInfo, Process, TargetType,
@@ -28,6 +28,7 @@ use colored::*;
 use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Write;
+use std::panic::resume_unwind;
 
 /// Peers the JSON of a port lists at most (`peers_truncated` says it cut)
 const JSON_PEER_LIMIT: usize = 50;
@@ -51,7 +52,7 @@ pub struct OnCommand {
     #[arg(long = "by", short = 'b')]
     pub by_name: Option<String>,
 
-    /// Match name targets and --by as a substring of the process name or full command line (like pkill -f)
+    /// Match name targets and --by as a substring of the process name or full command line (like pkill -f); the headline then says `matching`
     #[arg(long)]
     pub cmd: bool,
 
@@ -652,12 +653,27 @@ impl Serialize for HeldPort {
     }
 }
 
-/// The connections to `port`, which `holders` listen on; `None` where the OS
-/// reads none or the reading failed (the answer is the process, not them)
-fn read_connections(port: u16, holders: &[u32], peer_limit: usize) -> Option<Connections> {
-    READS_CONNECTIONS
-        .then(|| connections_to(port, holders, peer_limit).ok())
+/// The connections to each of `jobs` (a port with all its holders), from one
+/// reading of the socket table; `None` for each where the OS reads none or the
+/// reading failed (the answer is the process, not them)
+fn read_connections(
+    jobs: &[(u16, Vec<u32>)],
+    peer_limit: usize,
+) -> Vec<(u16, Option<Connections>)> {
+    let ports: Vec<(u16, &[u32])> = jobs
+        .iter()
+        .map(|(port, holders)| (*port, holders.as_slice()))
+        .collect();
+    let found = READS_CONNECTIONS
+        .then(|| connections_for(&ports, peer_limit).ok())
         .flatten()
+        .unwrap_or_default();
+    jobs.iter()
+        .map(|(port, _)| {
+            let own = found.iter().find(|(read, _)| read == port);
+            (*port, own.map(|(_, connections)| connections.clone()))
+        })
+        .collect()
 }
 
 /// The connections that came in on the sockets of `pid`, of the port-wide
@@ -680,9 +696,6 @@ fn held_by(all: &Connections, pid: u32) -> Connections {
         peers_truncated: false,
     }
 }
-
-/// Connection readings run in at most this many threads at once
-const READ_WORKERS: usize = 4;
 
 /// Reads the connections to the ports of one lookup, each port once, and gives
 /// each holder its own share. `table` is every listening socket of the ports
@@ -734,8 +747,9 @@ impl ConnectionReader {
         (holders, limit)
     }
 
-    /// Runs `work` while the connections to `ports` are read in the
-    /// background, so the wait for the CPU reading hides the readings
+    /// Runs `work` while the connections to `ports` are read, all in one
+    /// reading of the socket table, in the background: the wait for the CPU
+    /// reading hides it
     fn read_during<T>(&mut self, ports: &[u16], work: impl FnOnce() -> T) -> T {
         let mut wanted: Vec<u16> = ports
             .iter()
@@ -744,33 +758,23 @@ impl ConnectionReader {
             .collect();
         wanted.sort_unstable();
         wanted.dedup();
-        let jobs: Vec<(u16, Vec<u32>, usize)> = wanted
+        let plans: Vec<(u16, Vec<u32>, usize)> = wanted
             .into_iter()
             .map(|port| {
                 let (holders, limit) = self.plan(port);
                 (port, holders, limit)
             })
             .collect();
-        let per_worker = jobs.len().div_ceil(READ_WORKERS).max(1);
+        // one limit for the reading: a port that wanted fewer peers gets more
+        let limit = plans.iter().map(|(_, _, limit)| *limit).max().unwrap_or(0);
+        let jobs: Vec<(u16, Vec<u32>)> = plans
+            .into_iter()
+            .map(|(port, holders, _)| (port, holders))
+            .collect();
         let (done, result) = std::thread::scope(|scope| {
-            let workers: Vec<_> = jobs
-                .chunks(per_worker)
-                .map(|chunk| {
-                    scope.spawn(move || {
-                        chunk
-                            .iter()
-                            .map(|(port, holders, limit)| {
-                                (*port, read_connections(*port, holders, *limit))
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                })
-                .collect();
+            let reading = scope.spawn(|| read_connections(&jobs, limit));
             let result = work();
-            let done: Vec<_> = workers
-                .into_iter()
-                .flat_map(|worker| worker.join().unwrap_or_default())
-                .collect();
+            let done = reading.join().unwrap_or_else(|e| resume_unwind(e));
             (done, result)
         });
         self.read.extend(done);
@@ -782,7 +786,7 @@ impl ConnectionReader {
         if !self.read.contains_key(&port) {
             let (holders, limit) = self.plan(port);
             self.read
-                .insert(port, read_connections(port, &holders, limit));
+                .extend(read_connections(&[(port, holders)], limit));
         }
         self.read[&port].clone()
     }
@@ -1298,8 +1302,7 @@ mod tests {
             .collect();
         let ports: Vec<u16> = table.iter().map(|p| p.port).collect();
         let mut reader = ConnectionReader::new(table, 0, true);
-        // the work's answer comes back, and every port is read once, on at
-        // most READ_WORKERS threads
+        // the work's answer comes back, and every port is read, in one reading
         let answer = reader.read_during(&ports, || 42);
         assert_eq!(answer, 42);
         assert_eq!(reader.read.len(), ports.len());

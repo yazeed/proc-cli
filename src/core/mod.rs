@@ -12,7 +12,7 @@ pub mod process;
 pub mod target;
 
 pub use apply::apply_to_each;
-pub use connections::{connections_to, Connections, Peer, PeerProcess};
+pub use connections::{connections_for, connections_to, Connections, Peer, PeerProcess};
 pub use filters::{
     apply_filters, guard_targets, matches_by_filter, matches_in_filter, require_in_dir,
     require_in_dir_live, resolve_in_dir, ruled_out_by, sort_ports, sort_processes, Guards,
