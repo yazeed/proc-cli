@@ -22,6 +22,7 @@ use crate::core::connections::{Connections, Peer};
 use crate::core::{PortInfo, Process, ProcessStatus, Protocol};
 use crate::ui::{colorize_status, format_duration, format_memory, truncate_path, truncate_string};
 use std::io::{self, Write};
+use unicode_width::UnicodeWidthStr;
 
 /// Spaces before every label
 const INDENT: usize = 2;
@@ -82,7 +83,7 @@ pub fn write_card(
             Some(name) => format!("{name} (PID {pid})"),
             None => format!("PID {pid}"),
         };
-        card.put(out, "Parent:", &parent, truncate_string)?;
+        card.put(out, "Parent:", &parent, cut_parent)?;
     }
     let status = status_word(process.status);
     card.put_painted(out, "Status:", status, truncate_string, |shown| {
@@ -104,6 +105,21 @@ pub fn write_card(
     }
     card.write_listening(out, ports)?;
     card.write_connections(out, ports)
+}
+
+/// Cuts `name (PID n)` in the name, so the PID stays whole; when even the PID
+/// does not fit, the whole value is cut
+fn cut_parent(value: &str, room: usize) -> String {
+    if value.width() <= room {
+        return value.to_string();
+    }
+    if let Some(at) = value.rfind(" (PID ") {
+        let (name, pid) = value.split_at(at);
+        if pid.width() < room {
+            return truncate_string(name, room - pid.width()) + pid;
+        }
+    }
+    truncate_string(value, room)
 }
 
 /// A text field that is known: present and not empty
@@ -142,9 +158,8 @@ fn resources(process: &Process) -> String {
 
 /// `21:14:03 (up 13s)`, with the date in front when it was not today
 fn started(start: u64, now: u64) -> String {
-    let (offset, label) = local_offset(start);
-    let (_, month, day, hour, minute, second) = civil(start as i64, offset);
-    let clock = format!("{hour:02}:{minute:02}:{second:02}{label}");
+    let (_, month, day, hour, minute, second) = civil(start as i64, local_offset(start));
+    let clock = format!("{hour:02}:{minute:02}:{second:02}");
     let when = if same_local_day(start, now) {
         clock
     } else {
@@ -155,7 +170,7 @@ fn started(start: u64, now: u64) -> String {
 
 /// Whether two Unix times are on the same local calendar day
 fn same_local_day(a: u64, b: u64) -> bool {
-    let day = |secs: u64| (secs as i64 + local_offset(secs).0).div_euclid(86_400);
+    let day = |secs: u64| (secs as i64 + local_offset(secs)).div_euclid(86_400);
     day(a) == day(b)
 }
 
@@ -163,26 +178,97 @@ const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-/// The local time zone's offset from UTC in seconds at `secs`, and what to add
-/// after a clock time so it can't be misread. Unix asks the C library, as `ps`
-/// does; elsewhere proc has no zone database, so the clock is UTC and says so.
+/// The local time zone's offset from UTC in seconds at `secs`, with the zone's
+/// rules (daylight saving) as they were at that moment. Unix asks the C library,
+/// as `ps` does; Windows asks kernel32. Where the system can't say it is 0 (UTC).
 #[cfg(unix)]
-fn local_offset(secs: u64) -> (i64, &'static str) {
+fn local_offset(secs: u64) -> i64 {
     let time = secs as libc::time_t;
     // SAFETY: localtime_r writes only into `tm`, which is zeroed and ours. A
     // failure leaves it zeroed, which reads as UTC.
-    let offset = unsafe {
+    unsafe {
         let mut tm: libc::tm = std::mem::zeroed();
         libc::localtime_r(&time, &mut tm);
         tm.tm_gmtoff as i64
-    };
-    (offset, "")
+    }
 }
 
-/// See the unix version
-#[cfg(not(unix))]
-fn local_offset(_secs: u64) -> (i64, &'static str) {
-    (0, " UTC")
+/// A Windows file time: 100 ns ticks since 1601, in two halves
+#[cfg(windows)]
+#[repr(C)]
+struct FileTime {
+    low: u32,
+    high: u32,
+}
+
+/// A Windows calendar time
+#[cfg(windows)]
+#[repr(C)]
+#[derive(Default)]
+struct SystemTime {
+    year: u16,
+    month: u16,
+    day_of_week: u16,
+    day: u16,
+    hour: u16,
+    minute: u16,
+    second: u16,
+    milliseconds: u16,
+}
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+extern "system" {
+    fn FileTimeToSystemTime(file_time: *const FileTime, system_time: *mut SystemTime) -> i32;
+    fn SystemTimeToTzSpecificLocalTime(
+        zone: *const std::ffi::c_void,
+        universal: *const SystemTime,
+        local: *mut SystemTime,
+    ) -> i32;
+}
+
+/// See the unix version. The two calendar times are compared as clock readings
+/// within the same few days, so the difference is the offset.
+#[cfg(windows)]
+fn local_offset(secs: u64) -> i64 {
+    let ticks = (secs + 11_644_473_600) * 10_000_000;
+    let file_time = FileTime {
+        low: ticks as u32,
+        high: (ticks >> 32) as u32,
+    };
+    let mut universal = SystemTime::default();
+    let mut local = SystemTime::default();
+    // SAFETY: each call reads one valid struct of ours and writes only into
+    // another of ours, all `repr(C)` with the layout the API documents. A NULL
+    // zone means the current time zone. A failed call leaves the structs zeroed,
+    // which compare equal and read as UTC.
+    let read = unsafe {
+        FileTimeToSystemTime(&file_time, &mut universal) != 0
+            && SystemTimeToTzSpecificLocalTime(std::ptr::null(), &universal, &mut local) != 0
+    };
+    if !read {
+        return 0;
+    }
+    let seconds = |t: &SystemTime| {
+        let (year, month, day) = (i64::from(t.year), i64::from(t.month), i64::from(t.day));
+        (days_from_civil(year, month, day) * 86_400)
+            + i64::from(t.hour) * 3_600
+            + i64::from(t.minute) * 60
+            + i64::from(t.second)
+    };
+    seconds(&local) - seconds(&universal)
+}
+
+/// Days since 1970-01-01 of a calendar date (Hinnant's algorithm, the
+/// inverse of `civil`)
+#[cfg(windows)]
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let year = year - i64::from(month <= 2);
+    let era = year.div_euclid(400);
+    let year_of_era = year.rem_euclid(400);
+    let day_of_year = (153 * (if month > 2 { month - 3 } else { month + 9 }) + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
 }
 
 /// Year, month (1-12), day, hour, minute and second of Unix time `secs` shifted
@@ -312,14 +398,17 @@ impl Card<'_> {
     /// the ports says (a process that listens on nothing, or an OS that reads
     /// no connections)
     fn write_connections(&self, out: &mut impl Write, ports: &[CardPort]) -> io::Result<()> {
-        let known: Vec<(&PortInfo, &Connections)> = ports
+        let reporting: Vec<(&PortInfo, &Connections)> = ports
             .iter()
             .filter_map(|entry| entry.connections.map(|found| (entry.port, found)))
             .collect();
-        if known.is_empty() {
+        if reporting.is_empty() {
             return Ok(());
         }
-        let busy: Vec<_> = known.iter().filter(|(_, found)| found.total > 0).collect();
+        let busy: Vec<_> = reporting
+            .iter()
+            .filter(|(_, found)| found.total > 0)
+            .collect();
         if busy.is_empty() {
             return self.put(out, "Connections:", "none", truncate_string);
         }
@@ -444,7 +533,7 @@ mod tests {
     /// away crosses midnight in any time zone
     fn noon() -> u64 {
         let base = 1_700_000_000u64;
-        let local = base as i64 + local_offset(base).0;
+        let local = base as i64 + local_offset(base);
         (base as i64 - local.rem_euclid(86_400) + 43_200) as u64
     }
 
@@ -479,9 +568,8 @@ mod tests {
 
     /// The clock time of `secs` as the card writes it
     fn clock(secs: u64) -> String {
-        let (offset, label) = local_offset(secs);
-        let (_, _, _, h, m, s) = civil(secs as i64, offset);
-        format!("{h:02}:{m:02}:{s:02}{label}")
+        let (_, _, _, h, m, s) = civil(secs as i64, local_offset(secs));
+        format!("{h:02}:{m:02}:{s:02}")
     }
 
     #[test]
@@ -792,7 +880,7 @@ mod tests {
         let start = noon() - 3 * 86_400 - 60;
         process.start_time = Some(start);
         let lines = render(&process, &[], &options(120, false));
-        let (offset, _) = local_offset(start);
+        let offset = local_offset(start);
         let (_, month, day, _, _, _) = civil(start as i64, offset);
         let expected = format!(
             "  Started:     {} {day} {} (up 3d 0h)",
@@ -804,6 +892,27 @@ mod tests {
         process.start_time = Some(noon() + 5);
         let lines = render(&process, &[], &options(120, false));
         assert!(lines.iter().any(|l| l.ends_with("(up 0s)")), "{lines:?}");
+    }
+
+    #[test]
+    fn a_long_parent_name_is_cut_and_its_pid_stays() {
+        let mut process = bare();
+        process.parent_pid = Some(4242);
+        process.parent_name = Some("verylongprocessnamethatdoesnotfit".to_string());
+        let lines = render(&process, &[], &options(40, false));
+        let parent = lines.iter().find(|l| l.contains("Parent:")).unwrap();
+        assert_eq!(parent, "  Parent:      verylongproce… (PID 4242)");
+        assert_eq!(parent.width(), 40);
+        // Too narrow even for the PID: the whole value is cut
+        let lines = render(&process, &[], &options(24, false));
+        assert!(
+            lines.contains(&"  Parent:      verylong…".to_string()),
+            "{lines:?}"
+        );
+        // Wide enough: nothing is cut
+        let lines = render(&process, &[], &options(120, false));
+        assert!(lines
+            .contains(&"  Parent:      verylongprocessnamethatdoesnotfit (PID 4242)".to_string()));
     }
 
     #[test]
@@ -823,7 +932,7 @@ mod tests {
 
     #[test]
     fn the_local_offset_is_a_sane_zone() {
-        let (offset, _) = local_offset(1_700_000_000);
+        let offset = local_offset(1_700_000_000);
         assert!((-14 * 3600..=14 * 3600).contains(&offset), "{offset}");
         assert!(same_local_day(noon(), noon() + 60));
         assert!(!same_local_day(noon(), noon() + 86_400));
