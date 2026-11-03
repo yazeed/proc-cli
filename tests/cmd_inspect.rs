@@ -12,6 +12,8 @@ use assert_cmd::Command;
 use clap::CommandFactory;
 use proc_cli::cli::Cli;
 use proc_cli::core::filters::strip_verbatim_prefix;
+#[cfg(target_os = "macos")]
+use proc_cli::core::Process;
 use serde_json::Value;
 #[cfg(unix)]
 use std::io::Write;
@@ -1679,22 +1681,22 @@ fn another_users_process_shows_only_what_proc_could_read() {
         let (on, _) = run_json(&["on", "1", "--json"]);
         assert_eq!(on["ports"], serde_json::json!([]), "{on}");
 
-        // the table: a dash where the OS gave no CPU and no memory
-        // (a machine under load can answer a name lookup with nothing now and then)
-        let mut table = String::new();
-        let mut row = None;
-        for _ in 0..20 {
-            table = run_text(&["by", "launchd"]).0;
-            row = table
+        // the table: a dash where the OS gave no CPU and no memory. A name
+        // lookup leaves out the ancestors of proc, so a test run that descends
+        // from launchd itself (an orphaned background run) cannot see its row.
+        let mut at = std::process::id();
+        let mut under_launchd = false;
+        while let Some(parent) = Process::find_by_pid(at).unwrap().and_then(|p| p.parent_pid) {
+            under_launchd |= parent == 1;
+            at = parent;
+        }
+        if !under_launchd {
+            let (table, _, _) = run_text(&["by", "launchd"]);
+            let row = table
                 .lines()
                 .find(|l| l.split_whitespace().next() == Some("1"))
-                .map(str::to_string);
-            if row.is_some() {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(250));
+                .unwrap_or_else(|| panic!("no row for PID 1:\n{table}"));
+            assert!(!row.contains("0KB") && !row.contains("0.0"), "{row}");
         }
-        let row = row.unwrap_or_else(|| panic!("no row for PID 1:\n{table}"));
-        assert!(!row.contains("0KB") && !row.contains("0.0"), "{row}");
     }
 }
