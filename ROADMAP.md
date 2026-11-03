@@ -147,6 +147,15 @@ Both print processes in PID order (81 orphans on one Mac), which says nothing ab
 
 How long someone who has never used proc takes to get a correct answer. Unlike the machine clock (time per command), nothing measures it yet. **Open:** how to measure it (first-run sessions, agent evals like `skills/proc-cli/evals.md`).
 
+### More operating systems
+
+proc runs on macOS, Linux, Windows, FreeBSD and NetBSD. It reads processes through sysinfo, which supports Android, FreeBSD, NetBSD, iOS, Linux, macOS and Windows and returns empty lists anywhere else, so a new OS needs sysinfo support (or a process reader of proc's own), a port reader, and a CI VM. In order:
+
+1. **Android (Termux).** sysinfo supports it and Rust targets it, so proc may nearly work; the port reader is Linux's, which reads `/proc/net`, and Android limits that for apps. Try it before deciding.
+2. **OpenBSD**, the BSD that's left: `fstat` and `netstat` in the base system cover open files and ports. The larger part is OpenBSD support in sysinfo, best contributed there, where other tools gain from it too.
+
+Not planned: illumos and Solaris (no sysinfo support and few users), Cygwin (its users are on Windows, where proc already runs natively) and Redox (too early). **Feature test:** a platform, not a feature; it puts the same commands where people already are. **Open:** what Android allows an app to read in `/proc`; whether sysinfo would take OpenBSD support.
+
 ### More ways to install
 
 Each of these puts proc one command away for people who don't use the channels proc has today. nixpkgs is decided (see "Nix as an official install method: the nixpkgs package" above: `nix run nixpkgs#proc-cli` once merged). winget and PyPI are decided, in this order:
