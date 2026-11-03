@@ -207,6 +207,11 @@ impl Owned {
         self.child.id()
     }
 
+    /// The name as proc shows it: Windows keeps the `.exe`
+    fn shown(&self) -> String {
+        format!("{}{}", self.name, std::env::consts::EXE_SUFFIX)
+    }
+
     fn dir(&self) -> String {
         self.dir.to_string_lossy().into_owned()
     }
@@ -485,7 +490,7 @@ fn on_pid_lists_the_ports_it_listens_on() {
     let (out, _, code) = run_text(&["on", &p.pid_arg()]);
     assert_eq!(code, 0, "{out}");
     assert!(
-        out.starts_with(&format!("✓ {} (PID {})\n\n", p.name, p.pid())),
+        out.starts_with(&format!("✓ {} (PID {})\n\n", p.shown(), p.pid())),
         "{out}"
     );
     assert!(
@@ -760,7 +765,7 @@ fn on_several_targets_shows_each_and_warns_about_the_missing_one() {
         "{out}"
     );
     assert!(
-        out.contains(&format!("✓ {} (PID {})", b.name, b.pid())),
+        out.contains(&format!("✓ {} (PID {})", b.shown(), b.pid())),
         "{out}"
     );
     assert!(out.contains(&format!("Port {missing}:")), "{out}");
@@ -894,7 +899,7 @@ fn on_takes_several_targets_as_separate_arguments_and_commas_still_work() {
         "{out}"
     );
     assert!(
-        out.contains(&format!("✓ {} (PID {})", b.name, b.pid())),
+        out.contains(&format!("✓ {} (PID {})", b.shown(), b.pid())),
         "{out}"
     );
     assert!(out.contains("No process listening on port"), "{out}");

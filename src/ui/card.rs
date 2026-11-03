@@ -433,12 +433,8 @@ impl Card<'_> {
                 } else {
                     " (-v for all)"
                 };
-                self.put(
-                    out,
-                    "",
-                    &format!("… and {more} more{hint}"),
-                    truncate_string,
-                )?;
+                let line = format!("… and {more} more{hint}");
+                self.put(out, "", &line, truncate_string)?;
             }
         }
         Ok(())
@@ -545,6 +541,11 @@ mod tests {
         let mut out = Vec::new();
         write_card(&mut out, process, ports, opts).unwrap();
         let text = String::from_utf8(out).unwrap();
+        plain(&text).lines().map(str::to_string).collect()
+    }
+
+    /// `text` without its colour codes
+    fn plain(text: &str) -> String {
         let mut plain = String::new();
         let mut chars = text.chars();
         while let Some(c) = chars.next() {
@@ -558,7 +559,24 @@ mod tests {
                 plain.push(c);
             }
         }
-        plain.lines().map(str::to_string).collect()
+        plain
+    }
+
+    #[test]
+    fn colour_codes_are_stripped_before_comparing() {
+        assert_eq!(plain("\u{1b}[31mred\u{1b}[0m and plain"), "red and plain");
+    }
+
+    #[test]
+    fn a_value_without_a_pid_or_too_narrow_for_it_is_cut_whole() {
+        // no `(PID n)` to keep
+        assert_eq!(
+            cut_keeping_pid("PID 4242", 6),
+            truncate_string("PID 4242", 6)
+        );
+        // the PID alone is wider than the room
+        let value = "name (PID 4242)";
+        assert_eq!(cut_keeping_pid(value, 8), truncate_string(value, 8));
     }
 
     /// The clock time of `secs` as the card writes it

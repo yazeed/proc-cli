@@ -304,6 +304,15 @@ mod tests {
     }
 
     #[test]
+    fn find_ports_for_pid_gives_the_ports_a_process_listens_on() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let ports = find_ports_for_pid(std::process::id()).unwrap();
+        assert!(ports.iter().any(|p| p.port == port), "{ports:?}");
+        assert!(ports.iter().all(|p| p.pid == std::process::id()));
+    }
+
+    #[test]
     fn test_parse_targets_single() {
         assert_eq!(parse_targets(":3000"), vec![":3000"]);
         assert_eq!(parse_targets("node"), vec!["node"]);
