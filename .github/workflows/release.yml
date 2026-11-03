@@ -514,3 +514,35 @@ jobs:
     uses: ./.github/workflows/pages.yml
     secrets:
       APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+
+  update-winget:
+    name: Update winget
+    needs: create-release
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      # winget-releaser builds on the last version in winget-pkgs, so until
+      # the first one is merged there is nothing to update yet
+      - name: Check that yazeed.proc-cli is in winget-pkgs
+        id: listed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api repos/microsoft/winget-pkgs/contents/manifests/y/yazeed/proc-cli > /dev/null 2>&1; then
+            echo "listed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::yazeed.proc-cli is not in winget-pkgs yet, so winget is not updated for this release"
+            echo "listed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Opens the pull request for the new version in microsoft/winget-pkgs,
+      # from the yazeed/winget-pkgs fork (Komac finds it by that name). Only the
+      # zip: the bare .exe would match the action's default pattern too.
+      - if: steps.listed.outputs.listed == 'true'
+        uses: vedantmgoyal9/winget-releaser@b7370d4d152efdce803a26cc6ca9eee58cb2ad54 # main, 2026-10-07
+        with:
+          identifier: yazeed.proc-cli
+          installers-regex: '\.exe\.zip$'
+          release-tag: ${{ github.ref_name }}
+          release-notes-url: https://github.com/yazeed/proc-cli/releases/tag/${{ github.ref_name }}
+          token: ${{ secrets.WINGET_TOKEN }}
