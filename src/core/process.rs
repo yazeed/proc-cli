@@ -2158,14 +2158,12 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn another_users_process_has_no_cpu_time_or_open_files_on_macos() {
-        // PID 1 (launchd) is root's: sysinfo cannot read it from here, unless
-        // the test itself runs as root
-        if nix::unistd::geteuid().is_root() {
-            return;
-        }
+        // PID 1 (launchd) is root's: sysinfo can read it only when the test
+        // itself runs as root
+        let readable = nix::unistd::geteuid().is_root();
         let launchd = Process::find_by_pid(1).unwrap().unwrap();
-        assert_eq!(launchd.cpu_time_secs, None, "{launchd:?}");
-        assert_eq!(launchd.open_files, None, "{launchd:?}");
+        assert_eq!(launchd.cpu_time_secs.is_some(), readable, "{launchd:?}");
+        assert_eq!(launchd.open_files.is_some(), readable, "{launchd:?}");
         // the family comes from the table, not from reading the process
         assert!(launchd.child_count > Some(0), "{launchd:?}");
     }
