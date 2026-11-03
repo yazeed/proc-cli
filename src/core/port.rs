@@ -27,8 +27,18 @@ pub enum Protocol {
     Udp,
 }
 
+/// Whether a listening port is reachable from the network
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Exposure {
+    /// Bound to loopback only: this machine only
+    Local,
+    /// Bound to every address, or to one that is not loopback
+    Exposed,
+}
+
 /// Information about a listening port
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct PortInfo {
     /// Port number
     pub port: u16,
@@ -518,6 +528,59 @@ impl PortInfo {
             .map(|a| a == "127.0.0.1" || a == "::1")
             .unwrap_or(false)
     }
+
+    /// Whether the port is reachable from the network, as `is_local` and
+    /// `is_exposed` split it
+    pub fn exposure(&self) -> Exposure {
+        if self.is_local() {
+            Exposure::Local
+        } else {
+            Exposure::Exposed
+        }
+    }
+
+    /// The exposure in words for people: `this machine only`, `all interfaces,
+    /// reachable from the network`, `network address <addr>`, or, with no
+    /// address, that it is treated as reachable
+    pub fn exposure_words(&self) -> String {
+        match self.address.as_deref() {
+            None => "address not known, treated as reachable from the network".to_string(),
+            Some(_) if self.is_local() => "this machine only".to_string(),
+            Some("0.0.0.0" | "::" | "*") => {
+                "all interfaces, reachable from the network".to_string()
+            }
+            Some(address) => format!("network address {address}"),
+        }
+    }
+}
+
+/// A port as JSON: every field it has always had, in the same order, with
+/// `exposure` added last
+impl Serialize for PortInfo {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct PortJson<'a> {
+            port: u16,
+            protocol: Protocol,
+            pid: u32,
+            process_name: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            address: Option<&'a str>,
+            exposure: Exposure,
+        }
+        PortJson {
+            port: self.port,
+            protocol: self.protocol,
+            pid: self.pid,
+            process_name: &self.process_name,
+            address: self.address.as_deref(),
+            exposure: self.exposure(),
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Name each row as `names` (the process list's names, by PID) does. A PID
@@ -580,6 +643,59 @@ pub fn parse_port(input: &str) -> Result<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn port_at(address: Option<&str>) -> PortInfo {
+        PortInfo {
+            port: 3000,
+            protocol: Protocol::Tcp,
+            pid: 1,
+            process_name: "node".to_string(),
+            address: address.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn exposure_reads_the_bind_address() {
+        let local = port_at(Some("127.0.0.1"));
+        assert_eq!(local.exposure(), Exposure::Local);
+        assert_eq!(local.exposure_words(), "this machine only");
+
+        let local_v6 = port_at(Some("::1"));
+        assert_eq!(local_v6.exposure(), Exposure::Local);
+        assert_eq!(local_v6.exposure_words(), "this machine only");
+
+        for wildcard in ["0.0.0.0", "::", "*"] {
+            let all = port_at(Some(wildcard));
+            assert_eq!(all.exposure(), Exposure::Exposed, "{wildcard}");
+            assert_eq!(
+                all.exposure_words(),
+                "all interfaces, reachable from the network",
+                "{wildcard}"
+            );
+        }
+
+        let lan = port_at(Some("192.168.1.5"));
+        assert_eq!(lan.exposure(), Exposure::Exposed);
+        assert_eq!(lan.exposure_words(), "network address 192.168.1.5");
+
+        // A port with no known address is treated as reachable, as is_exposed() does
+        let unknown = port_at(None);
+        assert_eq!(unknown.exposure(), Exposure::Exposed);
+        assert_eq!(
+            unknown.exposure_words(),
+            "address not known, treated as reachable from the network"
+        );
+    }
+
+    #[test]
+    fn exposure_is_serialized_as_a_word() {
+        let json = serde_json::to_value(port_at(Some("127.0.0.1"))).unwrap();
+        assert_eq!(json["exposure"], "local");
+        assert_eq!(json["address"], "127.0.0.1");
+
+        let json = serde_json::to_value(port_at(Some("0.0.0.0"))).unwrap();
+        assert_eq!(json["exposure"], "exposed");
+    }
 
     #[test]
     fn test_parse_port() {
