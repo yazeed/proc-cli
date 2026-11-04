@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`proc for` leaves proc itself out.** Asked about the directory it runs in (`proc for .`), it listed its own process, since its working directory is that directory; every other lookup leaves proc out, and this one does too
 - **The apt repository gets the release's packages.** On the 2.3.0 release it kept listing 2.2.0. A Pages deploy is named after its commit, and Pages keeps the first deploy of a commit: the release commit's push to main deployed the site before the release had its `.deb` files, and the release's own deploy of the same commit, which had them, changed nothing. The push of a release commit (`chore: release v…`) no longer deploys; the release does, once its packages exist. 2.3.0's packages were added by the next push to main
 
+### Security
+
+- **The install script checks what it downloads.** `install.sh` installed the binary it downloaded without checking it. It now compares the file's SHA-256 with the release's `checksums.txt` and installs nothing on a mismatch, or when the file has no entry there, using the tool the system has: `sha256sum` (Linux), `shasum` (macOS), `sha256` (FreeBSD and NetBSD) or `openssl`. It also reads the latest version from where `github.com/yazeed/proc-cli/releases/latest` redirects, not from GitHub's API, which allows 60 requests an hour per address without a token, so the script failed on busy shared networks. Tested on macOS, on Alpine and Debian on x86_64 and arm64, and the checksum on FreeBSD 15.1 and NetBSD 11.0. The script is served from `main`, so this applies as soon as it is pushed, not at the next release
+
 ## [2.3.0] - 2026-11-03
 
 ### Added

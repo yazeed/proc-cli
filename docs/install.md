@@ -17,7 +17,7 @@ brew install yazeed/proc/proc
 
 Each release updates the tap. Update with `brew upgrade`.
 
-**Install script**, which downloads the release binary for your Mac:
+**Install script**, which downloads the release binary for your Mac and checks it against the release's `checksums.txt` before installing it:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yazeed/proc-cli/main/install.sh | bash

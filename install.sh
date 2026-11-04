@@ -44,11 +44,50 @@ detect_platform() {
     echo "${os}-${arch}"
 }
 
-# Get latest release version
+# The latest release's tag, read from where github.com/<repo>/releases/latest
+# redirects (.../releases/tag/v2.3.0). The API's limit for requests without a
+# token, 60 an hour per address, made the installer fail on shared networks
 get_latest_version() {
-    curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | \
-        grep '"tag_name":' | \
-        sed -E 's/.*"([^"]+)".*/\1/'
+    latest=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+        "https://github.com/${REPO}/releases/latest") || return 0
+    tag=${latest##*/}
+    case "$tag" in
+        v[0-9]*) echo "$tag" ;;
+    esac
+}
+
+# A file's SHA-256, with the tool the system has: sha256sum (Linux, Git Bash
+# on Windows), shasum (macOS), sha256 (FreeBSD and NetBSD, in the base
+# system) or openssl. Prints nothing when there is none
+sha256_of() {
+    if command -v sha256sum > /dev/null 2>&1; then
+        sha256sum "$1" | cut -d ' ' -f 1
+    elif command -v shasum > /dev/null 2>&1; then
+        shasum -a 256 "$1" | cut -d ' ' -f 1
+    elif command -v sha256 > /dev/null 2>&1; then
+        sha256 -q "$1"
+    elif command -v openssl > /dev/null 2>&1; then
+        openssl dgst -sha256 -r "$1" | cut -d ' ' -f 1
+    fi
+}
+
+# Check the downloaded file against the release's checksums.txt, so a
+# corrupted or altered download is never installed
+verify_checksum() {
+    file="$1"
+    asset="$2"
+    sums="${tmp_dir}/checksums.txt"
+    if ! curl -fsSL "https://github.com/${REPO}/releases/download/${version}/checksums.txt" -o "$sums"; then
+        error "Failed to download checksums.txt for ${version}"
+    fi
+    want=$(awk -v asset="$asset" '$2 == asset { print $1 }' "$sums")
+    [ -n "$want" ] || error "checksums.txt for ${version} has no entry for ${asset}"
+    got=$(sha256_of "$file")
+    [ -n "$got" ] || error "No SHA-256 tool found (sha256sum, shasum, sha256 or openssl) to verify the download"
+    if [ "$got" != "$want" ]; then
+        error "Checksum mismatch for ${asset}: expected ${want}, got ${got}. Nothing was installed"
+    fi
+    info "Checksum verified (SHA-256)"
 }
 
 # Download and install
@@ -64,10 +103,11 @@ install_proc() {
 
     # Construct download URL
     if [ "$platform" = "windows-x86_64" ]; then
-        url="https://github.com/${REPO}/releases/download/${version}/proc-${platform}.exe"
+        asset="proc-${platform}.exe"
     else
-        url="https://github.com/${REPO}/releases/download/${version}/proc-${platform}"
+        asset="proc-${platform}"
     fi
+    url="https://github.com/${REPO}/releases/download/${version}/${asset}"
 
     info "Downloading from: ${url}"
 
@@ -77,6 +117,8 @@ install_proc() {
     if ! curl -fsSL "${url}" -o "${tmp_dir}/${BINARY_NAME}"; then
         error "Failed to download proc"
     fi
+
+    verify_checksum "${tmp_dir}/${BINARY_NAME}" "$asset"
 
     chmod +x "${tmp_dir}/${BINARY_NAME}"
 
