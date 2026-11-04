@@ -8,7 +8,7 @@ Find what's on a port, why it's there, and stop it, in one command you'd guess o
 brew install yazeed/proc/proc
 ```
 
-Also on [npm, cargo, Scoop, Nix, Docker, and as .deb and .rpm files](#install).
+Also on [Scoop, apt, dnf, npm, PyPI, cargo, Nix, Docker, and as .deb and .rpm files](#install).
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/yazeed/proc-cli/main/demo.gif" alt="proc demo: npm run dev fails because port 3000 is taken; proc on, why and free find the old tmux session holding it and free the port; proc orphans finds and cleans up leftover processes" width="800" />
@@ -61,22 +61,26 @@ proc free :3000 --yes             # a port target: no question
 
 ## Install
 
-| Platform | Command |
-|----------|---------|
-| macOS | `brew install yazeed/proc/proc`, or the install script below |
-| Linux | `curl -fsSL https://raw.githubusercontent.com/yazeed/proc-cli/main/install.sh \| bash`, or `brew install yazeed/proc/proc` |
-| Debian / Ubuntu | Download `proc-cli_X.Y.Z_amd64.deb` (or `_arm64.deb`) from the [latest release](https://github.com/yazeed/proc-cli/releases/latest), then `sudo apt install ./proc-cli_X.Y.Z_amd64.deb` |
-| Fedora / RHEL | Download `proc-cli-X.Y.Z-1.x86_64.rpm` (or `.aarch64.rpm`) from the [latest release](https://github.com/yazeed/proc-cli/releases/latest), then `sudo dnf install ./proc-cli-X.Y.Z-1.x86_64.rpm` |
-| FreeBSD / NetBSD (x86_64) | `curl -fsSL https://raw.githubusercontent.com/yazeed/proc-cli/main/install.sh \| sh` (curl is a package: `pkg install curl`), or `cargo install proc-cli` on other CPUs |
-| Windows | `scoop bucket add proc https://github.com/yazeed/scoop-bucket-proc && scoop install proc` |
-| npm / bun | `npm install -g proc-cli` |
-| Rust | `cargo install proc-cli` (or `cargo binstall proc-cli` for the pre-built binary) |
-| Nix | `nix profile install github:yazeed/proc-cli` |
-| Docker | `docker run --rm -it --pid=host --net=host yazeed/proc-cli` |
+| System | Command | Updates |
+|--------|---------|---------|
+| macOS | `brew install yazeed/proc/proc` | `brew upgrade` |
+| Windows | `scoop bucket add proc https://github.com/yazeed/scoop-bucket-proc && scoop install proc` | `scoop update proc` |
+| Debian / Ubuntu | [proc's apt repository](https://proc-cli.com/apt/) | `apt upgrade`; every release lands there |
+| Ubuntu (22.04, 24.04, 26.04, 26.10) | `sudo add-apt-repository ppa:yazeedaloyoun/proc-cli && sudo apt install proc-cli` | `apt upgrade` |
+| Fedora / RHEL, AlmaLinux, Rocky / Amazon Linux 2023 | `sudo dnf copr enable yazeed/proc-cli && sudo dnf install proc-cli` | `dnf upgrade`; every release builds there |
+| Arch Linux | `yay -S proc-cli-bin` (release binary) or `yay -S proc-cli` (from source), AUR, community-maintained (Rafael Dominiquini) | when the maintainer publishes it |
+| Any Linux, FreeBSD / NetBSD (x86_64) | `curl -fsSL https://raw.githubusercontent.com/yazeed/proc-cli/main/install.sh \| bash` (`sh` on the BSDs, where `curl` is a package) | run it again |
+| NetBSD (pkgsrc-wip) | `wip/proc-cli` | the maintainer moves it to each release |
+| npm / bun | `npm install -g proc-cli` | `npm update -g proc-cli` |
+| PyPI (new in 2.3.0) | `pip install proc-cli`, `pipx install proc-cli` or `uv tool install proc-cli` | `pip install --upgrade proc-cli` |
+| Rust | `cargo install proc-cli` (or `cargo binstall proc-cli` for the pre-built binary) | run it again |
+| Nix | `nix profile install github:yazeed/proc-cli` | no |
+| Docker | `docker run --rm -it --pid=host --net=host yazeed/proc-cli` | `docker pull yazeed/proc-cli` |
+| Release files | `.deb`, `.rpm` and binaries on the [releases page](https://github.com/yazeed/proc-cli/releases/latest) | download the new file |
 
-`--pid=host` lets proc in Docker see the host's processes, and `--net=host` its ports (for `on :port`, `ports` and `free`).
+Every channel, with who maintains it and how it updates, is on [proc-cli.com/install](https://proc-cli.com/install). `--pid=host` lets proc in Docker see the host's processes, and `--net=host` its ports (for `on :port`, `ports` and `free`).
 
-The `.deb` and `.rpm` files install `proc`, its man page and its bash, zsh and fish completions. They come from the release page, not from an apt or dnf repository, so `apt upgrade` and `dnf upgrade` never update them: download the new file for each release.
+The `.deb` and `.rpm` files install `proc`, its man page and its bash, zsh and fish completions. A file does not update with `apt upgrade` or `dnf upgrade`; the apt repository and COPR do.
 
 Check it works:
 
@@ -86,12 +90,7 @@ proc ports
 ```
 
 <details>
-<summary>More options: Arch Linux, manual download</summary>
-
-| Platform | Method | Command |
-|----------|--------|---------|
-| Arch Linux | AUR (community-maintained), release binary | `yay -S proc-cli-bin` |
-| Arch Linux | AUR (community-maintained), built from source | `yay -S proc-cli` |
+<summary>More options: the AUR packages, manual download</summary>
 
 The AUR packages are not published by this project and can lag behind releases. Check `proc --version` after installing: before 2.0, a name matched any part of a command line and `--json` counted as `--yes`.
 

@@ -60,7 +60,7 @@
 - q: How do I kill a process on a port on Windows?
   id: kill-port-windows
   a: |
-    proc works on Windows too (`scoop bucket add proc https://github.com/yazeed/scoop-bucket-proc` then `scoop install proc`, `npm install -g proc-cli` or `cargo install proc-cli`), with the same command: `proc free :3000`. Without proc, run `netstat -ano | findstr :3000` to get the PID in the last column, then `taskkill /PID <pid> /F`.
+    proc works on Windows too (`scoop bucket add proc https://github.com/yazeed/scoop-bucket-proc` then `scoop install proc`, `npm install -g proc-cli`, `pip install proc-cli` or `cargo install proc-cli`), with the same command: `proc free :3000`. Without proc, run `netstat -ano | findstr :3000` to get the PID in the last column, then `taskkill /PID <pid> /F`.
 
 - q: How do I list all open or listening ports?
   id: list-listening-ports
@@ -133,6 +133,11 @@
   id: kill-stop-free
   a: |
     `proc stop` asks a process to exit (`SIGTERM`) and only forces it after a timeout, so it can clean up. `proc kill` ends it immediately (`SIGKILL`). `proc free` takes a port, stops whatever holds it, and then checks the port is free. All three ask before acting unless you pass `--yes`, and all take `--dry-run`.
+
+- q: How do I install proc, and does it update itself?
+  id: install-update
+  a: |
+    Use your system's package manager: Homebrew on macOS, Scoop on Windows, the [apt repository](apt/) or the Ubuntu PPA on Debian and Ubuntu, COPR on Fedora, RHEL and Amazon Linux, and the AUR on Arch. npm, cargo and pip (`pip install proc-cli`) work on any system. [Install](install) lists every channel, who maintains it and how it updates. proc never updates itself: the package managers do (`brew upgrade`, `scoop update proc`, `apt upgrade`, `dnf upgrade`), and the install script, cargo and the release files take a new run or download for each version.
 
 - q: Is proc free, and where does it run?
   id: about-proc

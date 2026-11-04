@@ -11,6 +11,8 @@ pnpm add -g proc-cli
 bun install -g proc-cli
 ```
 
+Other ways to install proc (Homebrew, Scoop, apt, dnf, PyPI, cargo and more): [proc-cli.com/install](https://proc-cli.com/install).
+
 ## Usage
 
 ```bash
