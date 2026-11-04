@@ -45,6 +45,21 @@ fn the_contract_check_refuses_each_break() {
             json!({"action": "kill", "success": false, "error": "x", "exit_code": 4, "reason": "invalid_input"}),
             4,
         ),
+        // a receipt: `processes` with an outcome each, beside the older lists
+        (
+            json!({"action": "kill", "success": false, "succeeded_count": 1, "failed_count": 1,
+                "succeeded": [{"pid": 1}], "failed": [{"process": {"pid": 2}, "error": "no"}],
+                "processes": [{"pid": 2, "outcome": "failed", "error": "no"},
+                              {"pid": 1, "outcome": "succeeded"}], "count": 2}),
+            1,
+        ),
+        // the deprecated names break one rule each, and are let through
+        (
+            json!({"action": "wait", "success": true, "elapsed_seconds": 1, "initial_count": 0,
+                "exited": [{"exited_after_seconds": 1}], "still_running": [], "count": 1,
+                "elapsed_human": "1s"}),
+            0,
+        ),
     ];
     for (doc, code) in kept {
         assert_eq!(contract::violation(&doc, code), None, "{doc}");
@@ -92,6 +107,56 @@ fn the_contract_check_refuses_each_break() {
             "{doc} with exit {code}"
         );
     }
+}
+
+/// The names rules refuse each way a key can drift, and take the names that
+/// keep them
+#[test]
+fn the_names_check_refuses_each_drift() {
+    use serde_json::json;
+    let broken = [
+        // rule 3: a duration without _secs
+        json!({"action": "x", "success": true, "waited_seconds": 1}),
+        json!({"action": "x", "success": true, "uptime": 1}),
+        // rule 2: a count beside no list, a count that is not a number, a
+        // count that is not its list's length
+        json!({"action": "x", "success": true, "matched_count": 1}),
+        json!({"action": "x", "success": true, "failed_count": "1"}),
+        json!({"action": "x", "success": true, "count": 2, "processes": [{"pid": 1}]}),
+        json!({"action": "x", "success": true, "count": 1}),
+        // rule 5: an outcome without its error, an error without its outcome,
+        // a kept list that differs from `processes`
+        json!({"action": "x", "success": true, "processes": [{"pid": 1, "outcome": "failed"}], "count": 1}),
+        json!({"action": "x", "success": true, "processes": [{"pid": 1, "outcome": "succeeded", "error": "no"}], "count": 1}),
+        json!({"action": "x", "success": true, "succeeded": [{"pid": 2}],
+            "processes": [{"pid": 1, "outcome": "succeeded"}], "count": 1}),
+        json!({"action": "x", "success": true, "failed": [],
+            "processes": [{"pid": 1, "outcome": "failed", "error": "no"}], "count": 1}),
+    ];
+    for doc in broken {
+        assert!(contract::names_violation(&doc).is_some(), "{doc}");
+    }
+    // deep inside a list is as wrong as at the top
+    let deep = json!({"processes": [{"pid": 1, "age_seconds": 3}], "count": 1});
+    assert!(contract::names_violation(&deep).is_some());
+
+    // rule 6, across documents
+    let mut kinds = contract::Kinds::new();
+    contract::note_kinds(
+        &json!({"action": "kill", "failed": [], "ok": []}),
+        &mut kinds,
+    );
+    contract::note_kinds(
+        &json!({"action": "unstick", "failed": 0, "ok": 0}),
+        &mut kinds,
+    );
+    let wrong = contract::mixed_kinds(&kinds).expect("`ok` is a list and a number");
+    assert!(wrong.contains("`ok`"), "{wrong}");
+    // the one allowed: unstick's deprecated `failed`
+    let mut allowed = contract::Kinds::new();
+    contract::note_kinds(&json!({"action": "kill", "failed": []}), &mut allowed);
+    contract::note_kinds(&json!({"action": "unstick", "failed": 0}), &mut allowed);
+    assert_eq!(contract::mixed_kinds(&allowed), None);
 }
 
 #[test]
@@ -281,6 +346,7 @@ fn info_not_found_exits_not_found() {
     assert_eq!(json["success"], false);
     assert_eq!(json["reason"], "not_found", "{json}");
     assert_eq!(json["found_count"], 0, "{json}");
+    assert_eq!(json["count"], 0, "{json}");
     assert_eq!(json["not_found"][0], MISSING_PID, "{json}");
 }
 
@@ -839,6 +905,9 @@ mod unix {
         assert_eq!(json["action"], "orphans");
         assert_eq!(json["succeeded_count"], 1);
         assert_eq!(json["failed_count"], 0);
+        assert_eq!(json["count"], 1);
+        assert_eq!(json["processes"][0]["outcome"], "succeeded");
+        assert_eq!(json["processes"][0]["pid"], json["succeeded"][0]["pid"]);
     }
 }
 

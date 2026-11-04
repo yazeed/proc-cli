@@ -144,6 +144,12 @@ impl UnstickCommand {
                     failed: 0,
                     not_found: &not_found,
                     processes: Vec::new(),
+                    count: 0,
+                    recovered_count: 0,
+                    not_stuck_count: 0,
+                    still_stuck_count: 0,
+                    terminated_count: 0,
+                    failed_count: 0,
                 });
             } else {
                 printer.success("No stuck processes found");
@@ -187,6 +193,12 @@ impl UnstickCommand {
                         .iter()
                         .map(|p| ProcessOutcome::of(p, "would_attempt".to_string()))
                         .collect(),
+                    count: stuck.len(),
+                    recovered_count: 0,
+                    not_stuck_count: 0,
+                    still_stuck_count: 0,
+                    terminated_count: 0,
+                    failed_count: 0,
                 });
             } else {
                 out_println!(
@@ -291,6 +303,12 @@ impl UnstickCommand {
                     .iter()
                     .map(|(p, o)| ProcessOutcome::of(p, outcome_label(o)))
                     .collect(),
+                count: stuck.len(),
+                recovered_count: recovered,
+                not_stuck_count: not_stuck,
+                still_stuck_count: still_stuck,
+                terminated_count: terminated,
+                failed_count: failed,
             });
         } else {
             out_println!();
@@ -597,6 +615,16 @@ struct UnstickOutput<'a> {
     /// The targets that matched nothing
     not_found: &'a [String],
     processes: Vec<ProcessOutcome>,
+    /// The counts above under the names every other command's counts have:
+    /// `count` for the processes found, `<outcome>_count` for the rest. The
+    /// bare numbers (`found`, `recovered`, `not_stuck`, `still_stuck`,
+    /// `terminated`, `failed`) are deprecated, removed in 3.0
+    count: usize,
+    recovered_count: usize,
+    not_stuck_count: usize,
+    still_stuck_count: usize,
+    terminated_count: usize,
+    failed_count: usize,
 }
 
 #[derive(Serialize)]

@@ -359,6 +359,49 @@ impl Drop for Owned {
     }
 }
 
+/// What a receipt's `processes` must be: one entry per process acted on, in the
+/// order given (the preview's), each a whole process object with the outcome
+/// given (`error` only on a failure, the text `failed[].error` has), and
+/// `count` of them; the older lists and counts hold the same processes.
+fn assert_receipt(json: &Value, expected: &[(u32, &str)]) {
+    let processes = json["processes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("a receipt has `processes`: {json}"));
+    assert_eq!(json["count"], expected.len(), "{json}");
+    assert_eq!(processes.len(), expected.len(), "{json}");
+    for (entry, (pid, outcome)) in processes.iter().zip(expected) {
+        assert_eq!(entry["pid"], *pid, "{json}");
+        assert_eq!(entry["outcome"], *outcome, "{json}");
+        assert!(entry["name"].is_string(), "{json}");
+        assert!(entry["status"].is_string(), "{json}");
+        assert!(entry["cpu_percent"].is_number(), "{json}");
+        assert_eq!(entry.get("error").is_some(), *outcome == "failed", "{json}");
+        let older = if *outcome == "failed" {
+            "failed"
+        } else {
+            "succeeded"
+        };
+        let same = json[older].as_array().unwrap().iter().any(|old| {
+            let old = old.get("process").unwrap_or(old);
+            old["pid"] == entry["pid"]
+        });
+        assert!(same, "`{older}` lacks PID {pid}: {json}");
+    }
+    let counted = |key: &str| json[key].as_u64().unwrap();
+    assert_eq!(
+        counted("succeeded_count") + counted("failed_count"),
+        expected.len() as u64,
+        "{json}"
+    );
+    for failed in json["failed"].as_array().unwrap() {
+        let entry = processes
+            .iter()
+            .find(|e| e["pid"] == failed["process"]["pid"])
+            .unwrap();
+        assert_eq!(entry["error"], failed["error"], "{json}");
+    }
+}
+
 /// Whether the JSON list `key` has a process with this PID
 fn lists(json: &Value, key: &str, pid: u32) -> bool {
     json[key].as_array().is_some_and(|items| {
@@ -576,6 +619,60 @@ fn wait_json_timeout_lists_the_process_still_running() {
     assert_eq!(json["initial_count"], 1);
     assert_eq!(json["exited"].as_array().unwrap().len(), 0, "{json}");
     assert!(lists(&json, "still_running", owned.pid()), "{json}");
+    // the names 2.3.0 adds beside the old ones
+    assert_eq!(json["count"], 1, "{json}");
+    assert_eq!(json["elapsed_secs"], json["elapsed_seconds"], "{json}");
+    assert!(json["elapsed_secs"].is_u64(), "{json}");
+    assert_eq!(json["targets"], serde_json::json!([pid]), "{json}");
+}
+
+/// The new keys come after the ones `wait` had, in the document and in each
+/// `exited` entry, and the old keys keep their places
+#[cfg(unix)]
+#[test]
+fn wait_json_adds_its_new_names_after_the_old_ones() {
+    let short = Short::sleeping("1");
+    let long = Owned::listener();
+    let targets = format!("{},{}", short.id(), long.pid());
+    let r = run(&["wait", &targets, "--timeout", "4", "--json"]);
+    assert_eq!(r.code, 1, "{}{}", r.stdout, r.stderr);
+    assert_eq!(
+        contract::key_order(&r.stdout),
+        [
+            "action",
+            "success",
+            "timed_out",
+            "elapsed_seconds",
+            "elapsed_human",
+            "target",
+            "initial_count",
+            "not_found",
+            "exited",
+            "still_running",
+            "count",
+            "elapsed_secs",
+            "targets"
+        ]
+    );
+    // the `exited` entry (its keys sit 6 spaces in; the entry of `still_running`
+    // is the other one) ends with the new name; the old one is where it was
+    let keys = contract::keys_at(&r.stdout, 6);
+    let first = keys.iter().position(|k| k == "pid").unwrap();
+    let entry: Vec<&str> = keys[first..]
+        .iter()
+        .take_while(|k| *k != "still_running")
+        .map(String::as_str)
+        .collect();
+    assert_eq!(&entry[..3], ["pid", "name", "exited_after_seconds"]);
+    let json: Value = serde_json::from_str(&r.stdout).unwrap();
+    let after = &json["exited"][0];
+    assert_eq!(after["exited_after_secs"], after["exited_after_seconds"]);
+    assert!(after["exited_after_secs"].is_u64(), "{json}");
+    assert_eq!(
+        json["targets"],
+        serde_json::json!([targets]),
+        "the targets as typed, one string here: a comma list is one argument"
+    );
 }
 
 #[test]
@@ -705,10 +802,15 @@ fn wait_json_counts_zombies_as_exited_and_reports_each() {
     assert_eq!(json["success"], true, "{json}");
     assert_eq!(json["timed_out"], false, "{json}");
     assert_eq!(json["initial_count"], 2, "{json}");
+    assert_eq!(json["count"], 2, "{json}");
     assert!(json["still_running"].as_array().unwrap().is_empty());
     assert!(lists(&json, "exited", first.id()), "{json}");
     assert!(lists(&json, "exited", second.id()), "{json}");
     assert!(json["exited"][0]["exited_after_seconds"].is_u64(), "{json}");
+    for entry in json["exited"].as_array().unwrap() {
+        assert_eq!(entry["exited_after_secs"], entry["exited_after_seconds"]);
+    }
+    assert_eq!(json["elapsed_secs"], json["elapsed_seconds"], "{json}");
     assert!(json["elapsed_human"].is_string(), "{json}");
 }
 
@@ -724,6 +826,11 @@ fn wait_json_timeout_reports_the_exited_and_the_still_running() {
     assert!(lists(&json, "exited", short.id()), "{json}");
     assert!(lists(&json, "still_running", long.pid()), "{json}");
     assert_eq!(json["initial_count"], 2, "{json}");
+    assert_eq!(json["count"], 2, "{json}");
+    assert_eq!(
+        json["exited"][0]["exited_after_secs"],
+        json["exited"][0]["exited_after_seconds"]
+    );
 }
 
 /// No `--timeout` (the default is none): wait for as long as it takes, and the
@@ -920,6 +1027,7 @@ fn stop_waits_for_a_process_that_ends_by_itself_within_the_timeout() {
     assert_eq!(code, 0, "{json}");
     assert_eq!(json["success"], true, "{json}");
     assert_eq!(json["succeeded_count"], 1, "{json}");
+    assert_receipt(&json, &[(short.id(), "succeeded")]);
     assert!(
         elapsed >= Duration::from_secs(8),
         "stop returned after {elapsed:?}: it killed the process instead of waiting"
@@ -941,6 +1049,7 @@ fn stop_force_kills_a_process_that_outlives_the_timeout() {
     assert_eq!(json["action"], "stop");
     assert_eq!(json["success"], true, "{json}");
     assert_eq!(json["succeeded_count"], 1, "{json}");
+    assert_receipt(&json, &[(owned.pid(), "succeeded")]);
     assert!(owned.ended_within(Duration::from_secs(15)));
     // SIGTERM was ignored, so only the kill after the timeout can have ended it
     #[cfg(unix)]
@@ -959,6 +1068,11 @@ fn stop_handles_several_targets_at_once() {
     assert_eq!(code, 0, "{json}");
     assert_eq!(json["succeeded_count"], 2, "{json}");
     assert_eq!(json["failed_count"], 0, "{json}");
+    // the receipt lists them in the order they were typed
+    assert_receipt(
+        &json,
+        &[(first.pid(), "succeeded"), (second.pid(), "succeeded")],
+    );
     assert!(first.ended_within(Duration::from_secs(15)));
     assert!(second.ended_within(Duration::from_secs(15)));
 }
@@ -1011,6 +1125,7 @@ fn stop_signal_sends_that_signal_instead_of_sigterm() {
     ]);
     assert_eq!(code, 0, "{json}");
     assert_eq!(json["succeeded_count"], 1, "{json}");
+    assert_receipt(&json, &[(owned.pid(), "succeeded")]);
     assert_eq!(
         owned.ended_by_signal(Duration::from_secs(5)),
         Some(libc::SIGHUP)
@@ -1047,6 +1162,65 @@ fn kill_takes_several_targets_as_separate_arguments() {
     assert!(first.alive() && second.alive());
 }
 
+/// The receipt lists the processes in the order of the preview, here the order
+/// the targets were typed in (which is not PID order)
+#[test]
+fn kill_receipt_lists_every_process_acted_on_in_the_previews_order() {
+    let mut first = Owned::listener();
+    let mut second = Owned::listener();
+    let (high, low) = if first.pid() > second.pid() {
+        (first.pid(), second.pid())
+    } else {
+        (second.pid(), first.pid())
+    };
+    let (a, b) = (high.to_string(), low.to_string());
+    let (preview, _) = run_json(&["kill", &a, &b, "--dry-run", "--json"]);
+    let previewed: Vec<u64> = preview["processes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["pid"].as_u64().unwrap())
+        .collect();
+    assert_eq!(previewed, [u64::from(high), u64::from(low)], "{preview}");
+
+    let (json, code) = run_json(&["kill", &a, &b, "--yes", "--json"]);
+    assert_eq!(code, 0, "{json}");
+    assert_eq!(json["success"], true, "{json}");
+    assert_receipt(&json, &[(high, "succeeded"), (low, "succeeded")]);
+    assert!(first.ended_within(Duration::from_secs(15)));
+    assert!(second.ended_within(Duration::from_secs(15)));
+}
+
+/// The key order of a receipt: what it had, then `processes` and `count`; and
+/// each entry is the reading `succeeded` has, then `outcome`
+#[test]
+fn a_receipt_adds_processes_and_count_after_the_keys_it_had() {
+    let mut owned = Owned::listener();
+    let r = run(&["kill", &owned.pid_arg(), "--yes", "--json"]);
+    assert_eq!(r.code, 0, "{}{}", r.stdout, r.stderr);
+    assert_eq!(
+        contract::key_order(&r.stdout),
+        [
+            "action",
+            "success",
+            "succeeded_count",
+            "failed_count",
+            "not_found",
+            "succeeded",
+            "failed",
+            "processes",
+            "count"
+        ]
+    );
+    // the keys of the entries sit 6 spaces in: `succeeded`'s, then `processes`'s
+    let entries = contract::keys_at(&r.stdout, 6);
+    let split = entries.iter().rposition(|k| k == "pid").unwrap();
+    let (old, new) = entries.split_at(split);
+    assert_eq!(&new[..new.len() - 1], &old[..new.len() - 1], "{entries:?}");
+    assert_eq!(new.last().unwrap(), "outcome", "{entries:?}");
+    assert!(owned.ended_within(Duration::from_secs(15)));
+}
+
 #[test]
 fn kill_graceful_sends_a_normal_stop_request() {
     let mut owned = Owned::listener();
@@ -1056,6 +1230,7 @@ fn kill_graceful_sends_a_normal_stop_request() {
     {
         assert_eq!(code, 0, "{json}");
         assert_eq!(json["succeeded_count"], 1, "{json}");
+        assert_receipt(&json, &[(owned.pid(), "succeeded")]);
         assert_eq!(
             owned.ended_by_signal(Duration::from_secs(15)),
             Some(libc::SIGTERM)
@@ -1068,6 +1243,8 @@ fn kill_graceful_sends_a_normal_stop_request() {
     {
         assert_eq!(code, 1, "{json}");
         assert_eq!(json["failed_count"], 1, "{json}");
+        // the failure is in `processes` too, with the text `failed` has
+        assert_receipt(&json, &[(owned.pid(), "failed")]);
         assert!(!owned.ended_within(Duration::from_secs(2)), "{json}");
     }
 }
@@ -1105,6 +1282,7 @@ fn freeze_stops_a_process_and_thaw_resumes_it() {
     assert_eq!(code, 0, "{json}");
     assert_eq!(json["action"], "freeze");
     assert_eq!(json["succeeded_count"], 1, "{json}");
+    assert_receipt(&json, &[(owned.pid(), "succeeded")]);
     assert!(
         becomes_stopped(owned.pid(), true),
         "not stopped after freeze"
@@ -1123,6 +1301,7 @@ fn freeze_stops_a_process_and_thaw_resumes_it() {
     let (json, code) = run_json(&["thaw", &pid, "--yes", "--json"]);
     assert_eq!(code, 0, "{json}");
     assert_eq!(json["action"], "thaw");
+    assert_receipt(&json, &[(owned.pid(), "succeeded")]);
     assert!(becomes_stopped(owned.pid(), false));
 }
 
@@ -1204,6 +1383,10 @@ fn freeze_and_thaw_handle_several_targets_and_respect_filters() {
     let (json, code) = run_json(&["freeze", &targets, "--yes", "--json"]);
     assert_eq!(code, 0, "{json}");
     assert_eq!(json["succeeded_count"], 2, "{json}");
+    assert_receipt(
+        &json,
+        &[(first.pid(), "succeeded"), (second.pid(), "succeeded")],
+    );
     assert!(becomes_stopped(first.pid(), true));
     assert!(becomes_stopped(second.pid(), true));
 
@@ -1222,6 +1405,7 @@ fn freeze_and_thaw_handle_several_targets_and_respect_filters() {
     let (json, code) = run_json(&["thaw", &targets, "--yes", "--in", &first.dir(), "--json"]);
     assert_eq!(code, 0, "{json}");
     assert_eq!(json["succeeded_count"], 1, "{json}");
+    assert_receipt(&json, &[(first.pid(), "succeeded")]);
     assert!(becomes_stopped(first.pid(), false));
     assert!(stopped(second.pid()));
     let r = run(&[
@@ -1234,6 +1418,7 @@ fn freeze_and_thaw_handle_several_targets_and_respect_filters() {
     assert_eq!(r.code, 2, "{}{}", r.stdout, r.stderr);
     let (json, _) = run_json(&["thaw", &second.pid_arg(), "--yes", "--json"]);
     assert_eq!(json["succeeded_count"], 1, "{json}");
+    assert_receipt(&json, &[(second.pid(), "succeeded")]);
 }
 
 #[cfg(not(unix))]
@@ -1599,6 +1784,7 @@ fn orphans_kill_yes_kills_the_orphan_and_says_so() {
     assert_eq!(code, 0, "{json}");
     assert_eq!(json["action"], "orphans");
     assert_eq!(json["succeeded_count"], 1, "{json}");
+    assert_receipt(&json, &[(second.pid as u32, "succeeded")]);
     assert!(second.gone_within(Duration::from_secs(10)));
 }
 
@@ -1646,6 +1832,16 @@ fn unstick_with_nothing_stuck_says_so() {
     assert_eq!(json["action"], "unstick");
     assert_eq!(json["success"], true);
     assert_eq!(json["found"], 0);
+    assert_eq!(json["count"], 0);
+    for key in [
+        "recovered_count",
+        "not_stuck_count",
+        "still_stuck_count",
+        "terminated_count",
+        "failed_count",
+    ] {
+        assert_eq!(json[key], 0, "{key}: {json}");
+    }
     let r = run(&["unstick", "--timeout", "0", "--in", &dir]);
     assert_eq!(r.code, 0, "{}{}", r.stdout, r.stderr);
     let says = "No stuck processes found";
@@ -1692,8 +1888,53 @@ fn unstick_dry_run_shows_measured_cpu_and_attempts_nothing() {
     assert_eq!(code, 0, "{json}");
     assert_eq!(json["dry_run"], true);
     assert_eq!(json["found"], 1);
+    assert_eq!(json["count"], 1);
     assert_eq!(json["processes"][0]["outcome"], "would_attempt", "{json}");
     assert!(busy.alive());
+}
+
+/// The counts 2.3.0 adds come after `processes`, the last key `unstick` had,
+/// and the bare numbers they repeat keep their places
+#[test]
+fn unstick_json_adds_its_new_counts_after_the_old_keys() {
+    let owned = Owned::listener();
+    let pid = owned.pid_arg();
+    let r = run(&["unstick", &pid, "--dry-run", "--json"]);
+    assert_eq!(r.code, 0, "{}{}", r.stdout, r.stderr);
+    assert_eq!(
+        contract::key_order(&r.stdout),
+        [
+            "action",
+            "success",
+            "dry_run",
+            "force",
+            "found",
+            "recovered",
+            "not_stuck",
+            "still_stuck",
+            "terminated",
+            "failed",
+            "not_found",
+            "processes",
+            "count",
+            "recovered_count",
+            "not_stuck_count",
+            "still_stuck_count",
+            "terminated_count",
+            "failed_count"
+        ]
+    );
+    let json: Value = serde_json::from_str(&r.stdout).unwrap();
+    assert_eq!(json["count"], json["found"], "{json}");
+    for outcome in [
+        "recovered",
+        "not_stuck",
+        "still_stuck",
+        "terminated",
+        "failed",
+    ] {
+        assert_eq!(json[format!("{outcome}_count")], json[outcome], "{json}");
+    }
 }
 
 #[test]
@@ -1720,6 +1961,8 @@ fn unstick_leaves_a_process_that_is_not_stuck_alone() {
     let (json, code) = run_json(&["unstick", &pid, "--yes", "--json"]);
     assert_eq!(code, 0, "{json}");
     assert_eq!(json["not_stuck"], 1, "{json}");
+    assert_eq!(json["not_stuck_count"], 1, "{json}");
+    assert_eq!(json["count"], 1, "{json}");
     assert_eq!(json["processes"][0]["outcome"], "not_stuck", "{json}");
     assert_eq!(
         json["processes"][0]["name"].as_str().map(str::is_empty),
@@ -1745,12 +1988,14 @@ fn unstick_without_force_acts_on_a_busy_process_by_what_the_os_allows() {
         // the listener dies on SIGINT, step 2
         assert_eq!(code, 0, "{json}");
         assert_eq!(json["terminated"], 1, "{json}");
+        assert_eq!(json["terminated_count"], 1, "{json}");
         assert_eq!(json["processes"][0]["outcome"], "terminated", "{json}");
         assert!(busy.ended_within(Duration::from_secs(10)));
     } else {
         // Windows has nothing gentle to try, and acts only with --force
         assert_eq!(code, 1, "{json}");
         assert_eq!(json["still_stuck"], 1, "{json}");
+        assert_eq!(json["still_stuck_count"], 1, "{json}");
         assert_eq!(json["success"], false, "{json}");
         assert!(busy.alive());
     }
@@ -1786,7 +2031,9 @@ fn unstick_without_a_target_finds_the_stuck_process_in_the_directory() {
     );
     assert_eq!(code, 0, "{json}");
     assert_eq!(json["found"], 1, "{json}");
+    assert_eq!(json["count"], 1, "{json}");
     assert_eq!(json["terminated"], 1, "{json}");
+    assert_eq!(json["terminated_count"], 1, "{json}");
     assert!(lists(&json, "processes", busy.pid()), "{json}");
     assert!(busy.ended_within(Duration::from_secs(15)));
 }
@@ -1813,6 +2060,7 @@ fn unstick_recovers_a_process_that_calms_down_when_woken() {
     });
     assert_eq!(code, 0, "{json}");
     assert_eq!(json["recovered"], 1, "{json}");
+    assert_eq!(json["recovered_count"], 1, "{json}");
     assert_eq!(json["processes"][0]["outcome"], "recovered", "{json}");
     assert!(!again.ended_within(Duration::ZERO));
 }
@@ -1927,17 +2175,22 @@ fn wait_takes_several_targets_as_separate_arguments() {
     assert!(lists(&json, "still_running", second.pid()), "{json}");
     // the target is echoed as typed, the arguments joined by spaces
     assert_eq!(json["target"], format!("{a} {b}"), "{json}");
+    assert_eq!(json["count"], 2, "{json}");
+    assert_eq!(json["targets"], serde_json::json!([a, b]), "{json}");
 
     // a comma list among them
     let list = format!("{b},{a}");
     let (json, _) = run_json(&["wait", &a, &list, "--timeout", "1", "--json"]);
     assert_eq!(json["initial_count"], 2, "{json}");
     assert_eq!(json["target"], format!("{a} {list}"), "{json}");
+    assert_eq!(json["targets"], serde_json::json!([a, list]), "{json}");
 
     // the same PID twice is waited for once
     let (json, _) = run_json(&["wait", &a, &a, "--timeout", "1", "--json"]);
     assert_eq!(json["initial_count"], 1, "{json}");
     assert_eq!(json["target"], format!("{a} {a}"), "{json}");
+    assert_eq!(json["count"], 1, "{json}");
+    assert_eq!(json["targets"], serde_json::json!([a, a]), "{json}");
 }
 
 #[test]

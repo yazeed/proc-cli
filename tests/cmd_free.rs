@@ -279,6 +279,21 @@ fn free_takes_several_ports_as_separate_arguments() {
     assert_eq!(code, 0, "{json}");
     assert_eq!(json["success"], true, "{json}");
     assert_eq!(json["results"].as_array().unwrap().len(), 2, "{json}");
+    // `processes` lists the holders in the order the ports were typed
+    assert_eq!(json["count"], 2, "{json}");
+    for (entry, held) in json["processes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip([&first, &second])
+    {
+        assert_eq!(entry["pid"], held.pid(), "{json}");
+        assert_eq!(entry["outcome"], "succeeded", "{json}");
+        assert!(
+            entry["name"].is_string() && entry.get("error").is_none(),
+            "{json}"
+        );
+    }
     assert!(first.ended_within(Duration::from_secs(5)), "{json}");
     assert!(second.ended_within(Duration::from_secs(5)), "{json}");
 }
@@ -324,12 +339,29 @@ fn free_kills_the_holder_and_says_the_port_is_free() {
 #[test]
 fn free_json_reports_each_port() {
     let mut held = Owned::listener();
-    let (json, code) = run_json(&["free", &held.target(), "--yes", "--json"]);
+    let (out, code) = run_text(&["free", &held.target(), "--yes", "--json"]);
+    let json: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(code, 0, "{json}");
     assert_eq!(json["action"], "free");
     assert_eq!(json["success"], true, "{json}");
     assert_eq!(json["results"][0]["port"], held.port);
     assert_eq!(json["results"][0]["freed"], true, "{json}");
+    // the holder it stopped, with its outcome, after the keys the receipt had
+    assert_eq!(json["count"], 1, "{json}");
+    assert_eq!(json["processes"][0]["pid"], held.pid(), "{json}");
+    assert_eq!(json["processes"][0]["outcome"], "succeeded", "{json}");
+    assert!(json["processes"][0].get("error").is_none(), "{json}");
+    assert_eq!(
+        contract::key_order(&out),
+        [
+            "action",
+            "success",
+            "results",
+            "not_found",
+            "processes",
+            "count"
+        ]
+    );
     assert!(held.ended_within(Duration::from_secs(5)), "{json}");
 }
 
@@ -367,6 +399,10 @@ fn free_json_reports_a_port_that_stays_in_use() {
     assert_eq!(json["success"], false, "{json}");
     assert_eq!(json["results"][0]["port"], held.port);
     assert_eq!(json["results"][0]["freed"], false, "{json}");
+    // the holder itself was stopped; it is the copy that took the port back
+    assert_eq!(json["count"], 1, "{json}");
+    assert_eq!(json["processes"][0]["pid"], held.pid(), "{json}");
+    assert_eq!(json["processes"][0]["outcome"], "succeeded", "{json}");
 }
 
 #[test]

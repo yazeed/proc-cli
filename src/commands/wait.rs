@@ -189,6 +189,7 @@ impl WaitCommand {
                         name: p.name.clone(),
                         exited_after_seconds: t.unwrap(),
                         last: LastReading::of(p),
+                        exited_after_secs: t.unwrap(),
                     })
                     .collect();
                 let still_running: Vec<RunningProcess> = tracking
@@ -224,6 +225,9 @@ impl WaitCommand {
                         not_found,
                         exited,
                         still_running,
+                        count: initial_count,
+                        elapsed_secs: elapsed,
+                        targets: self.target.clone(),
                     });
                     // Same exit code as the human-mode Timeout error
                     return Err(ProcError::reported(
@@ -274,6 +278,7 @@ impl WaitCommand {
                     name: p.name.clone(),
                     exited_after_seconds: t.unwrap_or(elapsed),
                     last: LastReading::of(p),
+                    exited_after_secs: t.unwrap_or(elapsed),
                 })
                 .collect();
             printer.print_json(&WaitOutput {
@@ -287,6 +292,9 @@ impl WaitCommand {
                 not_found,
                 exited,
                 still_running: vec![],
+                count: initial_count,
+                elapsed_secs: elapsed,
+                targets: self.target.clone(),
             });
         } else {
             out_println!(
@@ -315,6 +323,13 @@ struct WaitOutput {
     not_found: Vec<String>,
     exited: Vec<ExitedProcess>,
     still_running: Vec<RunningProcess>,
+    /// The processes waited for, as every other command's `count` (`initial_count`
+    /// is the old name for it, deprecated, removed in 3.0)
+    count: usize,
+    /// `elapsed_seconds` under the name every duration has (`_secs`)
+    elapsed_secs: u64,
+    /// The targets as typed, one per entry (`target` joins them with spaces)
+    targets: Vec<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -324,6 +339,8 @@ struct ExitedProcess {
     exited_after_seconds: u64,
     #[serde(flatten)]
     last: LastReading,
+    /// `exited_after_seconds` under the name every duration has (`_secs`)
+    exited_after_secs: u64,
 }
 
 #[derive(Serialize, Clone)]

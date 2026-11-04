@@ -15,6 +15,8 @@ proc orphans --kill --yes    # kill all orphans without confirmation
 proc orphans --by node       # find orphaned processes named node
 ```
 
+With `--kill --json --yes`, the result lists `processes`: every process it killed, in the order of the list you were asked to approve, each as a whole process object with its `outcome` (`succeeded` or `failed`, and `error` when it failed), and `count`. `succeeded` and `failed` hold the same processes split in two, and stay.
+
 ## Options
 
 | Flag | Short | Description |

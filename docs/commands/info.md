@@ -50,7 +50,7 @@ $ proc info 39158
                127.0.0.1:53781 → python3 (PID 43581)
 ```
 
-With `--json`, each process in `processes` has `ports`: the ports it listens on, each with `exposure` and `connections` (`total` and `by_state`, no peers), or an empty list. The keys it had are unchanged. If the OS gives no port table (for example macOS without `lsof` on the PATH), the card has no `Listening:` or `Connections:` line and the JSON has no `ports` key; the rest is as usual. The same holds for another user's process when proc is not root: its sockets are out of sight, so an empty list would claim a `none` proc cannot back.
+With `--json`, each process in `processes` has `ports`: the ports it listens on, each with `exposure` and `connections` (`total` and `by_state`, no peers), or an empty list. The keys it had are unchanged. `count` is the number of processes found (`found_count` is the same number, deprecated, use `count`; removed in 3.0). If the OS gives no port table (for example macOS without `lsof` on the PATH), the card has no `Listening:` or `Connections:` line and the JSON has no `ports` key; the rest is as usual. The same holds for another user's process when proc is not root: its sockets are out of sight, so an empty list would claim a `none` proc cannot back.
 
 ## Examples
 

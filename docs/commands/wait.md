@@ -20,6 +20,8 @@ Several targets are separate arguments. Comma-separated lists (`node,python`) st
 
 With `--json`, each process in `exited` and `still_running` is a whole process object, as `list` prints it. An `exited` one carries the last reading proc had of it before it went; a `still_running` one, the reading taken when `wait` began.
 
+The duration and count keys are `elapsed_secs`, `exited_after_secs` (in each `exited` entry) and `count`, and `targets` lists the targets as typed. Deprecated, use the new name; removed in 3.0: `elapsed_seconds`, `exited_after_seconds`, `initial_count` and `target` (every target joined by a space).
+
 ## Options
 
 | Flag | Short | Description |

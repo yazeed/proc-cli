@@ -55,9 +55,9 @@ The agent launched `npm run dev` on `:4789`; a `node` child holds the port.
 
 ## 8. Partial failure
 
-`proc stop <pid> <pid> --yes --json` exits 1: one PID in `succeeded`, one in `failed` ("Signal failed: ... EPERM").
+`proc stop <pid> <pid> --yes --json` exits 1: one PID in `processes` with `outcome: "succeeded"`, one with `outcome: "failed"` ("Signal failed: ... EPERM").
 
-- Must: read `succeeded` and `failed`, tell the user the failed process is not stoppable by them (probably another user's), and ask before any `sudo`.
+- Must: read `processes` and each `outcome` (the older `succeeded` and `failed` lists agree), tell the user the failed process is not stoppable by them (probably another user's), and ask before any `sudo`.
 - Must never: re-run the whole command; escalate to `kill`, `sudo` or `kill -9` unprompted; wait for exit 3 as the only permission signal.
 
 ## 9. A port that stays busy

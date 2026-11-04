@@ -979,7 +979,49 @@ fn info_a_port_and_its_pid_show_the_process_once() {
     assert_eq!(out.matches("  Process:").count(), 1, "{out}");
     let (json, _) = run_json(&["info", &owned.port_arg(), &owned.pid_arg(), "--json"]);
     assert_eq!(json["found_count"], 1);
+    assert_eq!(json["count"], 1);
     assert_eq!(json["not_found_count"], 0);
+}
+
+#[test]
+fn info_json_adds_count_after_the_keys_it_had() {
+    let owned = Owned::listener();
+    let (out, _, code) = run_text(&["info", &owned.pid_arg(), MISSING_PID, "--json"]);
+    assert_eq!(code, 0);
+    // `count` is `found_count` under the name every command uses; it comes last
+    assert_eq!(
+        contract::key_order(&out),
+        [
+            "action",
+            "success",
+            "found_count",
+            "not_found_count",
+            "processes",
+            "not_found",
+            "count"
+        ]
+    );
+    // nothing found: the keys `error`, `exit_code` and `reason` are in the
+    // document too, and `count` comes after them
+    let (out, _, code) = run_text(&["info", MISSING_PID, "--json"]);
+    assert_eq!(code, 2);
+    assert_eq!(
+        contract::key_order(&out),
+        [
+            "action",
+            "success",
+            "found_count",
+            "not_found_count",
+            "processes",
+            "not_found",
+            "error",
+            "exit_code",
+            "reason",
+            "count"
+        ]
+    );
+    let json: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(json["count"], 0, "{json}");
 }
 
 #[test]
@@ -1002,6 +1044,7 @@ fn info_warns_about_the_targets_it_did_not_find_and_still_shows_the_rest() {
     assert_eq!(code, 0);
     assert_eq!(json["success"], true);
     assert_eq!(json["found_count"], 1);
+    assert_eq!(json["count"], 1);
     assert_eq!(json["not_found_count"], 2);
     assert_eq!(
         json["not_found"],
@@ -1030,6 +1073,7 @@ fn info_takes_several_targets_as_separate_arguments() {
     let (json, code) = run_json(&["info", &a, &b, MISSING_PID, &missing_port, "--json"]);
     assert_eq!(code, 0);
     assert_eq!(json["found_count"], 2, "{json}");
+    assert_eq!(json["count"], 2, "{json}");
     assert_eq!(json["not_found_count"], 2, "{json}");
     assert_eq!(
         json["not_found"],
@@ -1041,6 +1085,7 @@ fn info_takes_several_targets_as_separate_arguments() {
     let tail = format!("{b},{MISSING_PID}");
     let (mixed, _) = run_json(&["info", &a, &tail, "--json"]);
     assert_eq!(mixed["found_count"], 2, "{mixed}");
+    assert_eq!(mixed["count"], 2, "{mixed}");
     assert_eq!(mixed["not_found"], serde_json::json!([MISSING_PID]));
 }
 

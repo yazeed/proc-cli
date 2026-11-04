@@ -124,6 +124,7 @@ impl InfoCommand {
                 error: not_found_error.as_deref(),
                 exit_code: not_found_error.is_some().then_some(2),
                 reason: not_found_error.is_some().then_some("not_found"),
+                count: found.len(),
             });
         } else {
             let opts = card_options(self.verbose);
@@ -214,6 +215,9 @@ struct InfoOutput<'a> {
     exit_code: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<&'static str>,
+    /// The processes found, as every other command's `count` (`found_count` is
+    /// the old name for it, deprecated, removed in 3.0)
+    count: usize,
 }
 
 #[cfg(test)]

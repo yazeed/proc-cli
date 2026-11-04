@@ -19,6 +19,8 @@ Several targets are separate arguments. Comma-separated lists (`:3000,:8080`) st
 
 A name is the whole process name, ignoring case, the way `killall` and `pkill` read it: `proc kill node` stops the processes named `node` and leaves `Claude Helper` alone. Add `--cmd` to match any part of the name or the full command line instead (like `pkill -f`): `proc kill serve --cmd`. A path is not a name: `proc kill ./server` finds nothing, so use `--cmd`, or [`proc for <file>`](for) for an executable. proc doesn't expand wildcards; an unquoted `node*` is expanded by your shell into file names; use `--cmd` for partial matches.
 
+With `--json` and `--yes`, the result lists `processes`: every process it killed, in the order of the list you were asked to approve, each as a whole process object with its `outcome` (`succeeded` or `failed`, and `error` when it failed), and `count`, how many. `succeeded` and `failed` hold the same processes split in two, and stay.
+
 ## Options
 
 | Flag | Short | Description |

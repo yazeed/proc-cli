@@ -15,6 +15,8 @@ proc stuck --by node       # only stuck processes named node
 
 A process counts as stuck when it has been running longer than `--timeout` and, in two readings a second apart, is either using more than half a CPU core or blocked in uninterruptible sleep (waiting on the kernel, usually for I/O, where it can't even be interrupted). One busy moment isn't enough. A long build at full CPU looks the same as a loop that never ends, so check the list before using `--kill`.
 
+With `--kill --json --yes`, the result lists `processes`: every process it killed, in the order of the list you were asked to approve, each as a whole process object with its `outcome` (`succeeded` or `failed`, and `error` when it failed), and `count`. `succeeded` and `failed` hold the same processes split in two, and stay.
+
 ## Options
 
 | Flag | Short | Description |

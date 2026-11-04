@@ -121,6 +121,6 @@ impl KillCommand {
             }
         });
 
-        printer.print_action_result("kill", &killed, &failed)
+        printer.print_action_result("kill", &processes, &killed, &failed)
     }
 }

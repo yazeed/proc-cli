@@ -356,6 +356,7 @@ fn wait_and_tree_by_port_take_every_holder() {
     let (json, code) = run_json(&["wait", &pair.target(), "--timeout", "1", "--json"]);
     assert_eq!(code, 1, "{json}");
     assert_eq!(json["initial_count"], 2, "{json}");
+    assert_eq!(json["count"], 2, "{json}");
 
     let (json, code) = run_json(&["tree", &pair.target(), "--json"]);
     assert_eq!(code, 0, "{json}");

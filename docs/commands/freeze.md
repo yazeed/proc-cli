@@ -15,6 +15,8 @@ proc freeze :3000 :8080 node # freeze multiple targets
 
 Several targets are separate arguments. Comma-separated lists (`:3000,:8080`) still work but are deprecated.
 
+With `--json` and `--yes`, the result lists `processes`: every process it froze, in the order of the list you were asked to approve, each as a whole process object with its `outcome` (`succeeded` or `failed`, and `error` when it failed), and `count`, how many. `succeeded` and `failed` hold the same processes split in two, and stay.
+
 ## Options
 
 | Flag | Short | Description |

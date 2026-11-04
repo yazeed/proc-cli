@@ -12,6 +12,7 @@ use crate::core::port::PortInfo;
 use crate::core::{flatten_targets, parse_target, Process, TargetType};
 use crate::error::{ExitCode, ProcError, Result};
 use crate::out_println;
+use crate::ui::output::ReceiptProcess;
 use crate::ui::{must_confirm, plural, prompt, Printer};
 use clap::Args;
 use colored::*;
@@ -157,7 +158,7 @@ impl FreeCommand {
 
         // SIGTERM first, then SIGKILL for what is left
         let start = std::time::Instant::now();
-        stop_all(
+        let signal_failures = stop_all(
             &processes,
             std::time::Duration::from_secs(self.wait.min(5)),
             &printer,
@@ -220,11 +221,17 @@ impl FreeCommand {
                 }))
                 .collect();
 
+            let failed = failed_holders(&processes, &signal_failures, Process::is_running);
             printer.print_json(&FreeOutput {
                 action: "free",
                 success: still_busy.is_empty(),
                 results,
                 not_found: &not_found,
+                processes: &processes
+                    .iter()
+                    .map(|p| ReceiptProcess::of(p, &failed))
+                    .collect::<Vec<_>>(),
+                count: processes.len(),
             });
         } else {
             for port in &freed {
@@ -265,6 +272,10 @@ struct FreeOutput<'a> {
     results: Vec<FreeResult>,
     /// The ports nobody was listening on, as typed
     not_found: &'a [String],
+    /// The holders it stopped, in the preview's order, each with its `outcome`
+    processes: &'a [ReceiptProcess<'a>],
+    /// How many of them
+    count: usize,
 }
 
 #[derive(Serialize)]
@@ -277,15 +288,16 @@ struct FreeResult {
 /// that is still running is not a failure), give them up to `grace` to do it, then
 /// force kill whatever is still running. A signal that fails is a warning, not
 /// an error: the port check afterwards says whether it mattered. Returns the
-/// PIDs a signal failed for. The signals are parameters so a test can make them
-/// fail; the command passes `Process::terminate` and `Process::kill`.
+/// PIDs a signal failed for, with the error text (a PID appears twice when both
+/// signals failed). The signals are parameters so a test can make them fail;
+/// the command passes `Process::terminate` and `Process::kill`.
 fn stop_all(
     processes: &[Process],
     grace: std::time::Duration,
     printer: &Printer,
     terminate: impl Fn(&Process) -> Result<()>,
     kill: impl Fn(&Process) -> Result<()>,
-) -> Vec<u32> {
+) -> Vec<(u32, String)> {
     let mut failed = Vec::new();
     for proc in processes {
         match terminate(proc) {
@@ -297,7 +309,7 @@ fn stop_all(
                     "Failed to ask {} [PID {}] to stop: {}",
                     proc.name, proc.pid, e
                 ));
-                failed.push(proc.pid);
+                failed.push((proc.pid, e.to_string()));
             }
             Ok(()) => {}
         }
@@ -320,11 +332,33 @@ fn stop_all(
                     "Failed to kill {} [PID {}]: {}",
                     proc.name, proc.pid, e
                 ));
-                failed.push(proc.pid);
+                failed.push((proc.pid, e.to_string()));
             }
         }
     }
     failed
+}
+
+/// The holders the receipt lists as failed, with why: those still `running`
+/// once the ports were checked, with the error of the last signal that failed
+/// for them, or `Still running` when none did. A holder that is gone was
+/// stopped, whatever a signal said on the way.
+fn failed_holders(
+    processes: &[Process],
+    signal_failures: &[(u32, String)],
+    running: impl Fn(&Process) -> bool,
+) -> Vec<(Process, String)> {
+    processes
+        .iter()
+        .filter(|p| running(p))
+        .map(|p| {
+            let error = signal_failures
+                .iter()
+                .rfind(|(pid, _)| *pid == p.pid)
+                .map_or("Still running", |(_, error)| error.as_str());
+            (p.clone(), error.to_string())
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -359,7 +393,8 @@ mod tests {
         // It still counts as running, so the SIGKILL is tried after the polite
         // request; on Windows that request being refused is expected
         let refusals = if cfg!(unix) { 2 } else { 1 };
-        assert_eq!(failed, vec![me.pid; refusals]);
+        let expected = (me.pid, "Signal failed: not allowed".to_string());
+        assert_eq!(failed, vec![expected; refusals]);
     }
 
     #[test]
@@ -379,7 +414,10 @@ mod tests {
             // were the kill tried, it would fail too and be listed twice
             refuse,
         );
-        assert_eq!(failed, vec![gone.pid]);
+        assert_eq!(
+            failed,
+            vec![(gone.pid, "Signal failed: not allowed".to_string())]
+        );
         assert!(start.elapsed() < std::time::Duration::from_secs(10));
     }
 
@@ -395,5 +433,23 @@ mod tests {
             |_| Ok(()),
         );
         assert!(failed.is_empty());
+    }
+
+    #[test]
+    fn a_holder_that_is_still_running_is_failed_and_one_that_is_gone_is_not() {
+        let record = |pid| Process {
+            pid,
+            ..this_process()
+        };
+        let all = [record(1), record(2), record(3), record(4)];
+        let signals = [
+            (1, "Signal failed: asking".to_string()),
+            (1, "Signal failed: killing".to_string()),
+            (2, "Signal failed: asking".to_string()),
+        ];
+        // 1 and 3 are still running; 2 is gone though a signal failed, 4 is gone
+        let failed = failed_holders(&all, &signals, |p| p.pid == 1 || p.pid == 3);
+        let shown: Vec<(u32, &str)> = failed.iter().map(|(p, e)| (p.pid, e.as_str())).collect();
+        assert_eq!(shown, [(1, "Signal failed: killing"), (3, "Still running")]);
     }
 }

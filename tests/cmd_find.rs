@@ -1034,5 +1034,11 @@ fn stuck_kill_yes_json_reports_the_kill() {
     assert_eq!(code, 0, "{json}");
     assert_eq!(json["action"], "stuck");
     assert_eq!(json["success"], true, "{json}");
+    // the receipt lists what it killed as `processes`, with `outcome` and `count`
+    assert_eq!(json["count"], 1, "{json}");
+    assert_eq!(json["processes"][0]["pid"], busy.pid(), "{json}");
+    assert_eq!(json["processes"][0]["outcome"], "succeeded", "{json}");
+    assert!(json["processes"][0].get("error").is_none(), "{json}");
+    assert_eq!(json["succeeded_count"], 1, "{json}");
     assert!(busy.ended_within(Duration::from_secs(5)), "{json}");
 }

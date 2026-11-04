@@ -109,7 +109,7 @@ impl ThawCommand {
         let (succeeded, failed) =
             apply_to_each(&processes, |proc| proc.send_signal(Signal::SIGCONT));
 
-        printer.print_action_result("thaw", &succeeded, &failed)
+        printer.print_action_result("thaw", &processes, &succeeded, &failed)
     }
 
     /// Windows stub

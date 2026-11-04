@@ -18,7 +18,7 @@ proc unstick --force       # terminate if recovery fails
 
 Several targets are separate arguments. Comma-separated lists (`1234,:3000`) still work but are deprecated.
 
-With `--json`, each process in `processes` is a whole process object (its `outcome` is beside the usual fields), as `list` prints it.
+With `--json`, each process in `processes` is a whole process object (its `outcome` is beside the usual fields), as `list` prints it. `count` is how many were found, and `recovered_count`, `not_stuck_count`, `still_stuck_count`, `terminated_count` and `failed_count` count the outcomes. The bare numbers `found`, `recovered`, `not_stuck`, `still_stuck`, `terminated` and `failed` are deprecated, use the `_count` names (and `count` for `found`); removed in 3.0.
 
 ## Options
 

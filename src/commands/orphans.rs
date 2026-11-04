@@ -136,7 +136,7 @@ impl OrphansCommand {
 
         let (killed, failed) = apply_to_each(&processes, |proc| proc.kill_and_wait());
 
-        printer.print_action_result_as("orphans", "kill", &killed, &failed)
+        printer.print_action_result_as("orphans", "kill", &processes, &killed, &failed)
     }
 
     /// Windows stub: Windows does not re-parent a process whose parent exited,

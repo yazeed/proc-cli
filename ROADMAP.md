@@ -16,6 +16,16 @@ It also marks `proc_cli::core::Process` `#[non_exhaustive]`, so a later field ne
 
 **Open:** what a comma does once removed: an error that shows the separate-argument form, or treating the whole word as one name.
 
+### One set of JSON names: the shapes that change, and the old names go
+
+2.3.0 adds the settled names beside the old ones (reference.md, "Names deprecated in 2.3.0"). The next major release finishes the job with what cannot be done without breaking a 2.x script:
+
+- **`on` has one shape.** Today it prints four document shapes under one `action` (a port, a PID, one name, several targets), and `on :port` carries both `process` (the first holder) and `processes` (all of them). One shape for every target kind, with `processes` only.
+- **"Nothing found" means one thing.** It is `success: true` and exit 0 for `list`, `in`, `stuck`, `orphans` and `free`, and an error with exit 2 for `by`, `kill` and `on`. One rule across commands.
+- **`ancestry` means one thing.** It is a list of `{target_pid, target_name, depth, chain}` in `tree --ancestors` and a list of process entries with `is_target` in `why`.
+- **`connections` is one object.** It is a full object with `peers` at the top of `on :port` and only counts in port rows: keep that split, or always the same object.
+- **The old names are removed:** `found_count` (`info`), `initial_count`, `elapsed_seconds`, `exited[].exited_after_seconds` and `target` (`wait`; `count`, `elapsed_secs`, `exited_after_secs` and `targets` replace them) and the bare numbers of `unstick` (`found`, `recovered`, `not_stuck`, `still_stuck`, `terminated`, `failed`; `count` and `<outcome>_count` replace them). The contract test's list of deprecated names empties with them.
+
 ## Decided: after the 2.1.0 tag
 
 ### Nix as an official install method: the nixpkgs package
@@ -54,20 +64,6 @@ This takes in the candidates "Errors that name what you meant", "Signal words, n
 **Feature test:** obvious, explicit, and one spelling per intent with habits kept (PHILOSOPHY.md, "Easy to Remember"). **Open:** which release; how far a hint may go before it is a guess.
 
 ## Candidates
-
-### One set of JSON names
-
-The JSON says some things two or three ways, so a script that reads more than one command has to learn each:
-
-- **The preview and the receipt:** a command that changes processes lists them as `processes` in its preview (`--dry-run --json`, and the `needs_confirmation` error) and as `succeeded` and `failed` in its receipt. The list that was approved and the list that was changed should read the same way.
-- **Counts:** `count` in most commands, `found_count` and `not_found_count` in `info`, `succeeded_count` and `failed_count` in actions, `initial_count` in `wait`.
-- **Durations:** `uptime_secs` on a process, but `elapsed_seconds` and `exited_after_seconds` in `wait`.
-- **Names:** `process_name` on a port row, `name` on a process.
-- **Where the answer is:** `processes`, `ports` or `results`, depending on the command.
-
-The idea: settle every one of these in one pass, from one written rule (a count is `count`, or `<list>_count` beside a list it counts; a duration ends in `_secs`; a process's name is `name`), and check every command's JSON against it in tests.
-
-**Feature test:** keeps the JSON contract (PHILOSOPHY.md, "One Contract"). **Plan:** the next minor release adds the settled names beside the old ones, so 2.x scripts keep working, and the CHANGELOG and `reference.md` mark the old names deprecated; the next major release removes them. **Open:** the rule's exact wording, and whether the receipt also carries the preview's `processes`.
 
 ### Signal words, not numbers
 

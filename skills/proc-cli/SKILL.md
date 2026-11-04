@@ -85,7 +85,7 @@ proc on :<port> --json                # who holds it: read processes[]
 proc free :<port> --dry-run --json    # the list free would stop
 ```
 
-If every holder is a process you started, run `proc free :<port> --yes --json`. Otherwise show the holders to the user and ask. Or start your server on another port. Afterwards `proc on :<port> --json` exits 2 when the port is free. `free` stops every holder of the port (IPv4 and IPv6 sockets, workers that share it) with SIGTERM, then SIGKILL after 5 seconds. If it returns `freed: false`, run `proc on :<port> --json` again and list every entry of `processes` (a port can have several holders: IPv4 and IPv6 sockets, workers, a supervisor that restarts it). Show each one to the user and ask before stopping any. Do not assume one holder, and do not escalate with `kill -9` or `sudo`. If the holder is a service the user wants to keep (nginx, a database), `free` ends it: offer another port first. `proc stop <pid> --signal HUP` only reloads config and does not free the port.
+If every holder is a process you started, run `proc free :<port> --yes --json`. Otherwise show the holders to the user and ask. Or start your server on another port. Afterwards `proc on :<port> --json` exits 2 when the port is free. `free` stops every holder of the port (IPv4 and IPv6 sockets, workers that share it) with SIGTERM, then SIGKILL after 5 seconds. If it returns `freed: false` (its `processes` say, per holder, which `outcome` was `failed` and why), run `proc on :<port> --json` again and list every entry of `processes` (a port can have several holders: IPv4 and IPv6 sockets, workers, a supervisor that restarts it). Show each one to the user and ask before stopping any. Do not assume one holder, and do not escalate with `kill -9` or `sudo`. If the holder is a service the user wants to keep (nginx, a database), `free` ends it: offer another port first. `proc stop <pid> --signal HUP` only reloads config and does not free the port.
 
 ### Stop a server or job you started
 
@@ -110,7 +110,7 @@ proc kill <name> --in=<dir> --dry-run --json     # once the user names the direc
 proc stop <pid> --start-time <start_time> --in=<cwd> --by <name> --yes --json   # per approved PID, values from the preview
 ```
 
-Run the search with `stop` or `kill`, whichever the user asked for. Start unscoped: tell the user how many processes match and what they are (which projects, tool servers, other agents' processes), and ask which ones they mean. Don't guess a directory with `--in` before the user names one, because that hides the matches they need to see. Show the preview (rule 4). If the user approves, act by the PIDs you showed. The preview, the prompt and the receipt list the same processes in the same order (targets as typed, then PID ascending), so the receipt can be checked against what the user approved line by line. If the preview exits 2, the name may still appear in some command lines, but the JSON error of `kill` and `stop` does not say so. Run `proc by <name> --json`: its error reads "N processes have '<name>' in their command line (add --cmd to match those)". Show that to the user. To see `--cmd` matches, run `proc by <name> --cmd --json` (read-only) or add `--dry-run` to the action. Never combine `--cmd` with `--yes`.
+Run the search with `stop` or `kill`, whichever the user asked for. Start unscoped: tell the user how many processes match and what they are (which projects, tool servers, other agents' processes), and ask which ones they mean. Don't guess a directory with `--in` before the user names one, because that hides the matches they need to see. Show the preview (rule 4). If the user approves, act by the PIDs you showed. The preview, the prompt and the receipt list the same processes in the same order (targets as typed, then PID ascending), so the receipt's `processes`, each with an `outcome` of `succeeded` or `failed`, can be checked against what the user approved line by line. If the preview exits 2, the name may still appear in some command lines, but the JSON error of `kill` and `stop` does not say so. Run `proc by <name> --json`: its error reads "N processes have '<name>' in their command line (add --cmd to match those)". Show that to the user. To see `--cmd` matches, run `proc by <name> --cmd --json` (read-only) or add `--dry-run` to the action. Never combine `--cmd` with `--yes`.
 
 ### Clean up before you finish
 
@@ -129,13 +129,13 @@ Both are leads, not verdicts. `stuck` flags any process that has run over 300 se
 
 | Exit | Meaning | Next step |
 |------|---------|-----------|
-| 0 | Done (or the dry run succeeded) | Check `not_found`: every target you passed must appear in `succeeded`, `processes` or `results`. |
-| 1 | Partly failed, a port stayed busy, or `wait` timed out | Read `succeeded` and `failed`. Retry only the PIDs in `failed`. Report anything the OS refused. |
+| 0 | Done (or the dry run succeeded) | Check `not_found`: every target you passed must appear in `processes` (with `outcome: "succeeded"` in a receipt) or `results`. |
+| 1 | Partly failed, a port stayed busy, or `wait` timed out | Read `processes`: each entry has an `outcome` (`succeeded` or `failed`, with `error` on a failure). Retry only the PIDs whose `outcome` is `failed`. Report anything the OS refused. |
 | 2 | Nothing matched; branch on `reason` | `not_found`: gone; do not widen the target. `command_line_only`: add `--cmd` only after a dry run. `ruled_out`: a guard in `ruled_out_by` ruled out the process on that PID (rule 7). |
 | 3 | Permission denied | Stop and ask. Do not use `sudo` unprompted. |
 | 4 | Nothing was done; branch on `reason` | `needs_confirmation`: follow rule 6. `invalid_input`: fix the command from `error`. `not_supported`: this OS cannot do it, so do not retry. |
 
-A signal the OS refuses (a process of another user) is reported in `failed` with exit 1, not as exit 3. Treat it as "this process is not mine": stop and ask.
+A signal the OS refuses (a process of another user) is reported as a `failed` entry (with its `error`) with exit 1, not as exit 3. Treat it as "this process is not mine": stop and ask.
 
 Exit 129, 130, 131 or 143 in a shell (ended by signal 1, 2, 3 or 15, if you ran proc directly) is not a result of the command: a signal (SIGHUP, SIGINT, SIGQUIT, SIGTERM) ended proc, after it put the terminal back. Nothing was changed by a prompt that had not been answered; check with `proc info` before assuming anything.
 

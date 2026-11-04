@@ -15,6 +15,8 @@ proc free :3000 --wait 30  # wait up to 30s for port to free
 
 Several ports are separate arguments. Comma-separated lists (`:3000,:8080`) still work but are deprecated.
 
+With `--json` and `--yes`, `results` says, for each port, whether it `freed`, and `processes` lists the holders it stopped, in the order of the list you were asked to approve, each as a whole process object with its `outcome` (`succeeded`, or `failed` with `error` when the process was still running afterwards), and `count`, how many.
+
 ## Options
 
 | Flag | Short | Description |
