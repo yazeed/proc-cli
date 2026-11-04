@@ -1,10 +1,16 @@
-sysutils/proc-cli: import proc-cli-2.2.0
+sysutils/proc-cli: update to 2.3.0
 
-proc finds, inspects and stops processes and ports. Target a process by
-port (:3000), PID, name or path, see what holds a port and why it is
-there, and free it. Commands that change anything ask first, preview
-with --dry-run, and print JSON with stable exit codes for scripts.
+2.3.0 (2026-11-03):
+- One card for a process, the same in on, info, for and why: command,
+  directory, user, parent, status, resources, start time, children,
+  ports and the connections to them.
+- Every process table shows the user, the uptime and the command, and
+  ports says whether each port is reachable from the network.
+- A value proc cannot read is shown as "-" or left out of the JSON,
+  never as a 0 nobody measured.
+- JSON gains the parent's name, child count, CPU time and open files of
+  each process, and three more statuses (idle, starting, disk_wait).
 
-NetBSD is supported upstream since 2.2.0, whose CI runs the whole test
-suite on NetBSD 11. Ports come from sockstat(1) and open files from
-fstat(1), both in the base system, so it has no run dependencies.
+Full list: https://github.com/yazeed/proc-cli/blob/v2.3.0/CHANGELOG.md
+Tested: make package, pkglint and the installed proc --version on
+NetBSD 11.0 against pkgsrc-2026Q3.
