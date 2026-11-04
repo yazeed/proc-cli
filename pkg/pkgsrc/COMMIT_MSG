@@ -12,5 +12,3 @@ sysutils/proc-cli: update to 2.3.0
   each process, and three more statuses (idle, starting, disk_wait).
 
 Full list: https://github.com/yazeed/proc-cli/blob/v2.3.0/CHANGELOG.md
-Tested: make package, pkglint and the installed proc --version on
-NetBSD 11.0 against pkgsrc-2026Q3.

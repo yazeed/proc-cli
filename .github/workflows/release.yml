@@ -12,8 +12,9 @@ on:
 
 # The workflow's own token can only read. A job that writes says so in its own
 # permissions (create-release, the publish jobs, update-apt); the jobs that
-# push to other repositories use their own tokens (HOMEBREW_TAP_TOKEN,
-# SCOOP_BUCKET_TOKEN, WINGET_TOKEN)
+# push to other repositories or file elsewhere use their own tokens
+# (HOMEBREW_TAP_TOKEN, SCOOP_BUCKET_TOKEN, WINGET_TOKEN, NIXPKGS_FORK_TOKEN,
+# FREEBSD_BUGZILLA_API_KEY)
 permissions:
   contents: read
 
@@ -386,6 +387,8 @@ jobs:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          NIXPKGS_FORK_TOKEN: ${{ secrets.NIXPKGS_FORK_TOKEN }}
+          FREEBSD_BUGZILLA_API_KEY: ${{ secrets.FREEBSD_BUGZILLA_API_KEY }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
@@ -396,7 +399,7 @@ jobs:
           soon=$(( $(date +%s) + 30 * 86400 ))
 
           # GitHub tokens: valid, and when they expire (no header: never)
-          for name in HOMEBREW_TAP_TOKEN SCOOP_BUCKET_TOKEN WINGET_TOKEN; do
+          for name in HOMEBREW_TAP_TOKEN SCOOP_BUCKET_TOKEN WINGET_TOKEN NIXPKGS_FORK_TOKEN; do
             token=$(printenv "$name" || true)
             [ -n "$token" ] || { bad "$name is not set"; continue; }
             status=$(curl -sS -o /dev/null -D headers -w '%{http_code}' \
@@ -411,6 +414,31 @@ jobs:
               echo "$name: valid until $expires"
             fi
           done
+
+          # The nixpkgs token also has to push to the fork's pull request branch
+          if [ -n "$NIXPKGS_FORK_TOKEN" ]; then
+            push=$(curl -sS -H "Authorization: Bearer $NIXPKGS_FORK_TOKEN" \
+              https://api.github.com/repos/yazeed/nixpkgs | jq -r '.permissions.push // false')
+            if [ "$push" = true ]; then
+              echo "NIXPKGS_FORK_TOKEN: can push to yazeed/nixpkgs"
+            else
+              bad "NIXPKGS_FORK_TOKEN cannot push to yazeed/nixpkgs: give it write access to that repository"
+            fi
+          fi
+
+          # FreeBSD's Bugzilla shows an account's email only to a signed-in
+          # caller, so the key works and is the maintainer's when it shows it
+          if [ -z "$FREEBSD_BUGZILLA_API_KEY" ]; then
+            bad "FREEBSD_BUGZILLA_API_KEY is not set"
+          else
+            email=$(curl -sS "https://bugs.freebsd.org/bugzilla/rest/user?names=me@yazeed.com&include_fields=email&api_key=$FREEBSD_BUGZILLA_API_KEY" |
+              jq -r '.users[0].email // .message // empty')
+            if [ "$email" = me@yazeed.com ]; then
+              echo "FREEBSD_BUGZILLA_API_KEY: valid, me@yazeed.com"
+            else
+              bad "FREEBSD_BUGZILLA_API_KEY is not accepted as me@yazeed.com by bugs.freebsd.org (${email:-no answer}): make a new key in Bugzilla's Preferences, API Keys"
+            fi
+          fi
 
           # Docker Hub: the token logs in, as the docker job's login does
           if printf '%s' "$DOCKERHUB_TOKEN" |
@@ -812,3 +840,185 @@ jobs:
           done
           echo "::error::COPR did not finish the $version build in 90 minutes"
           exit 1
+
+  # nixpkgs, until proc-cli is merged there: moves the pull request (from
+  # yazeed/nixpkgs, branch proc-cli-init) to the release. update.sh learns both
+  # hashes and builds proc with its tests in the sandbox; update-fork.sh amends
+  # the "proc-cli: init" commit to that package.nix, force-pushes it with a
+  # lease and retitles the pull request. A dry run does both for the version in
+  # Cargo.toml (the last release) and pushes nothing. Once nixpkgs has
+  # proc-cli, its update bot opens each update and this job leaves it alone
+  update-nixpkgs:
+    name: Update nixpkgs
+    needs: create-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+
+      - name: Move package.nix to the release (hashes, build, tests)
+        id: version
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            version=${GITHUB_REF_NAME#v}
+          else
+            version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          sh pkg/nixpkgs/update.sh "$version"
+          git diff -- pkg/nixpkgs/package.nix
+
+      - name: Upload package.nix (for main)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nixpkgs-package
+          path: pkg/nixpkgs/package.nix
+          if-no-files-found: error
+
+      - name: Update the nixpkgs pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NIXPKGS_FORK_TOKEN: ${{ secrets.NIXPKGS_FORK_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            sh pkg/nixpkgs/update-fork.sh "$VERSION" --push
+          else
+            sh pkg/nixpkgs/update-fork.sh "$VERSION"
+          fi
+
+  # The FreeBSD port: update-port.sh moves sysutils/proc-cli to the release in
+  # a FreeBSD VM with a ports tree, builds, installs and checks it (check-plist,
+  # stage-qa, portlint, proc --version) and writes the patch; file-patch.sh
+  # attaches it to bug 300492 while the port is new, or opens an update bug
+  # once it is committed, as the maintainer with maintainer-approval +. A dry
+  # run does the same for the version in Cargo.toml and files nothing
+  update-freebsd:
+    name: Update the FreeBSD port
+    needs: create-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Version
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)" >> "$GITHUB_ENV"
+          fi
+
+      # pkg's latest branch: the ports tree's main branch wants its Rust, and
+      # quarterly's is older (2.3.0: 1.99.1 against 1.98.1)
+      - name: Move the port to the release, build and check it
+        uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1.5.9
+        with:
+          release: "15.1"
+          cpu: 4
+          mem: 8192
+          envs: VERSION
+          prepare: |
+            mkdir -p /usr/local/etc/pkg/repos
+            printf 'FreeBSD: { url: "pkg+https://pkg.FreeBSD.org/${ABI}/latest", mirror_type: "srv" }\n' > /usr/local/etc/pkg/repos/FreeBSD.conf
+            pkg update -f
+            pkg install -y git rust portlint
+          run: |
+            cd "$GITHUB_WORKSPACE"
+            rustc --version
+            sh pkg/freebsd/update-port.sh "$VERSION" freebsd-out
+
+      - name: Upload the patch and the port's files (for main)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: freebsd-port
+          path: |
+            freebsd-out/
+            pkg/freebsd/
+          if-no-files-found: error
+
+      - name: File the patch
+        env:
+          FREEBSD_BUGZILLA_API_KEY: ${{ secrets.FREEBSD_BUGZILLA_API_KEY }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            sh pkg/freebsd/file-patch.sh "$VERSION" freebsd-out --file
+          else
+            sh pkg/freebsd/file-patch.sh "$VERSION" freebsd-out
+          fi
+
+  # pkgsrc: update-package.sh moves sysutils/proc-cli from pkgsrc trunk to the
+  # release, builds, installs and checks it in a NetBSD VM (pkglint, proc
+  # --version) against the quarterly branch NetBSD's binary packages come
+  # from, and writes the diff and the text for the gnats problem report, with
+  # the form's fields in gnats-fields.json. The report is filed by hand (the
+  # form has a check for people), from the run's pkgsrc-update artifact. A dry
+  # run does the same for the version in Cargo.toml
+  update-pkgsrc:
+    name: Update pkgsrc
+    needs: create-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # The quarter is where NetBSD 11.0's package repository points
+      # (…/11.0 -> …/11.0_2026Q3)
+      - name: Version and pkgsrc quarter
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)" >> "$GITHUB_ENV"
+          fi
+          location=$(curl -sSI https://cdn.netbsd.org/pub/pkgsrc/packages/NetBSD/x86_64/11.0 |
+            sed -n 's/^location: *//Ip' | tr -d '\r')
+          quarter=${location##*_}
+          case "$quarter" in
+            20[0-9][0-9]Q[1-4]) echo "QUARTER=$quarter" >> "$GITHUB_ENV" ;;
+            *) echo "::error::could not read the pkgsrc quarter from '$location'"; exit 1 ;;
+          esac
+
+      - name: Move the package to the release, build and check it
+        uses: vmactions/netbsd-vm@c8a0d7ddb84619a7a8cc4e652efa7950b3fd9f92 # v1.5.2
+        with:
+          release: "11.0"
+          cpu: 4
+          mem: 8192
+          envs: VERSION QUARTER
+          # A mirror can cut a download short (CI, 2026-11-04), so a failed
+          # pkg_add is tried twice more
+          prepare: /usr/sbin/pkg_add rust pkglint || { sleep 15; /usr/sbin/pkg_add rust pkglint; } || { sleep 30; /usr/sbin/pkg_add rust pkglint; }
+          run: |
+            cd "$GITHUB_WORKSPACE"
+            rustc --version
+            sh pkg/pkgsrc/update-package.sh "$VERSION" "$QUARTER" pkgsrc-out
+
+      - name: The gnats form's fields
+        run: |
+          cd pkgsrc-out
+          diff=proc-cli-$VERSION-pkgsrc.diff
+          jq -n --rawfile description description --rawfile diff "$diff" \
+            --arg synopsis "$(cat synopsis)" --arg environment "$(cat environment)" \
+            --arg release "$(cut -d, -f1 environment)" --arg version "$VERSION" \
+            '{email: "me@yazeed.com", originator: "Yazeed Al Oyoun", organization: "",
+              synopsis: $synopsis, release: $release, environment: $environment,
+              description: ($description | rtrimstr("\n")), howtorepeat: "",
+              fix: ("The diff below updates sysutils/proc-cli to \($version); apply with patch -p1 from the pkgsrc root.\n\n" + $diff),
+              category: "pkg", severity: "non-critical", priority: "low", class: "change-request"}' \
+            > gnats-fields.json
+          jq -r '.synopsis, .environment' gnats-fields.json
+
+      - name: Upload the diff, the report's text and the package's files (for main)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pkgsrc-update
+          path: |
+            pkgsrc-out/proc-cli-*-pkgsrc.diff
+            pkgsrc-out/description
+            pkgsrc-out/gnats-fields.json
+            pkg/pkgsrc/
+          if-no-files-found: error

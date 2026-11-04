@@ -107,6 +107,8 @@ Update version in ALL of these files:
 
 Update and verify all docs are complete:
 
+- [ ] `pkg/pkgsrc/COMMIT_MSG` — `sysutils/proc-cli: update to X.Y.Z`, a blank line, then the release's main changes in a few lines and `Full list: https://github.com/yazeed/proc-cli/blob/vX.Y.Z/CHANGELOG.md`. It is the pkgsrc report's description; `update-pkgsrc` adds what it tested, and stops if the first line names another version
+
 - [ ] `CHANGELOG.md` — Rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` and add a new empty `## [Unreleased]` above it. Everything worked on since the last release is already listed there (see "Unreleased Work" in CLAUDE.md); check that it is complete. Update the links at the bottom: `[Unreleased]` compares `vX.Y.Z...HEAD`, and add `[X.Y.Z]` comparing the previous tag. Each heading (`### Added`, `### Fixed`, ...) appears once per release; merge any duplicates. Note every issue and PR the section references (`#n`): step 7 replies to them
 - [ ] `docs/changelog.md` — Run `python3 scripts/changelog_site.py` after renaming the section: it writes the release into the website's changelog from CHANGELOG.md (never edit that part by hand; CI fails when the two differ)
 - [ ] `README.md` — Review thoroughly: hero examples, Quick Start, Commands table, Filters table, Examples section all reflect new features
@@ -143,17 +145,20 @@ Nothing to publish: the AUR's `proc-cli` and `proc-cli-bin` are Rafael Dominiqui
 
 ### After the tag: nixpkgs
 
-nixpkgs builds proc from the tag, with its tests, as `proc-cli`. `pkg/nixpkgs/package.nix` is the file nixpkgs carries at `pkgs/by-name/pr/proc-cli/package.nix`, and every release moves it to the new version:
+nixpkgs builds proc from the tag, with its tests, as `proc-cli`. `pkg/nixpkgs/package.nix` is the file nixpkgs carries at `pkgs/by-name/pr/proc-cli/package.nix`. Until the package is merged, the pull request on NixOS/nixpkgs ([#581248](https://github.com/NixOS/nixpkgs/pull/581248), from `yazeed/nixpkgs`, branch `proc-cli-init`) carries two commits, `maintainers: add yazeed` and `proc-cli: init at X.Y.Z`, and the release's `update-nixpkgs` job moves it to each release:
 
-1. Set `version` in `pkg/nixpkgs/package.nix` and both `hash` and `cargoHash` to `lib.fakeHash`. Build it in the `nixos/nix` image (`pkg/nixpkgs/build.nix` builds it against the nixpkgs in `flake.lock`, with the maintainer entry nixpkgs may not have yet); the first build fails with the source hash it got, the second with the cargo hash. Put each in, then build once more: it runs the whole test suite and must pass.
+1. `pkg/nixpkgs/update.sh X.Y.Z` sets the version, puts `lib.fakeHash` in both hashes and builds with `pkg/nixpkgs/build.nix` (the nixpkgs in `flake.lock`, plus the maintainer entry nixpkgs may not have yet): the first build fails naming the source hash, the second the cargo hash. It puts each in, then builds once more, which runs the whole test suite in the sandbox, and checks the result prints `proc X.Y.Z`.
+2. `pkg/nixpkgs/update-fork.sh X.Y.Z --push` amends `proc-cli: init at …` on the fork's branch to that `package.nix` and the new version, keeping its author and its `Assisted-by:` trailer (nixpkgs asks commits written with an AI assistant for one), force-pushes it with a lease on the commit it replaced, and retitles the pull request. It stops if the branch isn't those two commits, or if `package.nix` differs from the branch in more than the version and hash lines: bring such a change to the pull request by hand. If the retitle is refused, the job warns with the `gh pr edit` command.
+3. Commit the job's `package.nix` to `main`: it is the run's `nixpkgs-package` artifact (`gh run download <run id> -n nixpkgs-package -D pkg/nixpkgs`).
 
-   ```bash
-   docker run --rm --cpus 4 -v "$PWD":/work -w /work -e NIX_CONFIG="experimental-features = nix-command flakes" \
-     nixos/nix sh -c 'nix-build pkg/nixpkgs/build.nix && ./result/bin/proc --version'   # prints proc X.Y.Z
-   ```
+A dry run does steps 1 and 2 for the version in `Cargo.toml` (the last release) and pushes nothing. To run them locally, in the `nixos/nix` image:
 
-2. Commit `pkg/nixpkgs/package.nix` to `main`.
-3. Bring it to nixpkgs, after the maintainer has seen the commit and the pull request text. Until the package is merged, the pull request on NixOS/nixpkgs (from the maintainer's fork) carries two commits, `maintainers: add yazeed` and `proc-cli: init at X.Y.Z`; each release updates it to the new version. Once it is merged, nixpkgs' update bot opens `proc-cli: A -> B` after a release: check its hashes match step 1 and its build passes, and approve it as the package's maintainer. nixpkgs asks commits written with an AI assistant to say so with an `Assisted-by:` trailer.
+```bash
+docker run --rm --cpus 4 -v "$PWD":/work -w /work -e NIX_CONFIG="experimental-features = nix-command flakes" \
+  nixos/nix sh pkg/nixpkgs/update.sh X.Y.Z    # ends "built and tested: proc X.Y.Z"
+```
+
+Once the package is merged, `update-fork.sh` does nothing, and nixpkgs' update bot opens `proc-cli: A -> B` after a release: check its hashes match the job's and its build passes, and approve it as the package's maintainer.
 
 ### After the tag: Ubuntu PPA
 
@@ -167,21 +172,25 @@ It builds in an `ubuntu:26.04` container (`pkg/ppa/build-source.sh`), signs with
 
 ### After the tag: FreeBSD port
 
-`sysutils/proc-cli` (`pkg/freebsd/`) was submitted as [bug 300492](https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=300492) and waits for a ports committer. Every release moves it to the new version:
+`sysutils/proc-cli` (`pkg/freebsd/`) was submitted as [bug 300492](https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=300492) and waits for a ports committer. The release's `update-freebsd` job moves it to each release:
 
-1. In a FreeBSD VM with a ports tree (`git clone https://git.FreeBSD.org/ports.git`), copy `pkg/freebsd/*` to `sysutils/proc-cli/`, set `DISTVERSION`, then `make makesum`, `make extract BATCH=yes`, `make cargo-crates > Makefile.crates`, and `make makesum` again (the second picks up the crates). Extract first: on a port that isn't extracted, `make cargo-crates` prints the framework's progress lines (`===> License MIT accepted…`) into `Makefile.crates` too, as it did on the first 2.3.0 run. Its first line must be `CARGO_CRATES=`. Build and check it with `BATCH=yes` (without it, a dependency's options dialog waits for a terminal nobody is at): `make stage check-plist stage-qa package BATCH=yes` and, after `make clean`, `portlint -AC` must pass, and the installed package's `proc --version` prints the new version. The ports tree's `lang/rust` must match the installed `rust` package, or the build starts compiling Rust itself: a ports tree from the main branch needs pkg's `latest` branch (`/usr/local/etc/pkg/repos/FreeBSD.conf` with `url: "pkg+https://pkg.FreeBSD.org/${ABI}/latest"` and `mirror_type: "srv"`), not `quarterly` (2.3.0: the tree wanted Rust 1.99.1, quarterly had 1.98.1). Until the port is committed, the patch also adds `SUBDIR += proc-cli` to `sysutils/Makefile`, in alphabetical order.
-2. Copy the changed files back to `pkg/freebsd/` and commit them to `main`.
-3. Make the patch (`git format-patch` in the ports tree). Until bug 300492 is committed, attach it there and mark the old patch obsolete; once the port is in, each release is a new bug in Ports & Packages → Individual Port(s), `[PATCH] sysutils/proc-cli: Update to X.Y.Z`. Either way the maintainer files it from the Bugzilla account `me@yazeed.com` (the port's `MAINTAINER`), ticks "patch" (Bugzilla reads `git format-patch` output as a mailbox otherwise) and sets `maintainer-approval` to `+`.
+1. `pkg/freebsd/update-port.sh X.Y.Z OUT_DIR` runs in a FreeBSD VM with a ports tree (`git clone --depth 1 https://git.FreeBSD.org/ports.git`). While the port is not in the tree it starts from `pkg/freebsd/*`; once it is, from the tree's own port, which a committer may have changed. It sets `DISTVERSION`, then runs `make makesum`, `make extract`, `make cargo-crates > Makefile.crates` and `make makesum` again (the second picks up the crates), all with `BATCH=yes` (without it, a dependency's options dialog waits for a terminal nobody is at). Extract first: on a port that isn't extracted, `make cargo-crates` prints the framework's progress lines (`===> License MIT accepted…`) into `Makefile.crates` too, as it did on the first 2.3.0 run; the script stops unless the list starts with `CARGO_CRATES=` and has none. Then `make stage check-plist stage-qa package`, the package installed and its `proc --version` checked, `make clean` and `portlint -AC`. A new port also gets `SUBDIR += proc-cli` in `sysutils/Makefile`, in alphabetical order. It copies the port's files back to `pkg/freebsd/` and writes the patch (`git format-patch`, author `me@yazeed.com`) and its kind, `new` or `update`, to OUT_DIR. The ports tree's `lang/rust` must match the installed `rust` package, or the build starts compiling Rust itself: a ports tree from the main branch needs pkg's `latest` branch (`/usr/local/etc/pkg/repos/FreeBSD.conf` with `url: "pkg+https://pkg.FreeBSD.org/${ABI}/latest"` and `mirror_type: "srv"`), not `quarterly` (2.3.0: the tree wanted Rust 1.99.1, quarterly had 1.98.1); the job sets it up that way.
+2. `pkg/freebsd/file-patch.sh X.Y.Z OUT_DIR --file` files it as the maintainer (`FREEBSD_BUGZILLA_API_KEY`, a key of the Bugzilla account `me@yazeed.com`, the port's `MAINTAINER`): a `new` patch is attached to bug 300492 as a patch with `maintainer-approval` `+`, and the patches it replaces there are marked obsolete after it; an `update` patch opens a new bug in Ports & Packages → Individual Port(s), `[PATCH] sysutils/proc-cli: Update to X.Y.Z`, and is attached to it the same way. Run again, it files nothing it has filed already.
+3. Commit the job's `pkg/freebsd/` files to `main`: they are in the run's `freebsd-port` artifact (`gh run download <run id> -n freebsd-port`), with the patch.
 
-To automate once the port is in: a workflow job that runs step 1 in a FreeBSD VM, as `build-bsd` does, and uploads the patch, leaving only the filing.
+A dry run does step 1 for the version in `Cargo.toml` (the last release) and only says what step 2 would file.
 
 ### After the tag: pkgsrc
 
-`sysutils/proc-cli` (`pkg/pkgsrc/`) is in pkgsrc itself, imported at 2.2.0 by Marcin Gondek (drixter) on 2026-11-04; `wip/proc-cli` was removed then. Thomas Klausner (wiz) named two ways to send an update: a diff through a problem report at https://gnats.netbsd.org for a small change such as a version bump, or the new version re-added to pkgsrc-wip (account `yazeed`, key `~/.ssh/pkgsrc-wip` on the maintainer's Mac) for a committer to take. Every release sends one:
+`sysutils/proc-cli` (`pkg/pkgsrc/`) is in pkgsrc itself, imported at 2.2.0 by Marcin Gondek (drixter) on 2026-11-04; `wip/proc-cli` was removed then. Thomas Klausner (wiz) named two ways to send an update: a diff through a problem report at https://gnats.netbsd.org for a small change such as a version bump, or the new version re-added to pkgsrc-wip (account `yazeed`, key `~/.ssh/pkgsrc-wip` on the maintainer's Mac) for a committer to take. Every release sends a problem report.
 
-1. In a NetBSD VM with a current pkgsrc checked out, copy `pkg/pkgsrc/*` to `sysutils/proc-cli/`, set `DISTNAME`, then `make print-cargo-depends > cargo-depends.mk` and `make makesum`. `make package`, the installed `proc --version` and `pkglint` must pass. Build against a quarterly branch if trunk needs a newer system library than the NetBSD release has (2.2.0: trunk wanted libunwind >= 22.1).
-2. Copy the changed files back to `pkg/pkgsrc/` and commit them to `main`; update `COMMIT_MSG` to the version.
-3. Send it: `cvs diff -u` (or `diff -ru` against the tree) of `sysutils/proc-cli` attached to a gnats problem report, category `pkg`, synopsis `sysutils/proc-cli: update to X.Y.Z`. The maintainer files it; a pkgsrc developer commits it.
+The release's `update-pkgsrc` job prepares it; the report itself is filed by hand, since the gnats form has a check for people:
+
+1. `pkg/pkgsrc/update-package.sh X.Y.Z QUARTER OUT_DIR` runs in a NetBSD 11.0 VM. It takes the package as it is on pkgsrc trunk (NetBSD/pkgsrc's GitHub mirror), so the diff applies there, sets `DISTNAME`, runs `make makesum`, `make print-cargo-depends > cargo-depends.mk` (keeping trunk's `$NetBSD$` line) and `make makesum` again, then `make package install`, the installed `proc --version`, `make clean` and `pkglint`. It builds in the quarterly branch NetBSD's binary packages come from (the job reads it from where `…/packages/NetBSD/x86_64/11.0` points, `11.0_2026Q3` for 2.3.0), because a branch whose `lang/rust` differs from the binary `rust` builds Rust itself. It copies the package's files back to `pkg/pkgsrc/` and writes `proc-cli-X.Y.Z-pkgsrc.diff` (`diff -ruN`, applied with `patch -p1` from the pkgsrc root), the report's description (`pkg/pkgsrc/COMMIT_MSG`'s body, then what was tested where) and, from the job, `gnats-fields.json` with every field of the form. `COMMIT_MSG` is written for the version before the tag (step 4); the script stops if its first line is not `sysutils/proc-cli: update to X.Y.Z`.
+2. Commit the job's `pkg/pkgsrc/` files to `main`: they are in the run's `pkgsrc-update` artifact (`gh run download <run id> -n pkgsrc-update`), with the diff and `gnats-fields.json`.
+3. File the report at https://www.netbsd.org/cgi-bin/sendpr.cgi?gndb=netbsd with the fields from `gnats-fields.json` (category `pkg`, synopsis `sysutils/proc-cli: update to X.Y.Z`, the diff in "fix"). The form is filled in the maintainer's browser; the maintainer answers its check and submits. A pkgsrc developer commits it.
+
+The other way Thomas Klausner named, re-adding the version to pkgsrc-wip for a committer to take, stays for changes bigger than an update.
 
 ## 6. Verify CI
 
@@ -201,7 +210,10 @@ After tag push, monitor GitHub Actions:
 - [ ] "Update COPR" passed: the build for the new version succeeded on every chroot (https://copr.fedorainfracloud.org/coprs/yazeed/proc-cli/builds/)
 - [ ] The "Install the PyPI wheel" jobs passed (Linux x86_64 and aarch64, Alpine, macOS arm64 and x86_64, Windows)
 - [ ] PyPI published: https://pypi.org/project/proc-cli/ shows the new version
-- [ ] The after-the-tag steps are done: nixpkgs, the Ubuntu PPA, the FreeBSD port's patch filed, the pkgsrc update sent (step 5)
+- [ ] "Update nixpkgs" passed: https://github.com/NixOS/nixpkgs/pull/581248 is titled `proc-cli: init at X.Y.Z` and its checks pass; the job's `package.nix` is committed to `main`
+- [ ] "Update the FreeBSD port" passed: the patch for the new version is on https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=300492 (or its own update bug, once the port is committed) with `maintainer-approval+`; the job's `pkg/freebsd/` files are committed to `main`
+- [ ] "Update pkgsrc" passed, and its `pkgsrc-update` artifact has the diff and `gnats-fields.json`
+- [ ] The after-the-tag steps are done: nixpkgs, the Ubuntu PPA, the FreeBSD port, the pkgsrc update sent (step 5)
 
 ## 7. Post-Release Verification
 
@@ -320,10 +332,13 @@ On tag push, GitHub Actions handles:
 10. **winget**: `update-winget` opens the pull request for the new version on microsoft/winget-pkgs from the `yazeed/winget-pkgs` fork, with `WINGET_TOKEN` (winget-releaser; the fork must keep that name). It skips, with a notice, until a first version of `yazeed.proc-cli` is in winget-pkgs
 11. **COPR**: `update-copr` sends the version to the project's custom webhook (`COPR_WEBHOOK`). COPR runs the package's build script (`pkg/copr/copr-build.sh`, kept in COPR), which fetches `pkg/copr/sources.sh` and the spec at the tag and makes the source RPM: the spec at that version with a changelog entry, the tag's tarball and every crate `Cargo.lock` names. COPR then builds it for each chroot of `yazeed/proc-cli` (Fedora, EPEL 9 and 10, Amazon Linux 2023); the job follows the build on COPR's API and fails if it fails. Fedora's new releases join the project by themselves ("Follow Fedora branching"). To change the script COPR keeps, edit the file and run `copr-cli edit-package-custom proc-cli --script pkg/copr/copr-build.sh --script-builddeps "curl cargo tar xz"`; `pkg/copr/srpm.sh X.Y.Z` builds the same source RPM locally
 12. **PyPI**: `pip install proc-cli` (also `pipx` and `uv tool`). `package-pypi` repacks the five release binaries into five wheels with `pkg/pypi/build-wheels.py` (standard library only; no maturin, no second Rust build): `manylinux_2_17`/`manylinux2014`/`musllinux_1_1` for Linux x86_64 and aarch64 (the static musl binaries), `macosx_10_12_x86_64` and `macosx_11_0_arm64` (each binary's own minimum macOS, read with `vtool -show-build`; check it again when the build target changes) and `win_amd64`, each holding the binary as the `proc` command. It checks the metadata with `twine check` and expects exactly five wheels. `test-pypi` installs the wheel with pip on its own OS (Ubuntu x86_64 and arm64, an Alpine container for musl, macOS arm64 and Intel, Windows) with `pkg/pypi/test-install.sh` and checks `proc --version`. `publish-pypi` runs for a tag, after the GitHub Release and every `test-pypi` job, and uploads the wheels with trusted publishing (environment `pypi`). The wheels are not release files. There is no TestPyPI run: its `proc-cli` belongs to an unrelated project
+13. **nixpkgs**: `update-nixpkgs` moves `pkg/nixpkgs/package.nix` to the release with its hashes, builds it with its tests, and brings it to the nixpkgs pull request with `NIXPKGS_FORK_TOKEN` (see "After the tag: nixpkgs"). It does nothing once nixpkgs has the package
+14. **FreeBSD port**: `update-freebsd` moves `sysutils/proc-cli` to the release in a FreeBSD VM with a ports tree, builds and checks it, and files the patch with FreeBSD's Bugzilla with `FREEBSD_BUGZILLA_API_KEY` (see "After the tag: FreeBSD port")
+15. **pkgsrc**: `update-pkgsrc` moves `sysutils/proc-cli` to the release in a NetBSD VM, builds and checks it, and uploads the diff and the gnats form's fields; the report is filed by hand (see "After the tag: pkgsrc")
 
 The GitHub Release, and so every job after it, waits on `check-credentials`, which runs on every tag and dry run (step 1). Docker's workflow runs on its own and logs in itself.
 
-Nix has nothing to publish: the flake lives in the repository, so `nix run github:yazeed/proc-cli/vX.Y.Z` works as soon as the tag is pushed, and CI's Nix jobs have already built and tested the flake on main. The nixpkgs package (`nix run nixpkgs#proc-cli`) is moved to each release by hand until it is merged, and by the nixpkgs update bot after (see "After the tag: nixpkgs").
+Nix has nothing to publish: the flake lives in the repository, so `nix run github:yazeed/proc-cli/vX.Y.Z` works as soon as the tag is pushed, and CI's Nix jobs have already built and tested the flake on main. The nixpkgs package (`nix run nixpkgs#proc-cli`) is moved to each release by `update-nixpkgs` until it is merged, and by the nixpkgs update bot after (see "After the tag: nixpkgs").
 
 nfpm is pinned in `release.yml` (`NFPM_VERSION`) with the SHA-256 of its Linux x86_64 tarball (`NFPM_SHA256`, from that release's `checksums.txt`). To update it, change both together, then rebuild the packages and run the install check in step 7.
 
@@ -342,6 +357,8 @@ Configure in GitHub repo settings → Secrets:
 | `APT_SIGNING_KEY` | The apt repository's signing key (`proc-cli apt repository`, fingerprint `19AD 1FFA 67E9 0A13 9579 7473 DC42 B7C2 51B0 33F3`), armored, no passphrase; used only for `/apt` |
 | `WINGET_TOKEN` | Classic PAT with `public_repo` and `workflow`, for the winget pull requests |
 | `COPR_WEBHOOK` | The custom webhook address of `yazeed/proc-cli`'s `proc-cli` package (COPR → the project's Integrations page); it does not expire |
+| `NIXPKGS_FORK_TOKEN` | Token that can push to `yazeed/nixpkgs` and retitle its pull request on NixOS/nixpkgs, for `update-nixpkgs` |
+| `FREEBSD_BUGZILLA_API_KEY` | API key of the bugs.freebsd.org account `me@yazeed.com` (Preferences → API Keys), for `update-freebsd` to file the port's patch |
 
 The PPA's signing key is not a secret here: it stays on the maintainer's Mac (see "After the tag: Ubuntu PPA").
 
