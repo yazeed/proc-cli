@@ -375,6 +375,40 @@ fn the_table_shows_pid_name_user_cpu_mem_uptime_command() {
 }
 
 #[test]
+fn a_tree_line_shows_cpu_and_memory_of_a_process_the_os_read() {
+    let owned = Owned::listener();
+    let pid = owned.pid().to_string();
+    let (out, _, code) = run(plain_cmd(), &["tree", &pid]);
+    assert_eq!(code, 0, "{out}");
+    let line = out
+        .lines()
+        .find(|line| line.contains(&format!("[{pid}]")))
+        .unwrap_or_else(|| panic!("no line for the listener in {out}"));
+    let figures = regex::Regex::new(r"\] \d+\.\d% \d+(\.\d)?(KB|MB|GB)").unwrap();
+    assert!(
+        figures.is_match(line),
+        "CPU and memory after the PID: {line}"
+    );
+}
+
+#[test]
+fn wait_verbose_lists_cpu_and_memory_of_a_process_the_os_read() {
+    let owned = Owned::listener();
+    let pid = owned.pid().to_string();
+    let (out, _, code) = run(plain_cmd(), &["wait", &pid, "--timeout", "1", "--verbose"]);
+    assert_eq!(code, 1, "{out}");
+    let line = out
+        .lines()
+        .find(|line| line.contains(&format!("[PID {pid}]")))
+        .unwrap_or_else(|| panic!("no line for the listener in {out}"));
+    let figures = regex::Regex::new(r"\] - \d+\.\d% CPU, \d+(\.\d)?(KB|MB|GB)$").unwrap();
+    assert!(
+        figures.is_match(line),
+        "CPU and memory after the PID: {line}"
+    );
+}
+
+#[test]
 fn verbose_adds_ppid_status_dir_uncut() {
     let owned = Owned::listener();
     let (out, _, code) = run(plain_cmd(), &["by", &owned.name, "--verbose"]);

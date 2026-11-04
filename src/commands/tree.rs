@@ -16,7 +16,7 @@ use crate::core::{
 };
 use crate::error::{ProcError, Result};
 use crate::out_println;
-use crate::ui::{format_memory, plural, uptime_label, Printer};
+use crate::ui::{plural, uptime_label, usage_label, Printer};
 use clap::Args;
 use colored::*;
 use serde::Serialize;
@@ -448,14 +448,13 @@ impl TreeCommand {
             let status_indicator = status_indicator(proc.status);
 
             out_println!(
-                "{}{}{} {} [{}] {:.1}% {}{}",
+                "{}{}{} {} [{}]{}{}",
                 prefix.bright_black(),
                 connector.bright_black(),
                 status_indicator,
                 proc.name.white().bold(),
                 proc.pid.to_string().cyan(),
-                proc.cpu_percent,
-                format_memory(proc.memory_mb),
+                usage_label(proc),
                 uptime_label(proc.uptime_secs).bright_black()
             );
         }
@@ -587,27 +586,25 @@ impl TreeCommand {
             if is_target {
                 // Highlight the target
                 out_println!(
-                    "{}{}{} {} [{}] {:.1}% {}{}  {}",
+                    "{}{}{} {} [{}]{}{}  {}",
                     indent.bright_black(),
                     connector.bright_black(),
                     status_indicator,
                     proc.name.cyan().bold(),
                     proc.pid.to_string().cyan().bold(),
-                    proc.cpu_percent,
-                    format_memory(proc.memory_mb),
+                    usage_label(proc),
                     uptime_label(proc.uptime_secs).bright_black(),
                     "← target".yellow()
                 );
             } else {
                 out_println!(
-                    "{}{}{} {} [{}] {:.1}% {}{}",
+                    "{}{}{} {} [{}]{}{}",
                     indent.bright_black(),
                     connector.bright_black(),
                     status_indicator,
                     proc.name.white(),
                     proc.pid.to_string().cyan(),
-                    proc.cpu_percent,
-                    format_memory(proc.memory_mb),
+                    usage_label(proc),
                     uptime_label(proc.uptime_secs).bright_black()
                 );
             }

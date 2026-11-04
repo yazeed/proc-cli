@@ -2,7 +2,7 @@
 //!
 //! Provides common string formatting, truncation, and colorization.
 
-use crate::core::ProcessStatus;
+use crate::core::{Process, ProcessStatus};
 use colored::*;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -220,6 +220,20 @@ pub fn format_memory(memory_mb: f64) -> String {
     }
 }
 
+/// CPU (`"0.3%"`) and memory (`"6.1MB"`) of a process, when the OS gave them; `None`
+/// when it did not (see [`Process::read_by_os`]), so no view shows a 0 that nobody
+/// measured. The one place the one-line views (tree, wait) take both from.
+pub fn cpu_and_memory(process: &Process) -> Option<(String, String)> {
+    let cpu = format!("{:.1}%", process.cpu_percent);
+    let memory = format_memory(process.memory_mb);
+    process.read_by_os().then_some((cpu, memory))
+}
+
+/// The CPU and memory of a tree line, `" 0.3% 6.1MB"`, or empty when the OS gave none
+pub fn usage_label(process: &Process) -> String {
+    cpu_and_memory(process).map_or_else(String::new, |(cpu, memory)| format!(" {cpu} {memory}"))
+}
+
 /// Colorize a process status string based on the status variant.
 pub fn colorize_status(status: &ProcessStatus, status_str: &str) -> ColoredString {
     match status {
@@ -245,6 +259,53 @@ mod tests {
         "🚀🚀🚀 deploy 🚀🚀🚀 a very long emoji argument line 🚀🚀🚀",
         "Ωmega-Δelta-Σigma-Πi-Φphi-Ψpsi-very-long-name",
     ];
+
+    /// A record with the figures given and no CPU time
+    fn process_with(cpu_percent: f32, memory_mb: f64) -> Process {
+        Process {
+            pid: 7,
+            name: "p7".to_string(),
+            exe_path: None,
+            cwd: None,
+            command: None,
+            argv0: None,
+            raw: None,
+            cpu_percent,
+            memory_mb,
+            status: ProcessStatus::Sleeping,
+            user: None,
+            parent_pid: None,
+            start_time: None,
+            uptime_secs: None,
+            parent_name: None,
+            cpu_time_secs: None,
+            open_files: None,
+            child_count: None,
+        }
+    }
+
+    #[test]
+    fn the_figures_of_a_process_the_os_read_are_shown() {
+        // memory in use is a reading on every OS
+        let read = process_with(1.5, 6.1);
+        assert_eq!(
+            cpu_and_memory(&read),
+            Some(("1.5%".to_string(), "6.1MB".to_string()))
+        );
+        assert_eq!(usage_label(&read), " 1.5% 6.1MB");
+    }
+
+    #[test]
+    fn a_process_the_os_gave_nothing_for_gets_no_zero_figures() {
+        // 0% and 0KB with no CPU time: not read on macOS and Windows, a reading elsewhere
+        let unread = process_with(0.0, 0.0);
+        if cfg!(any(target_os = "macos", windows)) {
+            assert_eq!(cpu_and_memory(&unread), None);
+            assert_eq!(usage_label(&unread), "");
+        } else {
+            assert_eq!(usage_label(&unread), " 0.0% 0KB");
+        }
+    }
 
     #[test]
     fn truncate_string_never_panics_at_any_width() {
