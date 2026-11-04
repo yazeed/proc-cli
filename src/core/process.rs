@@ -2565,19 +2565,22 @@ mod tests {
             .stdin(std::process::Stdio::null())
             .spawn()
             .expect("spawn a shell");
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-        while std::time::Instant::now() < deadline {
-            // wait first: the shell needs a moment to exit, and a check that
-            // can succeed at once would leave the wait a line no run covers
-            std::thread::sleep(std::time::Duration::from_millis(20));
+        let is_zombie = || {
             let ps = std::process::Command::new("ps")
                 .args(["-o", "stat=", "-p", &child.id().to_string()])
                 .output()
                 .expect("run ps");
-            if String::from_utf8_lossy(&ps.stdout).trim().starts_with('Z') {
-                break;
-            }
-        }
+            String::from_utf8_lossy(&ps.stdout).trim().starts_with('Z')
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        // Wait, then look, until `ps` shows the zombie or the deadline passes.
+        // All of it is the loop's condition: a loop whose lines run only on
+        // some timings leaves one uncovered on some runs (the coverage gate
+        // failed both ways on 2026-11-04)
+        while std::time::Instant::now() < deadline && {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            !is_zombie()
+        } {}
         child
     }
 
