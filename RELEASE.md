@@ -107,7 +107,7 @@ Update version in ALL of these files:
 
 Update and verify all docs are complete:
 
-- [ ] `pkg/pkgsrc/COMMIT_MSG` — the commit message the pkgsrc committer pastes as it is (the committer asked for "a few lines" on 2.3.0, as the CHANGELOG is long): `sysutils/proc-cli: update to X.Y.Z`, a blank line, `Changes since A.B.C:`, then one to five `- ` bullets of one line each (at most 72 characters), plain English, only what a user of the package would notice. Install channels, release tooling and docs stay out. `update-pkgsrc` stops if it isn't in that shape or names another version, and puts it at the top of the report's description under "Suggested commit message:", followed by the CHANGELOG address and what it tested. 2.3.0's:
+- [ ] `pkg/pkgsrc/COMMIT_MSG` — the commit message the pkgsrc committer pastes as it is: `sysutils/proc-cli: update to X.Y.Z`, a blank line, `Changes since A.B.C:`, then one to five `- ` bullets of one line each (at most 72 characters), plain English, only what a user of the package would notice. Install channels, release tooling and docs stay out. `update-pkgsrc` stops if it isn't in that shape or names another version, and puts it at the top of the report's description under "Suggested commit message:", followed by the CHANGELOG address and what it tested. 2.3.0's:
 
   ```
   sysutils/proc-cli: update to 2.3.0
