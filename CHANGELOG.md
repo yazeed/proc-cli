@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **NetBSD's pkgsrc, `sysutils/proc-cli`.** pkgsrc imported proc 2.2.0 on 2026-11-04 (Marcin Gondek), from the pkgsrc-wip package, which is gone. Each release now goes to pkgsrc as a diff a pkgsrc developer commits (RELEASE.md, "After the tag: pkgsrc"); the README and the install page name the package
+- **NetBSD's pkgsrc, `sysutils/proc-cli`.** pkgsrc imported proc 2.2.0 on 2026-11-04, from the pkgsrc-wip package, which is gone. Each release now goes to pkgsrc as a diff a pkgsrc developer commits (RELEASE.md, "After the tag: pkgsrc"); the README and the install page name the package
 
 ### Changed
 

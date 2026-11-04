@@ -107,7 +107,7 @@ Update version in ALL of these files:
 
 Update and verify all docs are complete:
 
-- [ ] `pkg/pkgsrc/COMMIT_MSG` — the commit message the pkgsrc committer pastes as it is (Marcin Gondek asked for "a few lines" on 2.3.0, as the CHANGELOG is long): `sysutils/proc-cli: update to X.Y.Z`, a blank line, `Changes since A.B.C:`, then one to five `- ` bullets of one line each (at most 72 characters), plain English, only what a user of the package would notice. Install channels, release tooling and docs stay out. `update-pkgsrc` stops if it isn't in that shape or names another version, and puts it at the top of the report's description under "Suggested commit message:", followed by the CHANGELOG address and what it tested. 2.3.0's:
+- [ ] `pkg/pkgsrc/COMMIT_MSG` — the commit message the pkgsrc committer pastes as it is (the committer asked for "a few lines" on 2.3.0, as the CHANGELOG is long): `sysutils/proc-cli: update to X.Y.Z`, a blank line, `Changes since A.B.C:`, then one to five `- ` bullets of one line each (at most 72 characters), plain English, only what a user of the package would notice. Install channels, release tooling and docs stay out. `update-pkgsrc` stops if it isn't in that shape or names another version, and puts it at the top of the report's description under "Suggested commit message:", followed by the CHANGELOG address and what it tested. 2.3.0's:
 
   ```
   sysutils/proc-cli: update to 2.3.0
@@ -193,7 +193,7 @@ A dry run does step 1 for the version in `Cargo.toml` (the last release) and onl
 
 ### After the tag: pkgsrc
 
-`sysutils/proc-cli` (`pkg/pkgsrc/`) is in pkgsrc itself, imported at 2.2.0 by Marcin Gondek (drixter) on 2026-11-04; `wip/proc-cli` was removed then. Thomas Klausner (wiz) named two ways to send an update: a diff through a problem report at https://gnats.netbsd.org for a small change such as a version bump, or the new version re-added to pkgsrc-wip (account `yazeed`, key `~/.ssh/pkgsrc-wip` on the maintainer's Mac) for a committer to take. Every release sends a problem report.
+`sysutils/proc-cli` (`pkg/pkgsrc/`) is in pkgsrc itself, imported at 2.2.0 on 2026-11-04; `wip/proc-cli` was removed then. The pkgsrc developers named two ways to send an update: a diff through a problem report at https://gnats.netbsd.org for a small change such as a version bump, or the new version re-added to pkgsrc-wip (account `yazeed`, key `~/.ssh/pkgsrc-wip` on the maintainer's Mac) for a committer to take. Every release sends a problem report.
 
 The release's `update-pkgsrc` job prepares it; the report itself is filed by hand, since the gnats form has a check for people:
 
@@ -201,7 +201,7 @@ The release's `update-pkgsrc` job prepares it; the report itself is filed by han
 2. Commit the job's `pkg/pkgsrc/` files to `main`: they are in the run's `pkgsrc-update` artifact (`gh run download <run id> -n pkgsrc-update`), with the diff and `gnats-fields.json`.
 3. File the report at https://www.netbsd.org/cgi-bin/sendpr.cgi?gndb=netbsd with the fields from `gnats-fields.json` (category `pkg`, synopsis `sysutils/proc-cli: update to X.Y.Z`, the diff in "fix"). The form is filled in the maintainer's browser; the maintainer answers its check and submits. A pkgsrc developer commits it.
 
-The other way Thomas Klausner named, re-adding the version to pkgsrc-wip for a committer to take, stays for changes bigger than an update.
+The other way, re-adding the version to pkgsrc-wip for a committer to take, stays for changes bigger than an update.
 
 ## 6. Verify CI
 

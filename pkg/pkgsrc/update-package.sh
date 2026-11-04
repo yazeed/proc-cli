@@ -96,9 +96,12 @@ echo "installed and run: $printed"
 make clean
 pkglint
 
+# The repository's copies keep a bare $NetBSD$: trunk's expanded ID names
+# whoever committed it last. b/ keeps trunk's, so the diff applies
 for f in $files; do
     cp "$pkg/$f" "$b/$f"
-    cp "$pkg/$f" "$here/$f"
+    # shellcheck disable=SC2016 # the $ signs are pkgsrc's, not the shell's
+    sed 's/\$NetBSD:[^$]*\$/$NetBSD$/' "$pkg/$f" > "$here/$f"
 done
 
 cd "$out"
