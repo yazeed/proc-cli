@@ -67,7 +67,7 @@ proc composes like any Unix tool: its output pipes into `jq`, `head` or the next
 Every feature solves a real, repeated problem. We don't add features because they're technically interesting or because a competitor has them. We add features when users hit the same friction repeatedly.
 
 ### Easy to Remember
-Consistent patterns mean knowing one command teaches you all commands. Each intent has one obvious spelling, and a spelling means the same thing in every command. Habits from other tools keep working: `ps` lists and `top` watches, and where proc accepts a borrowed spelling it answers in its own words, so the habit turns into knowledge of proc. The cognitive load of proc should be near zero after the first use.
+Consistent patterns mean knowing one command teaches you all commands. Each intent has one obvious spelling, and a spelling means the same thing in every command. Habits from other tools keep working: `ps` lists and `top` watches. The cognitive load of proc should be near zero after the first use.
 
 ## The Feature Test
 
