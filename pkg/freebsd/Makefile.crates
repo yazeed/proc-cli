@@ -1,3 +1,9 @@
+===>  License MIT accepted by the user
+===>   proc-cli-2.3.0 depends on file: /usr/local/sbin/pkg - found
+===> Fetching all distfiles required by proc-cli-2.3.0 for building
+===>  Extracting for proc-cli-2.3.0
+=> SHA256 Checksum OK for yazeed-proc-cli-v2.3.0_GH0.tar.gz.
+===>  Moving crates to /usr/ports/sysutils/proc-cli/work/proc-cli-2.3.0//cargo-crates
 CARGO_CRATES=	aho-corasick-1.1.5 \
 		anstream-1.0.0 \
 		anstyle-1.0.14 \
