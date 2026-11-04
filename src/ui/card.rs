@@ -119,8 +119,10 @@ pub fn write_card(
     }
 }
 
-/// Cuts `name (PID n)` in the name, so the PID stays whole; when even the PID
-/// does not fit, the whole value is cut
+/// Cuts `name (PID n)` in the name, and `address → PID n` (a peer proc knows only by
+/// PID) in the address, so the PID stays whole; when even the PID does not fit, the
+/// whole value is cut. A nameless peer keeps its arrow while the room allows it, and
+/// then keeps `PID n` alone.
 fn cut_keeping_pid(value: &str, room: usize) -> String {
     if value.width() <= room {
         return value.to_string();
@@ -129,6 +131,15 @@ fn cut_keeping_pid(value: &str, room: usize) -> String {
         let (name, pid) = value.split_at(at);
         if pid.width() < room {
             return truncate_string(name, room - pid.width()) + pid;
+        }
+    } else if let Some(at) = value.rfind(" → PID ") {
+        let (address, arrow_and_pid) = value.split_at(at);
+        if arrow_and_pid.width() < room {
+            return truncate_string(address, room - arrow_and_pid.width()) + arrow_and_pid;
+        }
+        let pid = arrow_and_pid.trim_start_matches(" → ");
+        if pid.width() < room {
+            return truncate_string(address, room - pid.width()) + pid;
         }
     }
     truncate_string(value, room)
@@ -593,6 +604,24 @@ mod tests {
         assert_eq!(cut_keeping_pid(value, 8), truncate_string(value, 8));
     }
 
+    #[test]
+    fn a_nameless_peer_keeps_its_pid_whole_and_loses_address_first() {
+        let value = "192.168.100.200:50000 → PID 43581";
+        // fits: untouched
+        assert_eq!(cut_keeping_pid(value, 33), value);
+        // the address is cut, the arrow and PID stay
+        let cut = cut_keeping_pid(value, 20);
+        assert_eq!(cut, "192.168… → PID 43581");
+        assert_eq!(cut.width(), 20);
+        assert_eq!(cut_keeping_pid(value, 24), "192.168.100… → PID 43581");
+        // no room for the arrow: `PID n` stays, in a line of the room's width
+        let tight = cut_keeping_pid(value, 12);
+        assert_eq!(tight, "19…PID 43581");
+        assert_eq!(cut_keeping_pid(value, 10), "…PID 43581");
+        // not even the PID fits: the whole value is cut, as for a named peer
+        assert_eq!(cut_keeping_pid(value, 9), truncate_string(value, 9));
+    }
+
     /// The clock time of `secs` as the card writes it
     fn clock(secs: u64) -> String {
         let (_, _, _, h, m, s) = civil(secs as i64, local_offset(secs));
@@ -981,6 +1010,26 @@ mod tests {
             "{peer_line}"
         );
         assert!(peer_line.width() <= 50, "{peer_line}");
+    }
+
+    #[test]
+    fn a_nameless_peer_is_cut_in_its_address_and_its_pid_stays() {
+        let listening = port(3000, Some("127.0.0.1"));
+        let found = connections(&[("established", 1)], vec![peer(65317, None)], 1);
+        let ports = [CardPort {
+            port: &listening,
+            connections: Some(&found),
+        }];
+        // `127.0.0.1:65317 → PID 43581` is 27 columns; the value gets the width less 15
+        let line_at = |width: u16| {
+            let lines = render(&bare(), &ports, &options(width, false));
+            let line = lines.iter().find(|l| l.contains("PID 43581")).unwrap();
+            line.to_string()
+        };
+        assert_eq!(line_at(45), "               127.0.0.1:65317 → PID 43581");
+        assert_eq!(line_at(30), "               12… → PID 43581");
+        // too narrow for the arrow: `PID n` stays whole
+        assert_eq!(line_at(26), "               1…PID 43581");
     }
 
     #[test]
