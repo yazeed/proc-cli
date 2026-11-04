@@ -10,7 +10,7 @@
 # gets proc-cli-VERSION-pkgsrc.diff (patch -p1 from the pkgsrc root),
 # synopsis, description (pkg/pkgsrc/COMMIT_MSG as the suggested commit
 # message, the changelog's address and what was tested)
-# and environment. Runs as root on NetBSD with the rust and pkglint packages
+# and environment. Runs as root on NetBSD with the rust, pkglint and digest packages
 # installed; the release's update-pkgsrc job runs it in a vmactions VM.
 # PKGSRCDIR names an existing tree of that branch (default /usr/pkgsrc,
 # downloaded if missing).
@@ -25,6 +25,9 @@ files="DESCR Makefile PLIST cargo-depends.mk distinfo"
 trunk=https://raw.githubusercontent.com/NetBSD/pkgsrc/trunk/sysutils/proc-cli
 
 fail() { echo "update-package.sh: $*" >&2; exit 1; }
+
+# Without digest, make makesum writes a distinfo with no checksums at all
+[ -x /usr/pkg/bin/digest ] || fail "/usr/pkg/bin/digest is missing: pkg_add digest"
 
 synopsis=$(head -n 1 "$here/COMMIT_MSG")
 [ "$synopsis" = "sysutils/proc-cli: update to $version" ] ||
@@ -88,6 +91,8 @@ grep -q '^CARGO_CRATE_DEPENDS+=' "$out/cargo-depends.mk" || fail "make print-car
 { head -n 1 "$a/cargo-depends.mk"; tail -n +2 "$out/cargo-depends.mk"; } > cargo-depends.mk
 rm "$out/cargo-depends.mk"
 make makesum
+grep -q "^SHA512 (proc-cli-$version.tar.gz) = [0-9a-f]" distinfo ||
+    fail "distinfo has no checksum for proc-cli-$version.tar.gz after make makesum"
 
 make package install
 printed=$(/usr/pkg/bin/proc --version | head -n 1)

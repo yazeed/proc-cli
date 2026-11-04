@@ -990,8 +990,9 @@ jobs:
           mem: 8192
           envs: VERSION QUARTER
           # A mirror can cut a download short (CI, 2026-11-04), so a failed
-          # pkg_add is tried twice more
-          prepare: /usr/sbin/pkg_add rust pkglint || { sleep 15; /usr/sbin/pkg_add rust pkglint; } || { sleep 30; /usr/sbin/pkg_add rust pkglint; }
+          # pkg_add is tried twice more. digest is what make makesum checksums
+          # with: without it, makesum writes a distinfo with no checksums
+          prepare: /usr/sbin/pkg_add rust pkglint digest || { sleep 15; /usr/sbin/pkg_add rust pkglint digest; } || { sleep 30; /usr/sbin/pkg_add rust pkglint digest; }
           run: |
             cd "$GITHUB_WORKSPACE"
             rustc --version
