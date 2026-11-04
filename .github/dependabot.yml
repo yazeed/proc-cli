@@ -10,9 +10,14 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    # Minor and patch updates come as one pull request a week; each major
+    # update comes on its own, since a new major can change what a job does.
+    # A major update to an action release.yml uses gets the release
+    # workflow's dry run (RELEASE.md, step 1) on its branch before it is merged
     groups:
-      actions:
+      actions-minor-and-patch:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
     commit-message:
       prefix: "ci"
     ignore:
