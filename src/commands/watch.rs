@@ -266,6 +266,9 @@ impl WatchCommand {
                     processes.push(Process::from_sysinfo(*pid, proc));
                 }
             }
+            // the zombies sysinfo leaves out, which `list` shows
+            let zombies = crate::core::process::unlisted_zombies(&seen_pids);
+            processes.extend(zombies.into_iter().filter(|z| z.pid != self_pid.as_u32()));
         } else {
             for target in &targets {
                 match target {
@@ -281,9 +284,13 @@ impl WatchCommand {
                     }
                     TargetType::Pid(pid) => {
                         let sysinfo_pid = Pid::from_u32(*pid);
-                        if let Some(proc) = sys.process(sysinfo_pid) {
+                        let found = sys
+                            .process(sysinfo_pid)
+                            .map(|proc| Process::from_sysinfo(sysinfo_pid, proc))
+                            .or_else(|| crate::core::process::unlisted_zombie(*pid));
+                        if let Some(found) = found {
                             if seen_pids.insert(*pid) {
-                                processes.push(Process::from_sysinfo(sysinfo_pid, proc));
+                                processes.push(found);
                             }
                         }
                     }

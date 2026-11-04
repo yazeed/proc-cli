@@ -583,16 +583,48 @@ fn sort_by_cpu_puts_the_busiest_first_and_is_the_default() {
 
 // ---- a process with no working directory ----
 
-// Only Linux lists a zombie: macOS drops it from the process list
-#[cfg(target_os = "linux")]
-#[test]
-fn a_zombie_has_no_directory_so_in_drops_it() {
-    // A child that has exited and not been waited for is a zombie
-    let mut zombie = std::process::Command::new("sh")
+/// A child that has exited and is not reaped, once `ps` shows it as a zombie
+/// (polled with a deadline; past it the child comes back as it is and the
+/// test's own checks fail). The caller reaps it.
+#[cfg(unix)]
+fn unreaped_zombie() -> std::process::Child {
+    let child = std::process::Command::new("sh")
         .args(["-c", "exit 0"])
         .stdin(Stdio::null())
         .spawn()
         .expect("spawn a shell");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < deadline {
+        let ps = std::process::Command::new("ps")
+            .args(["-o", "stat=", "-p", &child.id().to_string()])
+            .output()
+            .unwrap();
+        if String::from_utf8_lossy(&ps.stdout).trim().starts_with('Z') {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    child
+}
+
+// A zombie is listed by watch on every Unix, by PID and in the list of all
+#[cfg(unix)]
+#[test]
+fn a_zombie_is_watched_by_pid_and_listed_among_all() {
+    let mut zombie = unreaped_zombie();
+    let pid = zombie.id();
+    let by_pid = first_frame(&[&pid.to_string()]);
+    let all = first_frame(&[]);
+    let _ = zombie.wait();
+    assert_eq!(by_pid["count"], 1, "{by_pid}");
+    assert_eq!(by_pid["processes"][0]["status"], "zombie", "{by_pid}");
+    assert!(lists(&all, pid), "zombie {pid} not among all: {all}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_zombie_has_no_directory_so_in_drops_it() {
+    let mut zombie = unreaped_zombie();
     let pid = zombie.id().to_string();
     let dir = tempfile::tempdir().unwrap();
     let dir_arg = dir
@@ -602,24 +634,14 @@ fn a_zombie_has_no_directory_so_in_drops_it() {
         .to_string_lossy()
         .into_owned();
 
-    let deadline = Instant::now() + LIMIT;
-    let seen = loop {
-        let frame = first_frame(&[&pid]);
-        if frame["count"] == 1 && frame["processes"][0]["status"] == "zombie" {
-            break frame;
-        }
-        if Instant::now() >= deadline {
-            let _ = zombie.wait();
-            panic!("the exited shell was never listed as a zombie: {frame}");
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    };
+    let seen = first_frame(&[&pid]);
     let filtered = first_frame(&[&pid, "--in", &dir_arg]);
     let _ = zombie.wait();
     assert_eq!(
         seen["processes"][0]["pid"].as_u64().unwrap().to_string(),
         pid
     );
+    assert_eq!(seen["processes"][0]["status"], "zombie", "{seen}");
     assert_eq!(filtered["count"], 0, "{filtered}");
 }
 

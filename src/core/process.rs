@@ -456,6 +456,31 @@ fn kernel_table(which: libc::c_int, arg: libc::c_int) -> Vec<u8> {
     })
 }
 
+/// The zombies the OS has that sysinfo's table leaves out and `known` does not
+/// list: macOS only (see [`macos_zombies`]), none elsewhere, where sysinfo
+/// lists them. For a view built straight from a sysinfo table.
+pub(crate) fn unlisted_zombies(known: &std::collections::HashSet<u32>) -> Vec<Process> {
+    #[cfg(target_os = "macos")]
+    return macos_zombies(known);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = known;
+        Vec::new()
+    }
+}
+
+/// The zombie with this PID that sysinfo's table leaves out: macOS only (see
+/// [`macos_zombie`]), none elsewhere
+pub(crate) fn unlisted_zombie(pid: u32) -> Option<Process> {
+    #[cfg(target_os = "macos")]
+    return macos_zombie(pid);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = pid;
+        None
+    }
+}
+
 /// libc has no kinfo_proc for macOS, so the few fields we need are read at their
 /// offsets in the 64-bit layout (checked against a live process's known values)
 #[cfg(target_os = "macos")]
