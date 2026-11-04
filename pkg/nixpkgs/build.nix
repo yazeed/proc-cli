@@ -4,9 +4,12 @@
 #   nix build -L --impure -f pkg/nixpkgs/build.nix
 # CI runs it on Linux and macOS; without Nix, in the nixos/nix image with the
 # repo mounted (RELEASE.md, "After the tag: nixpkgs").
+# It fetches only that nixpkgs: builtins.getFlake on the repository would copy
+# all of it into the store, a local target/ included (19 GB, 2026-11-04)
 let
-  flake = builtins.getFlake (toString ../..);
-  pkgs = import flake.inputs.nixpkgs { };
+  lock = builtins.fromJSON (builtins.readFile ../../flake.lock);
+  nixpkgs = builtins.fetchTree lock.nodes.${lock.nodes.root.inputs.nixpkgs}.locked;
+  pkgs = import nixpkgs { };
   lib = pkgs.lib // {
     maintainers = {
       yazeed = {
