@@ -26,6 +26,10 @@ It also marks `proc_cli::core::Process` `#[non_exhaustive]`, so a later field ne
 - **`connections` is one object.** It is a full object with `peers` at the top of `on :port` and only counts in port rows: keep that split, or always the same object.
 - **The old names are removed:** `found_count` (`info`), `initial_count`, `elapsed_seconds`, `exited[].exited_after_seconds` and `target` (`wait`; `count`, `elapsed_secs`, `exited_after_secs` and `targets` replace them) and the bare numbers of `unstick` (`found`, `recovered`, `not_stuck`, `still_stuck`, `terminated`, `failed`; `count` and `<outcome>_count` replace them). The contract test's list of deprecated names empties with them.
 
+### Both readers, everywhere
+
+PHILOSOPHY.md's "Easy for People, Complete for Programs" (added in 2.3.0) is the bar every command meets in this release, at 100%. An audit of every command and every shape (results, previews, prompts, receipts, errors) checks the default output answers first, in words, fits the terminal and shows everything with `-v`, and checks the JSON is stable, complete enough to decide without a second call, leaves an unknown value out instead of faking it, and carries facts, never instructions. Each gap it finds is fixed here or, where fixing it breaks a 2.x script, joins this list. The JSON-name changes above are part of it.
+
 ## Decided: after the 2.1.0 tag
 
 ### Nix as an official install method: the nixpkgs package

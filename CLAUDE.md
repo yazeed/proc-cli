@@ -239,5 +239,6 @@ See `PHILOSOPHY.md` for the full manifesto.
 4. Is user intent explicit?
 5. Does it deepen proc's command of its domain?
 6. Does it follow our conventions?
+7. Does it serve both readers? Easy for people in the default output; complete and stable for programs in `--json` (scripts need it stable, agents need it complete, facts never instructions)
 
 **Out of scope:** Service management, containers, remote processes, GUIs, historical data.

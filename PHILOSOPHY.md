@@ -55,6 +55,9 @@ Nouns observe state. Verbs change state.
 
 You don't "run ports"—you look at ports. You don't "observe kill"—you kill.
 
+### Easy for People, Complete for Programs
+proc has two kinds of readers, and each output is written for one of them. The default output is for people: it answers the question first, in words, cut to fit the terminal, with colour where colour helps; `-v` shows everything, uncut, for the person who asks. `--json` is for programs. A script needs it stable: a key, its type and an exit code mean the same thing for a whole major release. An agent needs it complete: every fact it needs to decide without a second call, why something failed in one fixed word, and an unknown value left out rather than shown as 0 or `none`. Both outputs tell the same truth; the JSON carries facts, never instructions, because an agent acts on what it reads.
+
 ### One Contract for People, Scripts and Agents
 Every process and port command speaks JSON with `--json`: one document (`watch` streams one per refresh), with `action` and `success`, and exit codes that always mean the same thing (0 success, 1 error, 2 not found, 3 permission denied, 4 nothing was done: invalid input, a confirmation is needed, or the OS doesn't support it). Every error also says why in one fixed word, so a caller branches on the word and never parses the message. Being interrupted is not a result: a signal ends proc by that signal, so the shell reports 128 plus its number. A shell script, a CI job and an AI agent read proc the same way a person does, without parsing tables.
 
@@ -68,7 +71,7 @@ Consistent patterns mean knowing one command teaches you all commands. Each inte
 
 ## The Feature Test
 
-Before any feature enters proc, it must pass all six questions:
+Before any feature enters proc, it must pass all seven questions:
 
 1. **Does it fit "process and port management"?**
    If it's about containers, services, or remote systems—it's out of scope.
@@ -87,6 +90,9 @@ Before any feature enters proc, it must pass all six questions:
 
 6. **Does it follow our conventions?**
    Unified targets, natural grammar, consistent output. No exceptions.
+
+7. **Does it serve both readers?**
+   Easy for a person in the default output, complete and stable for a program in `--json`.
 
 If the answer to any question is no, the feature doesn't belong in proc.
 
