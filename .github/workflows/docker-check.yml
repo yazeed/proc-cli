@@ -82,10 +82,19 @@ jobs:
           trap 'kill "$listener" "$holder" 2>/dev/null || true' EXIT
           sleep 1
 
-          docker run --rm --pid=host --net=host proc-cli:check on :4799 --json \
+          # Both run as the runner user, not root: the case most dev servers
+          # are in. The install page's command, with --cap-add SYS_PTRACE, is
+          # what lets proc in the container read another user's sockets and
+          # open files; without it, it finds no holder (the first run of this
+          # job showed that)
+          host="--pid=host --net=host --cap-add SYS_PTRACE"
+          # shellcheck disable=SC2086
+          docker run --rm $host proc-cli:check on :4799 --json \
             | jq -e --argjson pid "$listener" '[.processes[].pid] | index($pid) != null' >/dev/null
-          docker run --rm --pid=host --net=host proc-cli:check ports --json \
+          # shellcheck disable=SC2086
+          docker run --rm $host proc-cli:check ports --json \
             | jq -e '[.ports[].port] | index(4799) != null' >/dev/null
-          docker run --rm --pid=host -v /tmp/held.txt:/tmp/held.txt:ro proc-cli:check for /tmp/held.txt --json \
+          # shellcheck disable=SC2086
+          docker run --rm $host -v /tmp/held.txt:/tmp/held.txt:ro proc-cli:check for /tmp/held.txt --json \
             | jq -e --argjson pid "$holder" '[.results[].process.pid] | index($pid) != null' >/dev/null
           echo "the image works: version, list, on :port, ports, for"

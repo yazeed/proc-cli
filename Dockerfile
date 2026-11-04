@@ -32,8 +32,9 @@ RUN touch src/main.rs && cargo build --release \
 # Runtime stage: distroless static has no shell and no package manager, only
 # what a static binary uses: CA certificates, time zones and an /etc/passwd
 # with root, nobody and nonroot. It runs as root, so with --pid=host proc can
-# see and signal the host's processes. proc reads processes, ports and open
-# files from /proc, so it needs no other program
+# see and signal the host's processes; seeing the open files and sockets of a
+# process another user owns also needs --cap-add SYS_PTRACE. proc reads
+# processes, ports and open files from /proc, so it needs no other program
 FROM gcr.io/distroless/static-debian13
 
 # Copy binary from builder

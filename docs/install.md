@@ -172,10 +172,10 @@ Does not update itself. Without `/v{{ site.data.release.version }}` the flake bu
 
 ## Docker
 
-`--pid=host` lets proc see the host's processes, and `--net=host` its ports (for `on :port`, `ports` and `free`). The image is also published as `yazeed/proc`.
+`--pid=host` lets proc see the host's processes, and `--net=host` its ports (for `on :port`, `ports` and `free`). `--cap-add SYS_PTRACE` lets it see which process holds a port or a file when that process belongs to a user other than root, as most dev servers do: Docker drops that capability by default, and without it proc can't read those processes' open files and sockets. The image is also published as `yazeed/proc`.
 
 ```bash
-docker run --rm -it --pid=host --net=host yazeed/proc-cli
+docker run --rm -it --pid=host --net=host --cap-add SYS_PTRACE yazeed/proc-cli
 ```
 
 Update with `docker pull yazeed/proc-cli`.

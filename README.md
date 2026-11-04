@@ -75,10 +75,10 @@ proc free :3000 --yes             # a port target: no question
 | PyPI (new in 2.3.0) | `pip install proc-cli`, `pipx install proc-cli` or `uv tool install proc-cli` | `pip install --upgrade proc-cli` |
 | Rust | `cargo install proc-cli` (or `cargo binstall proc-cli` for the pre-built binary) | run it again |
 | Nix | `nix profile install github:yazeed/proc-cli` | no |
-| Docker | `docker run --rm -it --pid=host --net=host yazeed/proc-cli` | `docker pull yazeed/proc-cli` |
+| Docker | `docker run --rm -it --pid=host --net=host --cap-add SYS_PTRACE yazeed/proc-cli` | `docker pull yazeed/proc-cli` |
 | Release files | `.deb`, `.rpm` and binaries on the [releases page](https://github.com/yazeed/proc-cli/releases/latest) | download the new file |
 
-Every channel, with who maintains it and how it updates, is on [proc-cli.com/install](https://proc-cli.com/install). `--pid=host` lets proc in Docker see the host's processes, and `--net=host` its ports (for `on :port`, `ports` and `free`).
+Every channel, with who maintains it and how it updates, is on [proc-cli.com/install](https://proc-cli.com/install). `--pid=host` lets proc in Docker see the host's processes, `--net=host` its ports (for `on :port`, `ports` and `free`), and `--cap-add SYS_PTRACE` which process holds a port or a file when that process isn't root's (Docker drops that capability by default).
 
 The `.deb` and `.rpm` files install `proc`, its man page and its bash, zsh and fish completions. A file does not update with `apt upgrade` or `dnf upgrade`; the apt repository and COPR do.
 
