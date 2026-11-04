@@ -126,6 +126,24 @@ fn a_port_root_holds_is_in_use_not_nobodys() {
         assert!(says_so(&json), "{argv:?}: {json}");
     }
 
+    // `ports` lists what proc can see and names what it can't
+    let (json, code) = run_json(&["ports", "--json"]);
+    assert_eq!(code, 0, "{json}");
+    let unseen: Vec<u64> = json["unseen_ports"]
+        .as_array()
+        .unwrap_or_else(|| panic!("no unseen_ports: {json}"))
+        .iter()
+        .filter_map(Value::as_u64)
+        .collect();
+    assert!(unseen.contains(&u64::from(root.port)), "{json}");
+    let listing = proc_cmd().arg("ports").output().unwrap();
+    let text = String::from_utf8_lossy(&listing.stdout);
+    assert!(
+        text.contains("in use by other users' processes, which proc can't see")
+            && text.contains(&root.port.to_string()),
+        "{text}"
+    );
+
     // a port nobody holds is still not found
     let (json, code) = run_json(&["on", &nobody, "--json"]);
     assert_eq!(code, 2, "{json}");

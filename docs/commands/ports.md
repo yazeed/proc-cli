@@ -21,6 +21,8 @@ proc ports --exposed       # network-exposed only
 
 Each row says what the listener is. EXPOSURE is `local` (bound to loopback only) or `exposed` (all interfaces, another address, or none known). NAME, UPTIME and COMMAND are the holder's, as in every other table. COMMAND takes the width the other columns leave and ends with `…` where it is cut. A value proc cannot read shows as `-`: a process that ended after its port was listed keeps its port cells and the name its socket gave, and `-` in the rest.
 
+Ports held by other users' processes are left out when proc isn't root, since it can't see those processes' sockets, and on Linux and macOS a line after the table names them: `⚠ 2 ports in use by other users' processes, which proc can't see: 22, 80 (run with sudo to see them)`. It's left out with `--by`, `--in`, `--exposed` or `--local`, since proc can't tell whether a holder it can't see would match; `--range` applies to it.
+
 ## Options
 
 | Flag | Short | Description |
@@ -54,7 +56,7 @@ proc ports --in .
 
 ## JSON
 
-Each port has its listener (`port`, `protocol`, `pid`, `process_name`, `address`, `exposure`) and its holder's `command`, `user`, `uptime_secs` and `memory_mb`; a key is left out when the OS does not give it (`memory_mb` too when the memory could not be read, and MEM then shows `-`). With `--verbose` it also has `exe_path` and `connections` (`total` and `by_state`).
+Each port has its listener (`port`, `protocol`, `pid`, `process_name`, `address`, `exposure`) and its holder's `command`, `user`, `uptime_secs` and `memory_mb`; a key is left out when the OS does not give it (`memory_mb` too when the memory could not be read, and MEM then shows `-`). With `--verbose` it also has `exe_path` and `connections` (`total` and `by_state`). After `ports`, `unseen_ports` lists the ports other users' processes hold, which the list leaves out (`[]` for none); it's absent on Windows and the BSDs, which aren't checked, and with `--by`, `--in`, `--exposed` or `--local`.
 
 ```json
 { "port": 3000, "protocol": "tcp", "pid": 1234, "process_name": "node", "address": "127.0.0.1",

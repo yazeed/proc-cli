@@ -193,27 +193,19 @@ impl PortInfo {
     }
 
     /// Whether something listens on `port` whose holder proc can't see, asked
-    /// once no holder was found. Linux's tables in /proc/net, and macOS's
-    /// `netstat`, list every listening socket whoever owns it, but proc can
-    /// read the owner only of its own user's processes (every process as
-    /// root), so a listening socket on the port means another user's process
-    /// holds it. Windows and the BSDs aren't checked, and there this is false
+    /// once no holder was found: a listening socket proc found no holder for
+    /// is another user's process's (see [`listening_everyone`]). Windows and
+    /// the BSDs aren't checked, and there this is false
     pub fn in_use_unseen(port: u16) -> bool {
-        #[cfg(target_os = "linux")]
-        return Self::proc_net_tables(Path::new("/proc/net"))
-            .is_ok_and(|tables| listens_in(&tables, port));
-        #[cfg(target_os = "macos")]
-        return crate::ui::interrupt::unblocked_in_child(&mut std::process::Command::new(
-            "netstat",
-        ))
-        .args(["-an", "-p", "tcp"])
-        .output()
-        .is_ok_and(|output| netstat_listens_on(&String::from_utf8_lossy(&output.stdout), port));
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-        {
-            let _ = port;
-            false
-        }
+        listening_everyone().is_some_and(|all| all.contains(&port))
+    }
+
+    /// The ports something listens on that proc found no holder for, because
+    /// their holders are other users' processes; `visible` is every listener
+    /// proc found. Ascending. `None` where proc has no table of every socket
+    /// to ask (Windows, the BSDs)
+    pub fn listening_unseen(visible: &[PortInfo]) -> Option<Vec<u16>> {
+        listening_everyone().map(|all| unseen_among(all, visible))
     }
 
     /// Get the full process info for this port's process
@@ -733,29 +725,63 @@ pub(crate) fn visible_holders(
     Ok(holders)
 }
 
-/// Whether one of `tables` (the text of /proc/net/tcp and tcp6, each with
-/// whether it is the IPv6 table) has a listening socket on `port`
-#[cfg(any(target_os = "linux", test))]
-fn listens_in(tables: &[(String, bool)], port: u16) -> bool {
-    tables.iter().any(|(text, v6)| {
-        text.lines()
-            .skip(1)
-            .filter_map(|line| PortInfo::parse_proc_net_line(line, *v6))
-            .any(|(_, listening, _)| listening == port)
-    })
+/// Every port with a listening socket on this machine, whoever holds it. Linux's
+/// tables in /proc/net, and macOS's `netstat`, list every socket whoever owns
+/// it, while proc can read the owner only of its own user's processes (every
+/// process as root). `None` where proc has no such table (Windows, the BSDs)
+/// or can't read it
+fn listening_everyone() -> Option<std::collections::BTreeSet<u16>> {
+    #[cfg(target_os = "linux")]
+    return PortInfo::proc_net_tables(Path::new("/proc/net"))
+        .ok()
+        .map(|tables| listening_ports_in(&tables));
+    #[cfg(target_os = "macos")]
+    return crate::ui::interrupt::unblocked_in_child(&mut std::process::Command::new("netstat"))
+        .args(["-an", "-p", "tcp"])
+        .output()
+        .ok()
+        .map(|output| netstat_listening_ports(&String::from_utf8_lossy(&output.stdout)));
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    None
 }
 
-/// Whether macOS's `netstat -an -p tcp` lists a socket listening on `port`.
-/// Its rows are `PROTO RECV-Q SEND-Q LOCAL FOREIGN STATE`, the local address
-/// ending in `.<port>` (`*.4790`, `127.0.0.1.8080`, `::1.631`)
+/// The ports in `all` that no listener in `visible` holds, ascending
+fn unseen_among(all: std::collections::BTreeSet<u16>, visible: &[PortInfo]) -> Vec<u16> {
+    all.into_iter()
+        .filter(|port| !visible.iter().any(|listener| listener.port == *port))
+        .collect()
+}
+
+/// The ports with a listening socket in `tables` (the text of /proc/net/tcp
+/// and tcp6, each with whether it is the IPv6 table)
+#[cfg(any(target_os = "linux", test))]
+fn listening_ports_in(tables: &[(String, bool)]) -> std::collections::BTreeSet<u16> {
+    tables
+        .iter()
+        .flat_map(|(text, v6)| {
+            text.lines()
+                .skip(1)
+                .filter_map(|line| PortInfo::parse_proc_net_line(line, *v6))
+                .map(|(_, port, _)| port)
+        })
+        .collect()
+}
+
+/// The ports macOS's `netstat -an -p tcp` lists a listening socket on. Its rows
+/// are `PROTO RECV-Q SEND-Q LOCAL FOREIGN STATE`, the local address ending in
+/// `.<port>` (`*.4790`, `127.0.0.1.8080`, `::1.631`)
 #[cfg(any(target_os = "macos", test))]
-fn netstat_listens_on(stdout: &str, port: u16) -> bool {
-    let suffix = format!(".{port}");
-    stdout.lines().any(|line| {
-        let fields: Vec<&str> = line.split_whitespace().collect();
-        fields.get(5) == Some(&"LISTEN")
-            && fields.get(3).is_some_and(|local| local.ends_with(&suffix))
-    })
+fn netstat_listening_ports(stdout: &str) -> std::collections::BTreeSet<u16> {
+    stdout
+        .lines()
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            if fields.get(5) != Some(&"LISTEN") {
+                return None;
+            }
+            fields.get(3)?.rsplit_once('.')?.1.parse().ok()
+        })
+        .collect()
 }
 
 /// The listeners in `listening` that hold `port`, one per process: a process
@@ -1403,12 +1429,32 @@ Active Connections
         let v6 = "  sl  local_address remote_address st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n\
             \x20  0: 00000000000000000000000000000000:0050 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 222 1 0000000000000000 100 0 0 10 0\n";
         let tables = vec![(v4.to_string(), false), (v6.to_string(), true)];
-        assert!(listens_in(&tables, 22));
-        assert!(listens_in(&tables, 80));
-        // an established connection is not a listener
-        assert!(!listens_in(&tables, 8080));
-        assert!(!listens_in(&tables, 9999));
-        assert!(!listens_in(&[], 22));
+        // 22 and 80 listen; the established connection from 8080 is not a listener
+        let ports: Vec<u16> = listening_ports_in(&tables).into_iter().collect();
+        assert_eq!(ports, vec![22, 80]);
+        assert!(listening_ports_in(&[]).is_empty());
+    }
+
+    #[test]
+    fn the_ports_with_no_holder_proc_found_are_the_unseen_ones() {
+        let listener = |port: u16| PortInfo {
+            port,
+            protocol: Protocol::Tcp,
+            pid: 7,
+            process_name: "node".to_string(),
+            address: Some("127.0.0.1".to_string()),
+        };
+        let all: std::collections::BTreeSet<u16> = [22, 80, 3000, 8080].into_iter().collect();
+        assert_eq!(
+            unseen_among(all.clone(), &[listener(3000), listener(8080)]),
+            vec![22, 80]
+        );
+        assert!(unseen_among(
+            all.clone(),
+            &[listener(22), listener(80), listener(3000), listener(8080)]
+        )
+        .is_empty());
+        assert_eq!(unseen_among(all, &[]), vec![22, 80, 3000, 8080]);
     }
 
     #[test]
@@ -1420,13 +1466,10 @@ Active Connections
             tcp4       0      0  127.0.0.1.8080         *.*                    LISTEN\n\
             tcp6       0      0  ::1.631                *.*                    LISTEN\n\
             tcp4       0      0  192.168.1.5.52100      140.82.112.4.443       ESTABLISHED\n";
-        assert!(netstat_listens_on(netstat, 4790));
-        assert!(netstat_listens_on(netstat, 8080));
-        assert!(netstat_listens_on(netstat, 631));
-        // a connection is not a listener, and 479 is not 4790
-        assert!(!netstat_listens_on(netstat, 52100));
-        assert!(!netstat_listens_on(netstat, 479));
-        assert!(!netstat_listens_on("", 4790));
+        // the connection from 52100 is not a listener; the headers are no rows
+        let ports: Vec<u16> = netstat_listening_ports(netstat).into_iter().collect();
+        assert_eq!(ports, vec![631, 4790, 8080]);
+        assert!(netstat_listening_ports("").is_empty());
     }
 
     #[test]

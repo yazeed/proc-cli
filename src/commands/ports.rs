@@ -150,6 +150,20 @@ impl PortsCommand {
         // the connections of each listener
         let reading = SocketReading::read()?;
         let mut ports = reading.ports.clone();
+        // The ports other users' processes hold, which proc lists no holder
+        // for. Said only when no filter by process or address is on: proc
+        // can't tell whether a holder it can't see would pass one. `--range`
+        // filters by number, so it applies
+        let unseen =
+            (self.by_name.is_none() && self.in_dir.is_none() && !self.exposed && !self.local)
+                .then(|| PortInfo::listening_unseen(&reading.ports))
+                .flatten()
+                .map(|mut unseen| {
+                    if let Some((start, end)) = self.range {
+                        unseen.retain(|port| (start..=end).contains(port));
+                    }
+                    unseen
+                });
         // `-v` counts the connections of each listener, which takes every
         // process that holds the port, whatever the filters keep
         let listening = self.verbose.then_some(reading);
@@ -205,7 +219,7 @@ impl PortsCommand {
         };
 
         if self.json {
-            self.print_json(&ports, &holders, &connections);
+            self.print_json(&ports, &holders, &connections, unseen.as_deref());
         } else {
             let rows: Vec<PortRow> = ports
                 .iter()
@@ -215,7 +229,12 @@ impl PortsCommand {
                 })
                 .collect();
             // A failed write is recorded by `out`, which decides the exit code
-            out::recorded(self.print_human(&mut out::stdout(), &rows, screen_now()));
+            out::recorded(self.print_human(
+                &mut out::stdout(),
+                &rows,
+                screen_now(),
+                unseen.as_deref(),
+            ));
         }
 
         Ok(())
@@ -226,24 +245,37 @@ impl PortsCommand {
         out: &mut impl Write,
         rows: &[PortRow],
         screen: Screen,
+        unseen: Option<&[u16]>,
     ) -> std::io::Result<()> {
         if rows.is_empty() {
-            return writeln!(out, "{} No listening ports found", "⚠".yellow().bold());
+            writeln!(out, "{} No listening ports found", "⚠".yellow().bold())?;
+        } else {
+            writeln!(
+                out,
+                "{} Found {} listening port{}",
+                "✓".green().bold(),
+                rows.len().to_string().cyan().bold(),
+                if rows.len() == 1 { "" } else { "s" }
+            )?;
+            writeln!(out)?;
+
+            // `-v` cuts nothing and adds USER, MEM and PATH
+            let layout = TableLayout::from_flags(screen, self.verbose, false, false);
+            writeln!(out, "{}", port_table(rows, &layout))?;
+            writeln!(out)?;
         }
-
-        writeln!(
-            out,
-            "{} Found {} listening port{}",
-            "✓".green().bold(),
-            rows.len().to_string().cyan().bold(),
-            if rows.len() == 1 { "" } else { "s" }
-        )?;
-        writeln!(out)?;
-
-        // `-v` cuts nothing and adds USER, MEM and PATH
-        let layout = TableLayout::from_flags(screen, self.verbose, false, false);
-        writeln!(out, "{}", port_table(rows, &layout))?;
-        writeln!(out)
+        // The list leaves out what proc can't see, and says so
+        if let Some(unseen) = unseen.filter(|unseen| !unseen.is_empty()) {
+            let ports: Vec<String> = unseen.iter().map(u16::to_string).collect();
+            let message = format!(
+                "{} port{} in use by other users' processes, which proc can't see: {} (run with sudo to see them)",
+                unseen.len(),
+                if unseen.len() == 1 { "" } else { "s" },
+                ports.join(", ")
+            );
+            writeln!(out, "{} {}", "⚠".yellow().bold(), message.yellow())?;
+        }
+        Ok(())
     }
 
     fn print_json(
@@ -251,6 +283,7 @@ impl PortsCommand {
         ports: &[PortInfo],
         holders: &HashMap<u32, Process>,
         connections: &HashMap<(u16, u32), Connections>,
+        unseen: Option<&[u16]>,
     ) {
         let printer = Printer::from_flags(true, self.verbose);
 
@@ -271,6 +304,7 @@ impl PortsCommand {
             success: true,
             count: ports.len(),
             ports: enriched,
+            unseen_ports: unseen,
         });
     }
 }
@@ -327,6 +361,11 @@ struct PortsOutput<'a> {
     success: bool,
     count: usize,
     ports: Vec<PortWithProcess<'a>>,
+    /// The ports other users' processes hold, which `ports` can't list:
+    /// `[]` for none, absent where proc doesn't check (Windows, the BSDs) or
+    /// with a filter by process or address
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unseen_ports: Option<&'a [u16]>,
 }
 
 #[cfg(test)]
@@ -432,8 +471,12 @@ mod tests {
     }
 
     fn printed(cmd: &PortsCommand, rows: &[PortRow]) -> String {
+        printed_with(cmd, rows, None)
+    }
+
+    fn printed_with(cmd: &PortsCommand, rows: &[PortRow], unseen: Option<&[u16]>) -> String {
         let mut out = Vec::new();
-        cmd.print_human(&mut out, rows, screen()).unwrap();
+        cmd.print_human(&mut out, rows, screen(), unseen).unwrap();
         String::from_utf8(out).unwrap()
     }
 
@@ -524,8 +567,47 @@ mod tests {
             port: &port,
             process: Some(&holder),
         }];
-        assert_stops_at_a_failed_write(|w| cmd.print_human(w, &rows, screen()));
-        assert_stops_at_a_failed_write(|w| cmd.print_human(w, &[], screen()));
+        assert_stops_at_a_failed_write(|w| cmd.print_human(w, &rows, screen(), None));
+        assert_stops_at_a_failed_write(|w| cmd.print_human(w, &[], screen(), None));
+        assert_stops_at_a_failed_write(|w| cmd.print_human(w, &rows, screen(), Some(&[22])));
+    }
+
+    // A list that leaves ports out says so, after the table
+    #[test]
+    fn the_ports_other_users_hold_are_said_after_the_list() {
+        let port = PortInfo {
+            port: 3000,
+            protocol: Protocol::Tcp,
+            pid: 42,
+            process_name: "node".to_string(),
+            address: Some("127.0.0.1".to_string()),
+        };
+        let holder = process(None, Some("/bin/node"));
+        let cmd = listing(false);
+        let rows = [PortRow {
+            port: &port,
+            process: Some(&holder),
+        }];
+        let two = printed_with(&cmd, &rows, Some(&[22, 80]));
+        assert!(two.contains("Found 1 listening port"), "{two}");
+        assert!(
+            two.trim_end().ends_with(
+                "⚠ 2 ports in use by other users' processes, which proc can't see: 22, 80 (run with sudo to see them)"
+            ),
+            "{two}"
+        );
+        // one, with nothing proc can see
+        let one = printed_with(&cmd, &[], Some(&[22]));
+        assert!(one.starts_with("⚠ No listening ports found"), "{one}");
+        assert!(
+            one.contains("⚠ 1 port in use by other users' processes, which proc can't see: 22"),
+            "{one}"
+        );
+        // none hidden, or not checked: no line
+        for unseen in [Some(&[][..]), None] {
+            let none = printed_with(&cmd, &rows, unseen);
+            assert!(!none.contains("other users"), "{none}");
+        }
     }
 
     #[test]

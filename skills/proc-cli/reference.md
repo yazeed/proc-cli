@@ -244,7 +244,9 @@ No target found: exit 2 with `success: false`, `count: 0` (and `found_count: 0`)
 
 ### ports
 
-`{"action": "ports", "success": true, "count": 12, "ports": [<Port>, ...]}`
+`{"action": "ports", "success": true, "count": 12, "ports": [<Port>, ...], "unseen_ports": [22, 80]}`
+
+`unseen_ports` (Linux and macOS): the ports in use by other users' processes, which proc can't see unless it runs as root, so `ports` doesn't list them; `[]` for none. Absent on Windows and the BSDs (not checked) and with `--by`, `--in`, `--exposed` or `--local`, where proc can't tell whether an unseen holder would match. A port in it is in use: never treat it as free.
 
 Each port object is the port (as above) and what holds it, from the holder's process: `command`, `user`, `uptime_secs` and `memory_mb`. A key is absent when the OS does not give the value, or when the holder exited between listing the port and reading it (the port keys stay), never `null`. With `--verbose` a port also has `exe_path` and `connections` (`total` and `by_state` only, no `peers`: the connections that came in on this process's own sockets; absent where the OS reads none, as on FreeBSD and NetBSD). `memory_mb` is absent (and MEM shows `-`) when the OS refused the reading, which `Process` records as 0. A process listening on one port number at two addresses (`127.0.0.1` and `::1`) has two rows, and each row carries that process's connection counts for the port, not a share per address, so summing `connections.total` over the rows counts them twice: count each (`pid`, `port`) once.
 
