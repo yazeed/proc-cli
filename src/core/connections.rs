@@ -1226,12 +1226,14 @@ node 9 zee 4u IPv4 0xb 0t0 TCP 127.0.0.1:3000 (LISTEN)
             netstat: [NETSTAT_V4.to_string(), NETSTAT_V6.to_string()],
         };
         let listening = PortInfo::listening_in(&tables).unwrap();
-        let holders: Vec<u32> = listening
+        let mut holders: Vec<u32> = listening
             .iter()
             .filter(|p| p.port == 8080)
             .map(|p| p.pid)
             .collect();
-        assert_eq!(holders, vec![4242], "{listening:?}");
+        // one listening row per address (0.0.0.0 and [::]), both PID 4242
+        assert_eq!(holders, vec![4242, 4242], "{listening:?}");
+        holders.dedup();
         let found = connections_in(&tables, &[(8080, &holders)], 50).unwrap();
         assert_eq!(found[0].1.total, 6, "{found:?}");
     }
