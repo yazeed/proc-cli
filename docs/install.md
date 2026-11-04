@@ -55,7 +55,7 @@ sudo add-apt-repository ppa:yazeedaloyoun/proc-cli
 sudo apt install proc-cli
 ```
 
-Launchpad builds it from source. The maintainer uploads each release by hand, and then `apt upgrade` updates it.
+Launchpad builds each release from source, and `apt upgrade` updates it.
 
 **The `.deb` files** on the [releases page](https://github.com/yazeed/proc-cli/releases/latest), for amd64 and ARM64. The file names carry the version, so put the version you downloaded in the command:
 
@@ -162,13 +162,13 @@ Update with `pip install --upgrade proc-cli`, `pipx upgrade proc-cli` or `uv too
 The flake in this repository. The nixpkgs package is not merged yet, so `nixpkgs#proc-cli` does not exist.
 
 ```bash
-# install, with the man page and shell completions
-nix profile install github:yazeed/proc-cli
+# install the latest release, with the man page and shell completions
+nix profile install github:yazeed/proc-cli/v{{ site.data.release.version }}
 # or run it once without installing
-nix run github:yazeed/proc-cli -- on :3000
+nix run github:yazeed/proc-cli/v{{ site.data.release.version }} -- on :3000
 ```
 
-Does not update itself.
+Does not update itself. Without `/v{{ site.data.release.version }}` the flake builds the main branch, which can be ahead of the latest release.
 
 ## Docker
 
@@ -201,7 +201,7 @@ npx skills add yazeed/proc-cli
 
 ## Shell completions
 
-The Nix package, the `.deb` and `.rpm` files and the apt repository (which holds the same `.deb` files) install the completions and the man page. With any other install method, add them yourself:
+The Nix package, the `.deb` and `.rpm` files, the apt repository (which holds the same `.deb` files), the Ubuntu PPA and COPR install the completions and the man page. With any other install method, add them yourself:
 
 ```bash
 proc completions bash > /etc/bash_completion.d/proc          # bash
