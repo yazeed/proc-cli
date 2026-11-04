@@ -12,9 +12,12 @@
 //!
 //! Commas still work (`proc info :3000,:8080`) but are deprecated.
 
-use super::held::{card_options, measure_with_known_ports, write_process, HeldPort};
+use super::held::{card_options, measure_with_known_ports_from, write_process, HeldPort};
+use crate::core::port::SocketReading;
+use crate::core::target::resolve_port_in;
 use crate::core::{
-    flatten_targets, guard_targets, resolve_target, Guards, NameMatch, Process, Resolved,
+    flatten_targets, guard_targets, parse_target, resolve_target, Guards, NameMatch, Process,
+    Resolved, TargetType,
 };
 use crate::error::{ExitCode, ProcError, Result};
 use crate::ui::{out, Printer};
@@ -64,7 +67,19 @@ impl InfoCommand {
         let all_targets = flatten_targets(&self.targets);
 
         let mode = NameMatch::from_flag(self.cmd);
-        let resolved = resolve_all(&all_targets, |target| resolve_target(target, mode));
+        // A port target reads the socket table, once for the command: it resolves the
+        // port and the cards' ports and connections come from the same reading
+        let reading = all_targets
+            .iter()
+            .any(|target| matches!(parse_target(target), TargetType::Port(_)))
+            .then(|| SocketReading::read().ok())
+            .flatten();
+        let resolved = resolve_all(&all_targets, |target| {
+            match (parse_target(target), &reading) {
+                (TargetType::Port(port), Some(reading)) => resolve_port_in(port, &reading.ports),
+                _ => resolve_target(target, mode),
+            }
+        });
         let warning = resolved.warning();
         let Resolved {
             processes: mut found,
@@ -81,7 +96,8 @@ impl InfoCommand {
         // JSON carries the counts
         let peer_limit = if self.json { 0 } else { usize::MAX };
         // (a port table that cannot be read leaves the ports out)
-        let held = measure_with_known_ports(&mut found, peer_limit);
+        let table = move || reading.map_or_else(SocketReading::read, Ok);
+        let held = measure_with_known_ports_from(table, &mut found, peer_limit);
 
         if self.json {
             // Nothing matched: the document is also the error, as in every other command

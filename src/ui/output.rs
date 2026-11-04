@@ -722,7 +722,7 @@ mod tests {
             start_time: None,
             uptime_secs: None,
             parent_name: None,
-            cpu_time_secs: None,
+            cpu_time_secs: Some(0),
             open_files: None,
             child_count: None,
         }
@@ -917,7 +917,7 @@ mod tests {
             [
                 "PID NAME USER CPU% MEM UPTIME PPID STATUS DIR COMMAND",
                 "42 node zee 1.2 12.5MB 1m 5s 7 Running /a/b node /x/y/server.js --port 3000",
-                "43 deno - - - - - Running - -"
+                "43 deno - 0.0 0KB - - Running - -"
             ]
         );
     }
@@ -965,9 +965,9 @@ mod tests {
         let row = rows(&out)[1].clone();
         let cells: Vec<&str> = row.split(' ').collect();
         assert_eq!(cells[1], crate::ui::truncate_path(dir, 15), "{out}");
-        let command = row.split_once(" - - - - - ").map(|(_, c)| c);
+        let command = row.split_once(" - - 0.0 0KB - ").map(|(_, c)| c);
         assert!(command.is_none(), "the order is DIR NAME USER ...: {row}");
-        let command = row.split_once("node - - - - ").unwrap().1;
+        let command = row.split_once("0KB - ").unwrap().1;
         assert_eq!(command.chars().count(), 24, "{out}");
         assert!(command.ends_with('…'), "{out}");
 
@@ -1003,19 +1003,32 @@ mod tests {
     }
 
     #[test]
+    fn what_the_os_refused_to_read_shows_a_dash_in_cpu_and_mem() {
+        // no CPU time and no memory: not read where the OS refuses (macOS, Windows)
+        let mut p = process(42, "node");
+        p.cpu_time_secs = None;
+        let out = written(|w| human().write_process_rows(w, screen(120), &[p], false));
+        let expected = if cfg!(any(target_os = "macos", windows)) {
+            "42 node - - - - -"
+        } else {
+            "42 node - 0.0 0KB - -"
+        };
+        assert_eq!(rows(&out)[1], expected);
+    }
+
+    #[test]
     fn an_unknown_value_shows_a_dash() {
         let mut p = process(42, "node");
         p.user = Some(String::new());
         p.command = Some(String::new());
         let verbose = Printer::new(OutputFormat::Human, true);
         let out = written(|w| verbose.write_process_rows(w, screen(120), &[p.clone()], false));
-        // (this fixture is a process proc could not read: no CPU, no memory)
-        assert_eq!(rows(&out)[1], "42 node - - - - - Running - -");
+        assert_eq!(rows(&out)[1], "42 node - 0.0 0KB - - Running - -");
         // Nothing at all known but the PID and name
         p.user = None;
         p.command = None;
         let out = written(|w| human().write_process_rows(w, screen(120), &[p], false));
-        assert_eq!(rows(&out)[1], "42 node - - - - -");
+        assert_eq!(rows(&out)[1], "42 node - 0.0 0KB - -");
     }
 
     #[test]

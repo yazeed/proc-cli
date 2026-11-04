@@ -155,10 +155,8 @@ fn status_word(status: ProcessStatus) -> Option<&'static str> {
 /// does not give is left out, not shown as 0); `None` when it gave none
 fn resources(process: &Process) -> Option<String> {
     let mut parts = Vec::new();
-    if process.cpu_read() {
+    if process.read_by_os() {
         parts.push(format!("{:.1}% CPU", process.cpu_percent));
-    }
-    if process.memory_read() {
         parts.push(format_memory(process.memory_mb));
     }
     if let Some(secs) = process.cpu_time_secs {
@@ -656,24 +654,26 @@ mod tests {
             .lines()
             .map(str::to_string)
             .collect();
-        // no `Status: unknown`, no `0.0% CPU, 0KB`, no `Listening: none`
-        assert_eq!(
-            lines,
-            vec!["  Process:     python3 (PID 39158)".to_string()]
-        );
-        // each part is left out on its own: a zombie has CPU time and no memory
+        // no `Status: unknown`, no `Listening: none`; and where the OS refuses a
+        // read (macOS, Windows) no `0.0% CPU, 0KB`, which elsewhere is a reading
+        let mut expected = vec!["  Process:     python3 (PID 39158)".to_string()];
+        if !cfg!(any(target_os = "macos", windows)) {
+            expected.push("  Resources:   0.0% CPU, 0KB".to_string());
+        }
+        assert_eq!(lines, expected);
+        // a zombie has CPU time and no memory: read, on every OS
         let mut zombie = unread();
         zombie.cpu_time_secs = Some(0);
         let lines = render(&zombie, &[], &options(80, false));
         assert!(
-            lines.contains(&"  Resources:   0.0% CPU, 0s CPU time".to_string()),
+            lines.contains(&"  Resources:   0.0% CPU, 0KB, 0s CPU time".to_string()),
             "{lines:?}"
         );
     }
 
     #[test]
     fn unknown_facts_leave_no_line() {
-        // Another user's process on macOS: no directory, user, parent, start,
+        // A process the OS gave little about: no directory, user, parent, start,
         // CPU time, open files or child count
         let lines = render(&bare(), &[], &options(80, false));
         assert_eq!(

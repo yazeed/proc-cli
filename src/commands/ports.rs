@@ -293,7 +293,7 @@ fn enrich<'a>(
         uptime_secs: process.and_then(|proc| proc.uptime_secs),
         // 0 is what an unread value is in `Process`: unknown, so no key
         memory_mb: process
-            .filter(|proc| proc.memory_read())
+            .filter(|proc| proc.read_by_os())
             .map(|proc| proc.memory_mb),
         connections: connections.map(Counts::of),
     }
@@ -485,7 +485,9 @@ mod tests {
         let mut holder = process(None, Some("/bin/x"));
         holder.memory_mb = 0.0;
         let json = serde_json::to_value(enrich(&port, Some(&holder), true, None)).unwrap();
-        assert!(json.get("memory_mb").is_none(), "{json}");
+        // 0 is a refusal only where the OS refuses (macOS, Windows)
+        let refused = cfg!(any(target_os = "macos", windows));
+        assert_eq!(json.get("memory_mb").is_none(), refused, "{json}");
         assert_eq!(json["exe_path"], "/bin/x");
 
         holder.memory_mb = 41.5;

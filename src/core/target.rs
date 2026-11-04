@@ -71,21 +71,14 @@ pub fn resolve_target(target: &str, mode: NameMatch) -> Result<Vec<Process>> {
     }
 }
 
-/// [`resolve_target`] for a command that has read the listening table already:
-/// a port target is resolved from `listening`, which is not read again
-pub(crate) fn resolve_target_in(
-    target: &str,
-    mode: NameMatch,
-    listening: &[PortInfo],
-) -> Result<Vec<Process>> {
-    match parse_target(target) {
-        TargetType::Port(port) => processes_on_port(
-            port,
-            crate::core::port::holders_in(listening.to_vec(), port),
-            Process::find_by_pid,
-        ),
-        _ => resolve_target(target, mode),
-    }
+/// [`resolve_target`] for a port, for a command that has read the listening
+/// table already: the holders of `port` come from `listening`, which is not read again
+pub(crate) fn resolve_port_in(port: u16, listening: &[PortInfo]) -> Result<Vec<Process>> {
+    processes_on_port(
+        port,
+        crate::core::port::holders_in(listening.to_vec(), port),
+        Process::find_by_pid,
+    )
 }
 
 /// Resolve a port to every process listening on it

@@ -13,7 +13,7 @@
 use super::held::{card_options, measure_with_known_ports_from, write_process_card};
 use crate::core::port::SocketReading;
 use crate::core::process::ProcessDetails;
-use crate::core::target::resolve_target_in;
+use crate::core::target::resolve_port_in;
 use crate::core::{
     flatten_targets, parse_target, resolve_target, NameMatch, PortInfo, Process, ProcessStatus,
     Protocol, TargetType,
@@ -94,9 +94,9 @@ impl WhyCommand {
             };
 
             // Resolve to processes, a port from the table already read
-            let resolve = |t: &str| match for_port {
-                Some(reading) => resolve_target_in(t, mode, &reading.ports),
-                None => resolve_target(t, mode),
+            let resolve = |t: &str| match (&parsed, for_port) {
+                (TargetType::Port(port), Some(reading)) => resolve_port_in(*port, &reading.ports),
+                _ => resolve_target(t, mode),
             };
             let target_processes = match found_processes(target_str, resolve) {
                 Ok(procs) => procs,

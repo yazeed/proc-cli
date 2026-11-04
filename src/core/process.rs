@@ -743,18 +743,15 @@ pub(crate) fn classify_sysinfo(pattern: &str, proc: &sysinfo::Process, mode: Nam
 }
 
 impl Process {
-    /// Whether the OS gave this process's memory. A process the OS let proc read has
-    /// memory in use, so 0 is "not read" (any other user's process on macOS and
-    /// Windows), never "uses none". The one test every view uses for memory.
-    pub(crate) fn memory_read(&self) -> bool {
-        self.memory_mb > 0.0
-    }
-
-    /// Whether the OS let proc read this process's CPU use. Where it did not, sysinfo
-    /// leaves the CPU time absent and the memory at 0 (see [`cpu_time_secs_read`]), and
-    /// the 0.0% in `cpu_percent` is no reading. The one test every view uses for CPU.
-    pub(crate) fn cpu_read(&self) -> bool {
-        self.cpu_time_secs.is_some() || self.memory_read()
+    /// Whether the OS let proc read this process's CPU and memory. On macOS and Windows
+    /// sysinfo leaves the CPU time absent and the memory at 0 for a process it was not
+    /// allowed to read (see [`cpu_time_secs_read`]), and the 0.0% and 0 are no reading.
+    /// Elsewhere (Linux, the BSDs) the files are world-readable, so a 0 is a reading: a
+    /// kernel thread or a zombie has no memory. The one test every view uses.
+    pub(crate) fn read_by_os(&self) -> bool {
+        !(cfg!(any(target_os = "macos", windows))
+            && self.memory_mb <= 0.0
+            && self.cpu_time_secs.is_none())
     }
 
     /// Whether proc can see this process's sockets, so that an empty list of ports means
@@ -2234,19 +2231,21 @@ mod tests {
 
     #[test]
     fn proc_does_not_count_itself_among_the_children_of_its_parent() {
-        let own = std::process::id();
-        let parent = Process::find_by_pid(own)
-            .unwrap()
-            .and_then(|p| p.parent_pid)
+        // one snapshot of the table gives the record and the expected count
+        let sys = refreshed_system();
+        let own = Pid::from_u32(std::process::id());
+        let parent = sys
+            .process(own)
+            .and_then(|p| p.parent())
             .expect("the test process has a parent");
-        let record = Process::find_by_pid(parent).unwrap().unwrap();
-        // the list leaves proc out, so this is the count the listing would give
-        let others = Process::find_all()
-            .unwrap()
-            .iter()
-            .filter(|p| p.parent_pid == Some(parent) && p.pid != own)
+        let mut record = [Process::from_sysinfo(parent, sys.process(parent).unwrap())];
+        fill_family(&mut record, &sys);
+        let others = sys
+            .processes()
+            .values()
+            .filter(|p| !is_thread(p) && p.parent() == Some(parent) && p.pid() != own)
             .count();
-        assert_eq!(record.child_count, Some(others as u32), "{record:?}");
+        assert_eq!(record[0].child_count, Some(others as u32), "{record:?}");
     }
 
     #[test]
@@ -2337,16 +2336,17 @@ mod tests {
 
     #[test]
     fn a_zero_is_a_reading_only_with_something_beside_it() {
-        // nothing read: no memory, no CPU time
+        // no memory and no CPU time: where the OS refuses (macOS, Windows) that is
+        // "not read"; on Linux and the BSDs the files are readable, so it is a reading
         let mut p = ghost();
-        assert!(!p.memory_read() && !p.cpu_read());
+        assert_eq!(p.read_by_os(), !cfg!(any(target_os = "macos", windows)));
         // memory in use means the process was read
         p.memory_mb = 0.5;
-        assert!(p.memory_read() && p.cpu_read());
-        // CPU time without memory (a zombie): the CPU was read, the memory was not
+        assert!(p.read_by_os());
+        // CPU time without memory (a zombie, a kernel thread): read, on every OS
         p.memory_mb = 0.0;
         p.cpu_time_secs = Some(0);
-        assert!(!p.memory_read() && p.cpu_read());
+        assert!(p.read_by_os());
     }
 
     #[cfg(unix)]

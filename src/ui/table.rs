@@ -164,8 +164,8 @@ impl Column {
             Column::Name => process.name.clone(),
             Column::User => known(&process.user).unwrap_or(UNKNOWN).to_string(),
             // what the OS did not give is `-`, never a 0 that reads as a measurement
-            Column::Cpu if process.cpu_read() => format!("{:.1}", process.cpu_percent),
-            Column::Mem if process.memory_read() => format_memory(process.memory_mb),
+            Column::Cpu if process.read_by_os() => format!("{:.1}", process.cpu_percent),
+            Column::Mem if process.read_by_os() => format_memory(process.memory_mb),
             Column::Cpu | Column::Mem => UNKNOWN.to_string(),
             Column::Uptime => process.start_time.map_or_else(
                 || UNKNOWN.to_string(),
@@ -422,7 +422,7 @@ impl PortColumn {
                 .map_or_else(unknown, str::to_string),
             PortColumn::Mem => row
                 .process
-                .filter(|p| p.memory_read())
+                .filter(|p| p.read_by_os())
                 .map_or_else(unknown, |p| format_memory(p.memory_mb)),
             PortColumn::Uptime => row
                 .process
@@ -649,7 +649,7 @@ mod tests {
         quiet.exe_path = None;
         quiet.start_time = None;
         quiet.command = None;
-        // memory the OS refused reads 0: unknown
+        // memory the OS refused reads 0: unknown (macOS, Windows)
         quiet.memory_mb = 0.0;
         let table = plain(&port_table(
             &[PortRow {
@@ -660,7 +660,9 @@ mod tests {
         ));
         let row = cells(table.lines().nth(1).unwrap());
         assert_eq!(row[6], "-", "{row:?}");
-        assert_eq!(row[7], "-", "{row:?}");
+        // (a 0 is a reading where the OS does not refuse, as on Linux)
+        let refused = cfg!(any(target_os = "macos", windows));
+        assert_eq!(row[7], if refused { "-" } else { "0KB" }, "{row:?}");
         assert_eq!(&row[8..], ["-", "-", "-"], "{row:?}");
     }
 

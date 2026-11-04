@@ -182,6 +182,7 @@ pub(crate) fn measure_with_ports_from(
 /// [`measure_with_ports`] for a view that does not need the ports: each
 /// process's ports are `None` when the port table could not be read, or when
 /// proc cannot see the process's sockets (see [`shown_ports`])
+#[cfg(test)]
 pub(crate) fn measure_with_known_ports(
     processes: &mut [Process],
     peer_limit: usize,

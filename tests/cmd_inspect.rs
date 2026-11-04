@@ -1681,14 +1681,18 @@ fn another_users_process_shows_only_what_proc_could_read() {
         let (on, _) = run_json(&["on", "1", "--json"]);
         assert_eq!(on["ports"], serde_json::json!([]), "{on}");
 
-        // the table: a dash where the OS gave no CPU and no memory. A name
-        // lookup leaves out the ancestors of proc, so a test run that descends
-        // from launchd itself (an orphaned background run) cannot see its row.
+        // the table: a dash where the OS gave no CPU and no memory. A name lookup
+        // leaves out the ten levels of ancestors proc has (this test is the first
+        // of them), so PID 1 is hidden from it when it is among them: a run
+        // orphaned to launchd, or nested only a few levels deep.
         let mut at = std::process::id();
         let mut under_launchd = false;
-        while let Some(parent) = Process::find_by_pid(at).unwrap().and_then(|p| p.parent_pid) {
-            under_launchd |= parent == 1;
-            at = parent;
+        for _ in 0..9 {
+            at = Process::find_by_pid(at)
+                .unwrap()
+                .and_then(|p| p.parent_pid)
+                .unwrap_or(0);
+            under_launchd |= at == 1;
         }
         if !under_launchd {
             let (table, _, _) = run_text(&["by", "launchd"]);
