@@ -63,6 +63,23 @@ jobs:
           cache-from: type=gha,scope=check-${{ matrix.arch }}
           cache-to: type=gha,scope=check-${{ matrix.arch }},mode=max
 
+      # Which docker run flags let proc in the container see a process of
+      # another user (the runner's): prints, never fails
+      - name: Flags that let it see another user's process
+        run: |
+          docker info --format 'security options: {{.SecurityOptions}}'
+          python3 -m http.server 4798 >/dev/null 2>&1 &
+          listener=$!
+          trap 'kill "$listener" 2>/dev/null || true' EXIT
+          sleep 1
+          for flags in "" "--cap-add SYS_PTRACE" \
+            "--cap-add SYS_PTRACE --security-opt apparmor=unconfined" "--privileged"; do
+            # shellcheck disable=SC2086
+            seen=$(docker run --rm --pid=host --net=host $flags proc-cli:check on :4798 --json \
+              | jq '[.processes[]?] | length')
+            echo "flags [$flags]: holders seen: $seen"
+          done
+
       - name: Run it as the install page does
         run: |
           set -eu
