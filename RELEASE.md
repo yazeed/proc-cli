@@ -107,7 +107,18 @@ Update version in ALL of these files:
 
 Update and verify all docs are complete:
 
-- [ ] `pkg/pkgsrc/COMMIT_MSG` — `sysutils/proc-cli: update to X.Y.Z`, a blank line, then the release's main changes in a few lines and `Full list: https://github.com/yazeed/proc-cli/blob/vX.Y.Z/CHANGELOG.md`. It is the pkgsrc report's description; `update-pkgsrc` adds what it tested, and stops if the first line names another version
+- [ ] `pkg/pkgsrc/COMMIT_MSG` — the commit message the pkgsrc committer pastes as it is (Marcin Gondek asked for "a few lines" on 2.3.0, as the CHANGELOG is long): `sysutils/proc-cli: update to X.Y.Z`, a blank line, `Changes since A.B.C:`, then one to five `- ` bullets of one line each (at most 72 characters), plain English, only what a user of the package would notice. Install channels, release tooling and docs stay out. `update-pkgsrc` stops if it isn't in that shape or names another version, and puts it at the top of the report's description under "Suggested commit message:", followed by the CHANGELOG address and what it tested. 2.3.0's:
+
+  ```
+  sysutils/proc-cli: update to 2.3.0
+
+  Changes since 2.2.0:
+  - on, info, for and why show the same card for a process
+  - process tables show the user, uptime and command
+  - ports says if each port is reachable from the network
+  - values proc cannot read show as "-", not 0
+  - JSON adds parent name, child count, CPU time, open files
+  ```
 
 - [ ] `CHANGELOG.md` — Rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` and add a new empty `## [Unreleased]` above it. Everything worked on since the last release is already listed there (see "Unreleased Work" in CLAUDE.md); check that it is complete. Update the links at the bottom: `[Unreleased]` compares `vX.Y.Z...HEAD`, and add `[X.Y.Z]` comparing the previous tag. Each heading (`### Added`, `### Fixed`, ...) appears once per release; merge any duplicates. Note every issue and PR the section references (`#n`): step 7 replies to them
 - [ ] `docs/changelog.md` — Run `python3 scripts/changelog_site.py` after renaming the section: it writes the release into the website's changelog from CHANGELOG.md (never edit that part by hand; CI fails when the two differ)
@@ -186,7 +197,7 @@ A dry run does step 1 for the version in `Cargo.toml` (the last release) and onl
 
 The release's `update-pkgsrc` job prepares it; the report itself is filed by hand, since the gnats form has a check for people:
 
-1. `pkg/pkgsrc/update-package.sh X.Y.Z QUARTER OUT_DIR` runs in a NetBSD 11.0 VM. It takes the package as it is on pkgsrc trunk (NetBSD/pkgsrc's GitHub mirror), so the diff applies there, sets `DISTNAME`, runs `make makesum`, `make print-cargo-depends > cargo-depends.mk` (keeping trunk's `$NetBSD$` line) and `make makesum` again, then `make package install`, the installed `proc --version`, `make clean` and `pkglint`. It builds in the quarterly branch NetBSD's binary packages come from (the job reads it from where `…/packages/NetBSD/x86_64/11.0` points, `11.0_2026Q3` for 2.3.0), because a branch whose `lang/rust` differs from the binary `rust` builds Rust itself. It copies the package's files back to `pkg/pkgsrc/` and writes `proc-cli-X.Y.Z-pkgsrc.diff` (`diff -ruN`, applied with `patch -p1` from the pkgsrc root), the report's description (`pkg/pkgsrc/COMMIT_MSG`'s body, then what was tested where) and, from the job, `gnats-fields.json` with every field of the form. `COMMIT_MSG` is written for the version before the tag (step 4); the script stops if its first line is not `sysutils/proc-cli: update to X.Y.Z`.
+1. `pkg/pkgsrc/update-package.sh X.Y.Z QUARTER OUT_DIR` runs in a NetBSD 11.0 VM. It takes the package as it is on pkgsrc trunk (NetBSD/pkgsrc's GitHub mirror), so the diff applies there, sets `DISTNAME`, runs `make makesum`, `make print-cargo-depends > cargo-depends.mk` (keeping trunk's `$NetBSD$` line) and `make makesum` again, then `make package install`, the installed `proc --version`, `make clean` and `pkglint`. It builds in the quarterly branch NetBSD's binary packages come from (the job reads it from where `…/packages/NetBSD/x86_64/11.0` points, `11.0_2026Q3` for 2.3.0), because a branch whose `lang/rust` differs from the binary `rust` builds Rust itself. It copies the package's files back to `pkg/pkgsrc/` and writes `proc-cli-X.Y.Z-pkgsrc.diff` (`diff -ruN`, applied with `patch -p1` from the pkgsrc root), the report's description (`pkg/pkgsrc/COMMIT_MSG` under "Suggested commit message:", then the CHANGELOG address and what was tested where) and, from the job, `gnats-fields.json` with every field of the form. `COMMIT_MSG` is written for the version before the tag, in the shape step 4 gives; the script stops if it isn't in that shape or names another version.
 2. Commit the job's `pkg/pkgsrc/` files to `main`: they are in the run's `pkgsrc-update` artifact (`gh run download <run id> -n pkgsrc-update`), with the diff and `gnats-fields.json`.
 3. File the report at https://www.netbsd.org/cgi-bin/sendpr.cgi?gndb=netbsd with the fields from `gnats-fields.json` (category `pkg`, synopsis `sysutils/proc-cli: update to X.Y.Z`, the diff in "fix"). The form is filled in the maintainer's browser; the maintainer answers its check and submits. A pkgsrc developer commits it.
 

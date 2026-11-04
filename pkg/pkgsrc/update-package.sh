@@ -8,7 +8,8 @@
 # (e.g. 2026Q3), the one NetBSD's binary packages, rust among them, come
 # from: a branch whose lang/rust differs would build Rust itself. OUT_DIR
 # gets proc-cli-VERSION-pkgsrc.diff (patch -p1 from the pkgsrc root),
-# synopsis, description (pkg/pkgsrc/COMMIT_MSG's body, and what was tested)
+# synopsis, description (pkg/pkgsrc/COMMIT_MSG as the suggested commit
+# message, the changelog's address and what was tested)
 # and environment. Runs as root on NetBSD with the rust and pkglint packages
 # installed; the release's update-pkgsrc job runs it in a vmactions VM.
 # PKGSRCDIR names an existing tree of that branch (default /usr/pkgsrc,
@@ -28,6 +29,29 @@ fail() { echo "update-package.sh: $*" >&2; exit 1; }
 synopsis=$(head -n 1 "$here/COMMIT_MSG")
 [ "$synopsis" = "sysutils/proc-cli: update to $version" ] ||
     fail "pkg/pkgsrc/COMMIT_MSG starts '$synopsis', not 'sysutils/proc-cli: update to $version': write its entry first"
+
+# COMMIT_MSG is the commit message a committer pastes as it is: the synopsis,
+# a blank line, "Changes since X.Y.Z:" and one to five one-line bullets
+bullets=0
+number=0
+while IFS= read -r line || [ -n "$line" ]; do
+    number=$((number + 1))
+    case $number in
+        1) ;;
+        2) [ -z "$line" ] || fail "COMMIT_MSG's line 2 is not empty" ;;
+        3) case $line in
+               "Changes since "*:) ;;
+               *) fail "COMMIT_MSG's line 3 is '$line', not 'Changes since X.Y.Z:'" ;;
+           esac ;;
+        *) case $line in
+               "- "*) ;;
+               *) fail "COMMIT_MSG's line $number is not a '- ' bullet: '$line'" ;;
+           esac
+           [ "${#line}" -le 72 ] || fail "COMMIT_MSG's line $number is ${#line} characters; a bullet takes at most 72"
+           bullets=$((bullets + 1)) ;;
+    esac
+done < "$here/COMMIT_MSG"
+[ "$bullets" -ge 1 ] && [ "$bullets" -le 5 ] || fail "COMMIT_MSG has $bullets bullets; it takes 1 to 5"
 
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
@@ -86,7 +110,9 @@ release="NetBSD $(uname -r)"
 echo "$synopsis" > synopsis
 echo "$release, pkgsrc-$quarter" > environment
 {
-    tail -n +3 "$here/COMMIT_MSG"
+    printf 'Suggested commit message:\n\n'
+    cat "$here/COMMIT_MSG"
+    printf '\nFull list: https://github.com/yazeed/proc-cli/blob/v%s/CHANGELOG.md\n' "$version"
     printf 'Tested: make package, pkglint and the installed proc --version on\n%s against pkgsrc-%s.\n' "$release" "$quarter"
 } > description
 cat description
