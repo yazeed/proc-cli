@@ -18,7 +18,15 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps # The docs.rs pages build with no
 - [ ] CI is green on main, including "Coverage gate" (100% lines across Linux, macOS and Windows; see CONTRIBUTING.md "Coverage"), both "Nix" jobs (the flake builds proc and runs its tests in Nix's sandbox, macOS's included, and the nixpkgs package builds), both "Test (freebsd)"/"Test (netbsd)" jobs (the whole suite in a BSD VM, then the release binary built and run there) and the "Package .deb and .rpm" and "Install the packages" jobs (the four packages install, run and remove in Debian, Ubuntu and Fedora). A tag release does not wait for it. Locally: `scripts/coverage-local.sh`
 - [ ] The release workflow's dry run is green: `gh workflow run release.yml --ref main`, then `gh run watch`. It runs every build and package job (the BSD builds and the `.deb`/`.rpm` files run only in this workflow's form here) and assembles the release files with `checksums.txt`, and publishes nothing: the GitHub Release step and the crates.io, npm, PyPI, Homebrew and Scoop jobs run only for a tag. The PyPI wheels are built and installed on every OS in the dry run (`package-pypi`, `test-pypi`); only `publish-pypi` waits for a tag. Its version checks print instead of failing, since a branch build is a `-dev` build; the tag checks them
 - [ ] The dry run's "Check credentials" job passed and printed no warning. It tries every secret under "Required Secrets" and reads when each expires (GitHub reports a token's expiry, so no date is kept anywhere): one that is invalid or expired fails the job, and the tag's release then publishes nothing; one that expires within 30 days is a warning. Renew it now, set it with `gh secret set <NAME>`, and run the dry run again
-- [ ] The credentials outside CI still work: the PPA key on the maintainer's Mac (`gpg -K 227B9E7E7C22B6E88774325184D7BBF5E38CCC4D` lists it; it has no expiry date, and if one is ever set it shows as `[expires: ...]`) and, only if the COPR package's settings change in this release, the COPR API token (`grep expiration ~/.config/copr`; a new one comes from https://copr.fedorainfracloud.org/api/). A release itself needs neither token: COPR builds from the webhook
+- [ ] The credentials outside CI still work. `check-credentials` can't test them, since they never leave the maintainer's Mac, so the release session runs this there:
+
+  ```bash
+  gpg -K 227B9E7E7C22B6E88774325184D7BBF5E38CCC4D   # the PPA key: listed, and no "[expires: ...]" (it has none)
+  grep expiration ~/.config/copr                     # the COPR API token: expires 2027-05-02; a new one is at https://copr.fedorainfracloud.org/api/
+  test -r ~/.ssh/pkgsrc-wip && echo pkgsrc-wip key ok # only for an update sent through pkgsrc-wip; a gnats diff needs no key
+  ```
+
+  A release itself needs neither token: COPR builds from the webhook, and the COPR token only matters if the package's settings change. The FreeBSD bug and a gnats report are filed in a browser, with the maintainer's own logins (bugs.freebsd.org, gnats.netbsd.org).
 
 ### Cross-Platform Check
 
