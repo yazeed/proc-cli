@@ -221,8 +221,8 @@ pub fn format_memory(memory_mb: f64) -> String {
 }
 
 /// CPU (`"0.3%"`) and memory (`"6.1MB"`) of a process, when the OS gave them; `None`
-/// when it did not (see [`Process::read_by_os`]), so no view shows a 0 that nobody
-/// measured. The one place the one-line views (tree, wait) take both from.
+/// when it did not (on macOS and Windows, a process proc was not allowed to read),
+/// so no view shows a 0 that nobody measured. The one place the one-line views (tree, wait) take both from.
 pub fn cpu_and_memory(process: &Process) -> Option<(String, String)> {
     let cpu = format!("{:.1}%", process.cpu_percent);
     let memory = format_memory(process.memory_mb);

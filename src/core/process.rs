@@ -718,8 +718,8 @@ pub struct Process {
     /// record was made without the process table, or when the parent is gone
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_name: Option<String>,
-    /// Whole seconds of CPU time the process has used so far (the reading
-    /// [`cpu_time_ms`] gives, divided by 1000); absent where the OS gives none
+    /// Whole seconds of CPU time the process has used so far; absent where
+    /// the OS gives none
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cpu_time_secs: Option<u64>,
     /// How many files the process has open; absent where the OS doesn't say
