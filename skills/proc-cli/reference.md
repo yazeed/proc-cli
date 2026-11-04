@@ -324,7 +324,7 @@ A single name gives `results` entries of `{process, ports}` without `target`; ea
 }
 ```
 
-`processes` are the holders it stopped, in the preview's order, as in the other receipts (new in 2.3.0): `outcome` is `"failed"` for a holder that was still running when the ports were checked (`error` is the text of the last signal that failed for it, or `"Still running"`), `"succeeded"` for one that is gone. `count` is how many. `results` stays the per-port answer. A port still in use after `--wait` seconds gives `success: false` and exit 1. A port held by several processes has all of them stopped and counts as freed only once none is left. Ports nobody listens on go to `not_found` as typed; if all are free the result is `{"action": "free", "success": true, "count": 0, "message": "All specified ports are already free", "not_found": [":3000"]}` with exit 0.
+`processes` are the holders it stopped, in the preview's order, as in the other receipts (new in 2.3.0): `outcome` is `"failed"` for a holder that was still running when the ports were checked (`error` is the text of the last signal that failed for it, or `"Still running"`), `"succeeded"` for one that is gone. The check is whether the holder is still running when the receipt is written, a moment after the port check, and `success` is about the ports: a receipt can have `success: true` and a holder with `outcome: "failed"` that is still alive but no longer holds the targeted ports. `count` is how many. `results` stays the per-port answer. A port still in use after `--wait` seconds gives `success: false` and exit 1. A port held by several processes has all of them stopped and counts as freed only once none is left. Ports nobody listens on go to `not_found` as typed; if all are free the result is `{"action": "free", "success": true, "count": 0, "message": "All specified ports are already free", "not_found": [":3000"]}` with exit 0.
 
 ### wait
 
@@ -339,7 +339,7 @@ A single name gives `results` entries of `{process, ports}` without `target`; ea
 }
 ```
 
-New in 2.3.0, after the older keys: `count` (the processes waited for), `elapsed_secs`, `targets` (the targets as typed, one per entry) and, in each `exited` entry after its other fields, `exited_after_secs`. Deprecated, use the new name; removed in 3.0: `initial_count` (use `count`), `elapsed_seconds` (use `elapsed_secs`), `exited_after_seconds` (use `exited_after_secs`) and `target`, every target joined by a space (use `targets`).
+New in 2.3.0, after the older keys: `count` (the processes waited for), `elapsed_secs`, `targets` (the arguments as typed, one per entry: a deprecated comma list stays one entry) and, in each `exited` entry after its other fields, `exited_after_secs`. Deprecated, use the new name; removed in 3.0: `initial_count` (use `count`), `elapsed_seconds` (use `elapsed_secs`), `exited_after_seconds` (use `exited_after_secs`) and `target`, every target joined by a space (use `targets`).
 
 On timeout: `success: false`, `timed_out: true`, `still_running` lists the still-running processes, exit 1. If no target exists at all, exit 2 at once.
 

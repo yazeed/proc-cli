@@ -109,7 +109,9 @@ impl FreezeCommand {
         let (succeeded, failed) =
             apply_to_each(&processes, |proc| proc.send_signal(Signal::SIGSTOP));
 
-        printer.print_action_result("freeze", &processes, &succeeded, &failed)
+        printer
+            .with_processes(&processes)
+            .print_action_result("freeze", &succeeded, &failed)
     }
 
     /// Windows stub

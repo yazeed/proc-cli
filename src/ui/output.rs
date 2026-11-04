@@ -110,6 +110,9 @@ pub struct Printer {
     /// The targets that matched nothing, for a command that takes targets. When
     /// set, every JSON result the printer writes has them as `not_found`.
     not_found: Option<Vec<String>>,
+    /// The processes the preview listed, in its order, for the receipt of an
+    /// action (see [`Printer::with_processes`])
+    processes: Option<Vec<Process>>,
 }
 
 /// Detect terminal width, falling back to 120 when stdout is not a TTY.
@@ -141,6 +144,7 @@ impl Printer {
             wide: false,
             scoped_to_dir: false,
             not_found: None,
+            processes: None,
         }
     }
 
@@ -149,6 +153,15 @@ impl Printer {
     /// as `not_found`, an empty array when every target was found.
     pub fn with_not_found(mut self, not_found: &[String]) -> Self {
         self.not_found = Some(not_found.to_vec());
+        self
+    }
+
+    /// Say which processes the action was tried on, in the order the preview
+    /// listed them: the JSON receipt of [`Printer::print_action_result`] then
+    /// lists them as `processes` in that order. Without it the receipt lists
+    /// the succeeded processes, then the failed ones.
+    pub fn with_processes(mut self, processes: &[Process]) -> Self {
+        self.processes = Some(processes.to_vec());
         self
     }
 
@@ -361,20 +374,15 @@ impl Printer {
     /// The `action` parameter is the command name (e.g. "kill", "stop", "freeze").
     /// It is used as-is in JSON output and as the verb for human display.
     ///
-    /// `processes` is every process the action was tried on, in the order the
-    /// preview listed them: the JSON `processes` follows it, each process with
-    /// its `outcome`. `succeeded` and `failed` split that list by what happened.
-    ///
     /// Returns `Err(ProcError::Reported)` when any process failed, so the command
     /// exits non-zero without printing a second result.
     pub fn print_action_result(
         &self,
         action: &str,
-        processes: &[Process],
         succeeded: &[Process],
         failed: &[(Process, String)],
     ) -> Result<()> {
-        self.print_action_result_as(action, action, processes, succeeded, failed)
+        self.print_action_result_as(action, action, succeeded, failed)
     }
 
     /// Print action result where the JSON `action` differs from the verb shown
@@ -383,18 +391,10 @@ impl Printer {
         &self,
         action: &str,
         verb: &str,
-        processes: &[Process],
         succeeded: &[Process],
         failed: &[(Process, String)],
     ) -> Result<()> {
-        self.write_action_result_as(
-            &mut out::stdout(),
-            action,
-            verb,
-            processes,
-            succeeded,
-            failed,
-        )
+        self.write_action_result_as(&mut out::stdout(), action, verb, succeeded, failed)
     }
 
     fn write_action_result_as(
@@ -402,7 +402,6 @@ impl Printer {
         out: &mut impl Write,
         action: &str,
         verb: &str,
-        processes: &[Process],
         succeeded: &[Process],
         failed: &[(Process, String)],
     ) -> Result<()> {
@@ -415,6 +414,14 @@ impl Printer {
             _ => format!("{}{}ed", verb[..1].to_uppercase(), &verb[1..]),
         };
 
+        // the preview's list when the command gave it, else succeeded then failed
+        let listed: Vec<&Process> = match &self.processes {
+            Some(all) => all.iter().collect(),
+            None => succeeded
+                .iter()
+                .chain(failed.iter().map(|(p, _)| p))
+                .collect(),
+        };
         let printed = match self.format {
             OutputFormat::Human => {
                 Self::write_action_lines(out, &past_tense, verb, succeeded, failed)
@@ -436,11 +443,11 @@ impl Printer {
                             error: e,
                         })
                         .collect::<Vec<_>>(),
-                    processes: &processes
+                    processes: &listed
                         .iter()
                         .map(|p| ReceiptProcess::of(p, failed))
                         .collect::<Vec<_>>(),
-                    count: processes.len(),
+                    count: listed.len(),
                 },
             ),
         };
@@ -1156,7 +1163,7 @@ mod tests {
         let ok = [process(1, "a"), process(2, "b")];
         let out = written(|w| {
             human()
-                .write_action_result_as(w, "kill", "kill", &ok, &ok, &[])
+                .write_action_result_as(w, "kill", "kill", &ok, &[])
                 .map_err(std::io::Error::other)
         });
         assert_eq!(out, "✓ Killed 2 processes\n  → a [PID 1]\n  → b [PID 2]\n");
@@ -1164,7 +1171,7 @@ mod tests {
         let one = [process(1, "a")];
         let out = written(|w| {
             human()
-                .write_action_result_as(w, "stop", "stop", &one, &one, &[])
+                .write_action_result_as(w, "stop", "stop", &one, &[])
                 .map_err(std::io::Error::other)
         });
         assert_eq!(out, "✓ Stopped 1 process\n  → a [PID 1]\n");
@@ -1173,14 +1180,7 @@ mod tests {
         let failed = [(process(3, "c"), "Permission denied".to_string())];
         let mut buf = Vec::new();
         let err = human()
-            .write_action_result_as(
-                &mut buf,
-                "freeze",
-                "freeze",
-                &[one[0].clone(), failed[0].0.clone()],
-                &one,
-                &failed,
-            )
+            .write_action_result_as(&mut buf, "freeze", "freeze", &one, &failed)
             .unwrap_err();
         assert_eq!(
             plain(&String::from_utf8(buf).unwrap()),
@@ -1199,14 +1199,7 @@ mod tests {
         ];
         let mut buf = Vec::new();
         let err = human()
-            .write_action_result_as(
-                &mut buf,
-                "thaw",
-                "thaw",
-                &[failed[0].0.clone(), failed[1].0.clone()],
-                &[],
-                &failed,
-            )
+            .write_action_result_as(&mut buf, "thaw", "thaw", &[], &failed)
             .unwrap_err();
         assert_eq!(
             plain(&String::from_utf8(buf).unwrap()),
@@ -1220,7 +1213,7 @@ mod tests {
         let one = [process(1, "a")];
         let out = written(|w| {
             human()
-                .write_action_result_as(w, "restart", "restart", &one, &one, &[])
+                .write_action_result_as(w, "restart", "restart", &one, &[])
                 .map_err(std::io::Error::other)
         });
         assert!(out.starts_with("✓ Restarted 1 process\n"), "{out}");
@@ -1234,7 +1227,8 @@ mod tests {
         let all = [failed[0].0.clone(), ok[0].clone()];
         let mut buf = Vec::new();
         let err = json()
-            .write_action_result_as(&mut buf, "orphans", "kill", &all, &ok, &failed)
+            .with_processes(&all)
+            .write_action_result_as(&mut buf, "orphans", "kill", &ok, &failed)
             .unwrap_err();
         let doc: serde_json::Value = serde_json::from_slice(&buf).unwrap();
         let text = String::from_utf8(buf).unwrap();
@@ -1274,6 +1268,25 @@ mod tests {
             ]
         );
         assert_eq!(err.to_string(), "Failed to kill 1 process");
+    }
+
+    #[test]
+    fn without_the_preview_a_receipt_lists_the_succeeded_then_the_failed() {
+        let ok = [process(1, "a"), process(2, "b")];
+        let failed = [(process(3, "c"), "no".to_string())];
+        let mut buf = Vec::new();
+        json()
+            .write_action_result_as(&mut buf, "kill", "kill", &ok, &failed)
+            .unwrap_err();
+        let doc: serde_json::Value = serde_json::from_slice(&buf).unwrap();
+        let listed: Vec<(u64, &str)> = doc["processes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| (p["pid"].as_u64().unwrap(), p["outcome"].as_str().unwrap()))
+            .collect();
+        assert_eq!(listed, [(1, "succeeded"), (2, "succeeded"), (3, "failed")]);
+        assert_eq!(doc["count"], 3);
     }
 
     #[test]

@@ -158,7 +158,9 @@ impl StopCommand {
         in_process_order(&processes, &mut failed);
 
         // Output results
-        printer.print_action_result("stop", &processes, &stopped, &failed)
+        printer
+            .with_processes(&processes)
+            .print_action_result("stop", &stopped, &failed)
     }
 
     /// Wait up to --timeout for the processes to exit; returns the PIDs still running.

@@ -115,6 +115,10 @@ fn the_contract_check_refuses_each_break() {
 fn the_names_check_refuses_each_drift() {
     use serde_json::json;
     let broken = [
+        // a deprecated name is accepted only in the command that carries it
+        json!({"action": "list", "success": true, "found_count": 1}),
+        json!({"action": "info", "success": true, "initial_count": 1}),
+        json!({"action": "info", "success": true, "elapsed_seconds": 1}),
         // rule 3: a duration without _secs
         json!({"action": "x", "success": true, "waited_seconds": 1}),
         json!({"action": "x", "success": true, "uptime": 1}),
@@ -152,6 +156,14 @@ fn the_names_check_refuses_each_drift() {
     );
     let wrong = contract::mixed_kinds(&kinds).expect("`ok` is a list and a number");
     assert!(wrong.contains("`ok`"), "{wrong}");
+    // any two kinds, not only a list and a number
+    let mut strings = contract::Kinds::new();
+    contract::note_kinds(&json!({"action": "a", "name": "x"}), &mut strings);
+    contract::note_kinds(
+        &json!({"action": "b", "name": {"first": "x"}}),
+        &mut strings,
+    );
+    assert!(contract::mixed_kinds(&strings).unwrap().contains("`name`"));
     // the one allowed: unstick's deprecated `failed`
     let mut allowed = contract::Kinds::new();
     contract::note_kinds(&json!({"action": "kill", "failed": []}), &mut allowed);

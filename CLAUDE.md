@@ -162,13 +162,14 @@ Use the shared modules instead of writing local helpers:
 - **`printer.ask_confirm(action, &processes, yes)`** — the confirmation prompt; errors with `ConfirmationRequired` where nobody can answer (`--json`, no terminal). It builds on `crate::ui::must_confirm`
 - **`printer.print_confirmation(action, &processes)`** — only the display half (the `⚠` list), called by `ask_confirm`
 - **`printer.with_not_found(&resolved.not_found)`** — makes the printer put `not_found` in the JSON it writes
+- **`printer.with_processes(&processes)`** — gives the receipt the preview's list, so its JSON `processes` follow the preview's order (call it before `print_action_result`)
 - **`crate::core::flatten_targets`** — splits target arguments (and deprecated comma lists) into one list
 - **`crate::core::NameMatch`** — exact name by default, `--cmd` for a part of the name or command line
 - **`crate::core::apply_to_each`** — runs an action on each process and returns `(succeeded, failed)`
 - **`crate::ui::card::write_card`** — the process card; `on`, `info`, `for` and `why` all print it, so a new detail view uses it rather than its own labels
 - **`crate::ui::table::process_table`** / **`port_table`** — the one table for every process list and for `ports`, with the shared columns and width policy
 - **`crate::core::connections::connections_for`** — the connections to a listening port, for the card and for JSON
-- **`printer.print_action_result(action, &succeeded, &failed)`** — unified result summary for destructive commands
+- **`printer.with_processes(&processes).print_action_result(action, &succeeded, &failed)`** — unified result summary for destructive commands
 
 ### Error Handling
 

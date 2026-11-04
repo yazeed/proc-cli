@@ -67,10 +67,15 @@ pub fn violation(json: &Value, code: i32) -> Option<String> {
 /// Each is exempt from the one rule it breaks, and from nothing else, so the
 /// list can only shrink: a name added here is a new break, and needs a reason.
 ///
+/// Each is accepted only in the document of the command (`action`) that carries it.
+///
 /// Rule 3, a duration ends in `_secs`
-const DEPRECATED_DURATIONS: &[&str] = &["elapsed_seconds", "exited_after_seconds"];
+const DEPRECATED_DURATIONS: &[(&str, &str)] = &[
+    ("wait", "elapsed_seconds"),
+    ("wait", "exited_after_seconds"),
+];
 /// Rule 2, a `_count` sits beside a list of its stem or counts an outcome
-const DEPRECATED_COUNTS: &[&str] = &["found_count", "initial_count"];
+const DEPRECATED_COUNTS: &[(&str, &str)] = &[("info", "found_count"), ("wait", "initial_count")];
 /// The outcome words a count may be named for, without a list of that name
 const OUTCOMES: &[&str] = &[
     "succeeded",
@@ -85,7 +90,8 @@ const OUTCOMES: &[&str] = &[
 const PROCESS_COUNTS: &[&str] = &["child_count"];
 
 /// Whether `key` holds a duration: it says seconds, elapsed, uptime or a
-/// duration in one of its words
+/// duration in one of its words. This is a word list: when a new key holds a
+/// duration in other words (`age`, `ttl`), add the word here, so the rule sees it.
 fn is_duration(key: &str) -> bool {
     key.split('_').any(|word| {
         [
@@ -111,8 +117,9 @@ fn is_duration(key: &str) -> bool {
 /// Rule 6 needs more than one document: see [`mixed_kinds`].
 pub fn names_violation(json: &Value) -> Option<String> {
     let mut found = None;
+    let action = json["action"].as_str().unwrap_or("");
     visit(json, &mut |object| {
-        found = found.take().or_else(|| object_violation(object));
+        found = found.take().or_else(|| object_violation(action, object));
     });
     found
 }
@@ -129,12 +136,13 @@ fn visit(json: &Value, each: &mut impl FnMut(&Map<String, Value>)) {
     }
 }
 
-fn object_violation(object: &Map<String, Value>) -> Option<String> {
+fn object_violation(action: &str, object: &Map<String, Value>) -> Option<String> {
+    let deprecated = |list: &[(&str, &str)], key: &str| list.contains(&(action, key));
     for (key, value) in object {
         if is_duration(key)
             && !key.ends_with("_secs")
             && !key.ends_with("_human")
-            && !DEPRECATED_DURATIONS.contains(&key.as_str())
+            && !deprecated(DEPRECATED_DURATIONS, key)
         {
             return Some(format!(
                 "`{key}` holds a duration, and does not end in _secs"
@@ -146,7 +154,7 @@ fn object_violation(object: &Map<String, Value>) -> Option<String> {
             }
             let listed = object.get(stem).is_some_and(Value::is_array);
             let allowed = OUTCOMES.contains(&stem)
-                || DEPRECATED_COUNTS.contains(&key.as_str())
+                || deprecated(DEPRECATED_COUNTS, key)
                 || PROCESS_COUNTS.contains(&key.as_str());
             if !listed && !allowed {
                 return Some(format!(
@@ -257,17 +265,21 @@ pub fn note_kinds(json: &Value, kinds: &mut Kinds) {
     });
 }
 
-/// What is wrong with the kinds seen: a key that is an array in one document
-/// and a number in another. `failed` is the one: a list of what failed in the
-/// receipts of `kill`, `stop`, `freeze`, `thaw`, `stuck --kill` and
-/// `orphans --kill`, and a number in `unstick`; `unstick`'s bare numbers are
+/// What is wrong with the kinds seen: a key that has two different kinds of
+/// value in different documents. `failed` is the one exception: a list of what
+/// failed in the receipts of `kill`, `stop`, `freeze`, `thaw`, `stuck --kill`
+/// and `orphans --kill`, and a number in `unstick`; `unstick`'s bare numbers are
 /// deprecated (use `failed_count`), removed in 3.0, and the exception goes
 /// with them.
 pub fn mixed_kinds(kinds: &Kinds) -> Option<String> {
     kinds.iter().find_map(|(key, seen)| {
-        let (list, number) = (seen.get("an array")?, seen.get("a number")?);
+        let mut two = seen.iter();
+        let (first, second) = (two.next()?, two.next()?);
         (key != "failed").then(|| {
-            format!("`{key}` is an array in a `{list}` document and a number in a `{number}` one")
+            format!(
+                "`{key}` is {} in a `{}` document and {} in a `{}` one",
+                first.0, first.1, second.0, second.1
+            )
         })
     })
 }
