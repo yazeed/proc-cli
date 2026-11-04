@@ -428,14 +428,32 @@ fn counts_as_stuck(is_thread: bool, run_time: u64, timeout_secs: u64, looks_stuc
 /// process from the kernel, as `ps` does, and keep the zombies sysinfo didn't return.
 #[cfg(target_os = "macos")]
 fn macos_zombies(known: &std::collections::HashSet<u32>) -> Vec<Process> {
-    let table = read_proc_table(|buf, size| {
-        let mut mib = [libc::CTL_KERN, libc::KERN_PROC, libc::KERN_PROC_ALL, 0];
+    zombies_in(&kernel_table(libc::KERN_PROC_ALL, 0), known)
+}
+
+/// macOS: the zombie with this PID, if there is one. sysinfo drops a zombie
+/// from a refresh of one PID as it does from the whole table (it has no
+/// executable path or arguments left to read), so a lookup that finds nothing
+/// asks the kernel for just this PID, as `ps -p` does.
+#[cfg(target_os = "macos")]
+fn macos_zombie(pid: u32) -> Option<Process> {
+    let table = kernel_table(libc::KERN_PROC_PID, pid as libc::c_int);
+    zombies_in(&table, &std::collections::HashSet::new())
+        .into_iter()
+        .find(|zombie| zombie.pid == pid)
+}
+
+/// The kernel's process table as `read_proc_table` reads it: `which` says
+/// which processes (`KERN_PROC_ALL`, or `KERN_PROC_PID` with `arg` the PID)
+#[cfg(target_os = "macos")]
+fn kernel_table(which: libc::c_int, arg: libc::c_int) -> Vec<u8> {
+    read_proc_table(|buf, size| {
+        let mut mib = [libc::CTL_KERN, libc::KERN_PROC, which, arg];
         let null = std::ptr::null_mut();
         // SAFETY: `buf` is null (report the size needed) or points to `*size`
         // writable bytes, which is how read_proc_table calls it
         unsafe { libc::sysctl(mib.as_mut_ptr(), 4, buf, size, null, 0) }
-    });
-    zombies_in(&table, known)
+    })
 }
 
 /// libc has no kinfo_proc for macOS, so the few fields we need are read at their
@@ -900,8 +918,16 @@ impl Process {
 
         // `refreshed_system` holds every process, so the parent and the
         // children are known at the cost of one pass over the table
-        Ok(sys.processes().get(&sysinfo_pid).map(|proc| {
-            let mut found = [Process::from_sysinfo(sysinfo_pid, proc)];
+        let found = sys
+            .processes()
+            .get(&sysinfo_pid)
+            .map(|proc| Process::from_sysinfo(sysinfo_pid, proc));
+        // macOS: sysinfo leaves a zombie out, which `list` still shows; ask
+        // the kernel before saying there is no such process
+        #[cfg(target_os = "macos")]
+        let found = found.or_else(|| macos_zombie(pid));
+        Ok(found.map(|found| {
+            let mut found = [found];
             fill_family(&mut found, &sys);
             let [found] = found;
             found
@@ -1209,9 +1235,26 @@ impl Process {
 
         match sys.process(Pid::from_u32(self.pid)) {
             Some(proc) if self.is_same(proc) => kill_outcome(proc.kill(), self.pid),
-            // gone, or the PID now belongs to a new process
-            _ => Err(ProcError::ProcessNotFound(self.pid.to_string())),
+            // gone, or the PID now belongs to a new process, or (macOS) a zombie
+            _ => self.kill_unlisted(),
         }
+    }
+
+    /// `kill` for a PID the refresh did not list. macOS: sysinfo leaves a
+    /// zombie out, so the kernel is asked; a zombie takes the signal as it does
+    /// on Linux (it changes nothing, the process has exited).
+    #[cfg(target_os = "macos")]
+    fn kill_unlisted(&self) -> Result<()> {
+        self.same_but_unlisted()?;
+        let pid = nix::unistd::Pid::from_raw(self.pid as i32);
+        let delivered = nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGKILL).is_ok();
+        kill_outcome(delivered, self.pid)
+    }
+
+    /// `kill` for a PID the refresh did not list: gone, or a new process has it
+    #[cfg(not(target_os = "macos"))]
+    fn kill_unlisted(&self) -> Result<()> {
+        Err(ProcError::ProcessNotFound(self.pid.to_string()))
     }
 
     /// Refreshes this record's PID in `sys` for a check with [`is_same`](Self::is_same),
@@ -1241,8 +1284,25 @@ impl Process {
         self.refresh_for_check(&mut sys);
         match sys.process(pid) {
             Some(current) if self.is_same(current) => Ok(()),
+            _ => self.same_but_unlisted(),
+        }
+    }
+
+    /// For a PID the refresh did not list. macOS: sysinfo leaves a zombie out,
+    /// so the kernel is asked, and this record's own zombie counts as the same
+    /// process (a signal to it succeeds and changes nothing, as on Linux).
+    #[cfg(target_os = "macos")]
+    fn same_but_unlisted(&self) -> Result<()> {
+        match macos_zombie(self.pid) {
+            Some(zombie) if same_start(self.start_time, zombie.start_time.unwrap_or(0)) => Ok(()),
             _ => Err(ProcError::ProcessNotFound(self.pid.to_string())),
         }
+    }
+
+    /// For a PID the refresh did not list: gone, or a new process has it
+    #[cfg(not(target_os = "macos"))]
+    fn same_but_unlisted(&self) -> Result<()> {
+        Err(ProcError::ProcessNotFound(self.pid.to_string()))
     }
 
     /// Force kill and wait up to 5 seconds for the process to be gone.
@@ -2394,6 +2454,93 @@ mod tests {
         p.memory_mb = 0.0;
         p.cpu_time_secs = Some(0);
         assert!(p.read_by_os());
+    }
+
+    /// A child that has exited and is not reaped: a zombie, which `ps` shows
+    /// once it is (polled with a deadline, not slept for). Past the deadline
+    /// the child comes back as it is, and the test's own checks fail.
+    #[cfg(unix)]
+    fn unreaped_zombie() -> std::process::Child {
+        let child = std::process::Command::new("sh")
+            .args(["-c", "exit 0"])
+            .stdin(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn a shell");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while std::time::Instant::now() < deadline {
+            let ps = std::process::Command::new("ps")
+                .args(["-o", "stat=", "-p", &child.id().to_string()])
+                .output()
+                .expect("run ps");
+            if String::from_utf8_lossy(&ps.stdout).trim().starts_with('Z') {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        child
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_zombie_is_found_by_pid_as_a_zombie_on_every_os() {
+        let mut child = unreaped_zombie();
+        let found = Process::find_by_pid(child.id()).unwrap();
+        let _ = child.wait();
+        let found = found.expect("a zombie is found by its PID, as the list shows it");
+        assert_eq!(found.pid, child.id());
+        assert_eq!(found.status, ProcessStatus::Zombie);
+        assert_eq!(found.parent_pid, Some(std::process::id()));
+        // it has exited: not running, as `wait` counts it
+        assert!(!found.is_running());
+    }
+
+    /// A signal to a zombie is delivered and changes nothing, on every OS: no
+    /// command reports "not found" for a process that `list` shows
+    #[cfg(unix)]
+    #[test]
+    fn a_zombie_takes_every_signal_and_counts_as_exited() {
+        let mut child = unreaped_zombie();
+        let record = Process::find_by_pid(child.id()).unwrap().unwrap();
+        let results = [
+            record.send_signal(nix::sys::signal::Signal::SIGSTOP),
+            record.send_signal(nix::sys::signal::Signal::SIGCONT),
+            record.terminate(),
+            record.kill(),
+            record.kill_and_wait(),
+        ];
+        let _ = child.wait();
+        for result in results {
+            assert!(result.is_ok(), "{result:?}");
+        }
+    }
+
+    /// A zombie's PID reused by another process is not the record's zombie
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_record_of_another_start_time_is_not_the_zombie() {
+        let mut child = unreaped_zombie();
+        let mut record = Process::find_by_pid(child.id()).unwrap().unwrap();
+        record.start_time = record.start_time.map(|t| t + 100);
+        let results = [record.terminate(), record.kill()];
+        let _ = child.wait();
+        for result in results {
+            assert!(
+                matches!(result, Err(ProcError::ProcessNotFound(_))),
+                "{result:?}"
+            );
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_kernel_is_asked_for_a_zombie_by_pid_and_only_for_a_zombie() {
+        let mut child = unreaped_zombie();
+        let zombie = macos_zombie(child.id());
+        let _ = child.wait();
+        assert_eq!(zombie.expect("the zombie").pid, child.id());
+        // alive, and no process at all
+        assert!(macos_zombie(std::process::id()).is_none());
+        assert!(macos_zombie(4_000_000).is_none());
     }
 
     #[cfg(unix)]

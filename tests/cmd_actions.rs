@@ -787,8 +787,71 @@ impl Drop for Short {
     }
 }
 
+/// A child that has exited and is not reaped, once `ps` shows it as a zombie
+/// (polled with a deadline, past which the child comes back as it is and the
+/// test's own checks fail). The caller reaps it.
+#[cfg(unix)]
+fn unreaped_zombie() -> Child {
+    let child = std::process::Command::new("sh")
+        .args(["-c", "exit 0"])
+        .stdin(Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < deadline {
+        let ps = std::process::Command::new("ps")
+            .args(["-o", "stat=", "-p", &child.id().to_string()])
+            .output()
+            .unwrap();
+        if String::from_utf8_lossy(&ps.stdout).trim().starts_with('Z') {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    child
+}
+
+/// Unix only: a zombie is found by its PID as a zombie, on macOS as on Linux
+/// (sysinfo leaves it out of a macOS lookup), and `wait` counts it as exited
+#[cfg(unix)]
+#[test]
+fn a_zombie_is_found_by_pid_and_wait_counts_it_as_exited() {
+    let mut child = unreaped_zombie();
+    let pid = child.id().to_string();
+    let (info, info_code) = run_json(&["info", &pid, "--json"]);
+    let (waited, wait_code) = run_json(&["wait", &pid, "--timeout", "30", "--json"]);
+    let _ = child.wait();
+    assert_eq!(info_code, 0, "{info}");
+    assert_eq!(info["processes"][0]["status"], "zombie", "{info}");
+    assert_eq!(wait_code, 0, "{waited}");
+    assert_eq!(waited["success"], true, "{waited}");
+    assert_eq!(waited["initial_count"], 1, "{waited}");
+    assert!(lists(&waited, "exited", child.id()), "{waited}");
+}
+
+/// Unix only: a zombie has exited, so signalling it succeeds and changes
+/// nothing; no command calls it "not found" while `list` shows it
+#[cfg(unix)]
+#[test]
+fn kill_stop_freeze_and_thaw_take_a_zombie_without_a_false_failure() {
+    let mut child = unreaped_zombie();
+    let pid = child.id().to_string();
+    let runs: Vec<(&str, (Value, i32))> = ["kill", "stop", "freeze", "thaw"]
+        .into_iter()
+        .map(|command| (command, run_json(&[command, &pid, "--yes", "--json"])))
+        .collect();
+    let _ = child.wait();
+    for (command, (json, code)) in runs {
+        assert_eq!(code, 0, "{command}: {json}");
+        assert_eq!(json["success"], true, "{command}: {json}");
+        assert_eq!(json["succeeded_count"], 1, "{command}: {json}");
+    }
+}
+
 /// Unix only: a child that ends by itself is a zombie there, so its PID stays
-/// listed until the test reaps it and proc still has to count it as exited. On
+/// listed until the test reaps it and proc still has to count it as exited. It
+/// does not matter whether proc looks before the child ends (it is running) or
+/// after (it is already a zombie): both are found, and both count as exited. On
 /// Windows a process this short could end before proc looks it up, so the Windows
 /// cases below end their processes when the test says so.
 #[cfg(unix)]
