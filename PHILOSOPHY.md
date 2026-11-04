@@ -11,7 +11,7 @@ The best tool is the one you don't have to think about. When you reach for proc,
 ## Principles
 
 ### Semantic
-Commands mean what they say. `kill` kills. `stop` stops gracefully. `freeze` pauses and `thaw` resumes. `free` frees a port and checks that it's free. `on` tells you what's on a port, and `why` tells you why it's there. There are no surprises and no hidden behaviors. Flags refine a command rather than replace it; the two that add an action, `--kill` on `orphans` and `stuck`, follow the same confirmation rules as `kill` itself.
+Commands are the words you would guess, in the sense people already use them, so a newcomer finds them and anyone reading the shell history later knows what was meant. `kill` kills. `stop` stops gracefully. `freeze` pauses and `thaw` resumes. `free` frees a port and checks that it's free. `on` tells you what's on a port, and `why` tells you why it's there. A command does what its word says, with no surprises and no hidden behaviors. Flags refine a command rather than replace it; the two that add an action, `--kill` on `orphans` and `stuck`, follow the same confirmation rules as `kill` itself.
 
 ### Explicit
 User intent must be clear. Destructive actions ask first, and only `--yes` or a person's own yes counts as consent: `--json` or a missing terminal never does. `--dry-run` previews them. proc never guesses what a target means: a leading `:` is a port, a number is a PID, anything else is a name. Every failure has a non-zero exit code and a message that says what went wrong. Silent failures are bugs.
