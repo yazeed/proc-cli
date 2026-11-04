@@ -31,6 +31,14 @@ concurrency:
 jobs:
   build:
     name: Build site and apt repository
+    # A deploy is named after its commit, and Pages keeps the first deploy of a
+    # commit: the release commit's own push to main would deploy it before the
+    # release has its .deb files, and the release's deploy of the same commit
+    # would change nothing (2.3.0's apt repository stayed at 2.2.0). The release
+    # deploys that commit itself, from update-apt in release.yml.
+    if: >-
+      !(github.ref == 'refs/heads/main'
+        && startsWith(github.event.head_commit.message, 'chore: release v'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

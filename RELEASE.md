@@ -189,8 +189,8 @@ After tag push, monitor GitHub Actions:
 - [ ] Homebrew tap updated
 - [ ] Scoop bucket updated
 - [ ] Docker image pushed
-- [ ] "Update the apt repository" passed: https://proc-cli.com/apt/dists/stable/main/binary-amd64/Packages lists the new version
-- [ ] "Update winget" opened the pull request for the new version on microsoft/winget-pkgs (until the first version is merged it skips, with a notice)
+- [ ] "Update the apt repository" passed: https://proc-cli.com/apt/dists/stable/main/binary-amd64/Packages lists the new version. The release commit's own push to main deploys nothing (`pages.yml` skips a commit titled `chore: release v…`, since Pages keeps only the first deploy of a commit), so the site, the new version on it included, changes when this job deploys
+- [ ] "Update winget" opened the pull request for the new version on microsoft/winget-pkgs (until the first version is merged it skips, with a notice). The day the first version (2.2.0, microsoft/winget-pkgs#469298) is merged, rerun that job in the latest release's run, so winget catches up without waiting for the next release: `gh run rerun <run id> --job <job id>` (the ids are in `gh run view <run id> --json jobs`)
 - [ ] The PPA's builds for the new version succeeded on every release and both architectures (https://launchpad.net/~yazeedaloyoun/+archive/ubuntu/proc-cli/+packages)
 - [ ] "Update COPR" passed: the build for the new version succeeded on every chroot (https://copr.fedorainfracloud.org/coprs/yazeed/proc-cli/builds/)
 - [ ] The "Install the PyPI wheel" jobs passed (Linux x86_64 and aarch64, Alpine, macOS arm64 and x86_64, Windows)

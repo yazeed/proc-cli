@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The apt repository gets the release's packages.** On the 2.3.0 release it kept listing 2.2.0. A Pages deploy is named after its commit, and Pages keeps the first deploy of a commit: the release commit's push to main deployed the site before the release had its `.deb` files, and the release's own deploy of the same commit, which had them, changed nothing. The push of a release commit (`chore: release v…`) no longer deploys; the release does, once its packages exist. 2.3.0's packages were added by the next push to main
+
 ## [2.3.0] - 2026-11-03
 
 ### Added
