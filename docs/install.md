@@ -172,10 +172,10 @@ Does not update itself. Without `/v{{ site.data.release.version }}` the flake bu
 
 ## Docker
 
-`--pid=host` lets proc see the host's processes, and `--net=host` its ports (for `on :port`, `ports` and `free`). `--cap-add SYS_PTRACE` lets it see which process holds a port or a file when that process belongs to a user other than root, as most dev servers do: Docker drops that capability by default, and without it proc can't read those processes' open files and sockets. The image is also published as `yazeed/proc`.
+`--pid=host` lets proc see the host's processes, and `--net=host` its ports (for `on :port`, `ports` and `free`). `--cap-add SYS_PTRACE --security-opt apparmor=unconfined` lets it see which process holds a port or a file when that process belongs to a user other than root, as most dev servers do: Docker drops that capability by default, and on a host with AppArmor (Ubuntu and Debian have it on) Docker's default profile blocks those reads even with the capability. Without both, proc can't read those processes' open files and sockets. On Docker Desktop, which has no AppArmor, the second flag changes nothing. The image is also published as `yazeed/proc`.
 
 ```bash
-docker run --rm -it --pid=host --net=host --cap-add SYS_PTRACE yazeed/proc-cli
+docker run --rm -it --pid=host --net=host --cap-add SYS_PTRACE --security-opt apparmor=unconfined yazeed/proc-cli
 ```
 
 Update with `docker pull yazeed/proc-cli`.

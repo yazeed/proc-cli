@@ -63,23 +63,6 @@ jobs:
           cache-from: type=gha,scope=check-${{ matrix.arch }}
           cache-to: type=gha,scope=check-${{ matrix.arch }},mode=max
 
-      # Which docker run flags let proc in the container see a process of
-      # another user (the runner's): prints, never fails
-      - name: Flags that let it see another user's process
-        run: |
-          docker info --format 'security options: {{.SecurityOptions}}'
-          python3 -m http.server 4798 >/dev/null 2>&1 &
-          listener=$!
-          trap 'kill "$listener" 2>/dev/null || true' EXIT
-          sleep 1
-          for flags in "" "--cap-add SYS_PTRACE" \
-            "--cap-add SYS_PTRACE --security-opt apparmor=unconfined" "--privileged"; do
-            # shellcheck disable=SC2086
-            seen=$(docker run --rm --pid=host --net=host $flags proc-cli:check on :4798 --json \
-              | jq '[.processes[]?] | length')
-            echo "flags [$flags]: holders seen: $seen"
-          done
-
       - name: Run it as the install page does
         run: |
           set -eu
@@ -100,11 +83,12 @@ jobs:
           sleep 1
 
           # Both run as the runner user, not root: the case most dev servers
-          # are in. The install page's command, with --cap-add SYS_PTRACE, is
-          # what lets proc in the container read another user's sockets and
-          # open files; without it, it finds no holder (the first run of this
-          # job showed that)
-          host="--pid=host --net=host --cap-add SYS_PTRACE"
+          # are in. The install page's command is what lets proc in the
+          # container read another user's sockets and open files: Docker drops
+          # SYS_PTRACE, and on a host with AppArmor (this Ubuntu runner) its
+          # default profile blocks the reads even with it. Measured here: no
+          # flag 0 holders, --cap-add SYS_PTRACE 0, with apparmor=unconfined 1
+          host="--pid=host --net=host --cap-add SYS_PTRACE --security-opt apparmor=unconfined"
           # shellcheck disable=SC2086
           docker run --rm $host proc-cli:check on :4799 --json \
             | jq -e --argjson pid "$listener" '[.processes[].pid] | index($pid) != null' >/dev/null
