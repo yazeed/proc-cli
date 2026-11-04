@@ -7,6 +7,7 @@
 //! only run against them.
 
 mod contract;
+mod skip;
 
 use assert_cmd::Command;
 use serde_json::Value;
@@ -119,7 +120,7 @@ impl Pair {
     /// `None`, with the reason printed, when this machine can't bind `[::1]`
     fn start() -> Option<Self> {
         if let Err(e) = std::net::TcpListener::bind("[::1]:0") {
-            proc_cli::err_println!("skipped: no IPv6 loopback on this machine ({e})");
+            skip::skipped(&format!("no IPv6 loopback on this machine ({e})"));
             return None;
         }
         let v4 = Holder::start(&[]);

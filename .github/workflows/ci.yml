@@ -38,7 +38,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      # A test that can't run here fails instead of skipping (tests/skip)
       - name: Run tests
+        env:
+          PROC_TESTS_MUST_RUN: 1
         run: cargo test --verbose
 
       - name: Run clippy
@@ -401,6 +404,8 @@ jobs:
       # example the flag matrix runs
       - name: Measure line coverage
         shell: bash
+        env:
+          PROC_TESTS_MUST_RUN: 1
         run: |
           # eval, not `source <(...)`: macOS runs bash 3.2, where that reads nothing
           eval "$(cargo llvm-cov show-env --sh)"

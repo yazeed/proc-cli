@@ -7,6 +7,7 @@
 //! process is killed and reaped on drop.
 
 mod contract;
+mod skip;
 
 use assert_cmd::Command;
 use proc_cli::core::filters::strip_verbatim_prefix;
@@ -788,9 +789,9 @@ fn has_open_file_lookup() -> bool {
         .output()
         .is_ok();
     if !found {
-        proc_cli::err_println!(
+        skip::skipped(&format!(
             "{program} is not installed here, so there is no open-file lookup to test"
-        );
+        ));
     }
     found
 }

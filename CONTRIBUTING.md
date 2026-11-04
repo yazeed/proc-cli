@@ -208,6 +208,10 @@ Line coverage says a line ran, not that its behaviour is pinned. A change that a
 
 Tests aim proc only at processes they started themselves (a copy of `examples/listener.rs` under its own name in a fresh temp directory, or a shell the test owns), so the suite can run on a machine that is busy with other work.
 
+### Tests that can't run everywhere
+
+A test that needs what a machine may lack (an IPv6 loopback, lsof on macOS, fstat on the BSDs) calls `skip::skipped("why")` and returns, so a laptop, a container or the Nix sandbox can still run the suite. CI's test and coverage jobs set `PROC_TESTS_MUST_RUN=1`, which makes that call fail the test instead: there, a skip would hide a test that never ran. Never skip with a bare `return` or a print of your own.
+
 ### Nix
 
 `nix flake check -L` builds proc from `Cargo.lock` and runs this whole suite in Nix's build sandbox, on Linux and macOS in CI. The sandbox has no real `$HOME`, a bare `PATH`, its own process namespace, and the system's `coreutils` may be one multi-call binary, so a test must not assume a home directory, a tool the machine happens to have, that `sleep` runs under another name, or that the machine has more than one process tree. `flake.nix` sets `$HOME` for the terminal tests and adds the tools the tests call, since the `PATH` has neither `/bin` nor `/usr/sbin` (`procps` on Linux; Apple's `ps`, `darwin.ps`, and `lsof` on macOS, where proc reads ports with `lsof`); it never turns the tests off. A test the sandbox must stop is skipped by exact name in `checkFlags`, with the reason beside it. Without Nix installed, run the check in the `nixos/nix` Docker image (`--privileged` for the sandbox, and `NIX_CONFIG="experimental-features = nix-command flakes"`).
