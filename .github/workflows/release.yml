@@ -344,7 +344,9 @@ jobs:
           release: "11.0"
           cpu: 4
           mem: 8192
-          prepare: /usr/sbin/pkg_add rust
+          # A mirror can cut a download short (CI, 2026-11-04), so a failed
+          # pkg_add is tried twice more
+          prepare: /usr/sbin/pkg_add rust || { sleep 15; /usr/sbin/pkg_add rust; } || { sleep 30; /usr/sbin/pkg_add rust; }
           run: |
             cd "$GITHUB_WORKSPACE"
             export CARGO_TARGET_DIR="$HOME/proc-target"

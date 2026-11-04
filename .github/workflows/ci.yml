@@ -185,7 +185,9 @@ jobs:
           release: "11.0"
           cpu: 4
           mem: 8192
-          prepare: /usr/sbin/pkg_add rust
+          # A mirror can cut a download short ("Truncated tar archive" while
+          # adding LLVM, 2026-11-04), so a failed pkg_add is tried twice more
+          prepare: /usr/sbin/pkg_add rust || { sleep 15; /usr/sbin/pkg_add rust; } || { sleep 30; /usr/sbin/pkg_add rust; }
           run: |
             cd "$GITHUB_WORKSPACE"
             export CARGO_TARGET_DIR="$HOME/proc-target"
@@ -411,7 +413,11 @@ jobs:
           eval "$(cargo llvm-cov show-env --sh)"
           cargo llvm-cov clean --workspace
           cargo test -- --test-threads=4
-          cargo llvm-cov report --lcov --output-path lcov-${{ matrix.os }}.info
+          # A proc killed by a test while writing its profile leaves a
+          # truncated .profraw, which made the whole merge fail ("file header
+          # is corrupt", macOS, 2026-11-04): merge the rest, and fail only if
+          # none can be. The gate still needs every line covered
+          cargo llvm-cov report --lcov --output-path lcov-${{ matrix.os }}.info --failure-mode all
 
       - name: Upload lcov
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

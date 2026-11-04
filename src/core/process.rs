@@ -2567,6 +2567,9 @@ mod tests {
             .expect("spawn a shell");
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
         while std::time::Instant::now() < deadline {
+            // wait first: the shell needs a moment to exit, and a check that
+            // can succeed at once would leave the wait a line no run covers
+            std::thread::sleep(std::time::Duration::from_millis(20));
             let ps = std::process::Command::new("ps")
                 .args(["-o", "stat=", "-p", &child.id().to_string()])
                 .output()
@@ -2574,7 +2577,6 @@ mod tests {
             if String::from_utf8_lossy(&ps.stdout).trim().starts_with('Z') {
                 break;
             }
-            std::thread::sleep(std::time::Duration::from_millis(20));
         }
         child
     }
