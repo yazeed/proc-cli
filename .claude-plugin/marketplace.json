@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Semantic CLI tool for process management. Target by port, PID, name or path.",
-    "version": "2.2.0"
+    "version": "2.3.0"
   },
   "plugins": [
     {

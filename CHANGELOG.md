@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-03
+
 ### Added
 
 - **`tree`, `why`, `wait` and `unstick` return whole process objects.** Their JSON carried a subset of a process's fields. Each process object they print keeps every key it had, with its name, type and position, and gains the fields it lacked after them, absent where the OS gives no value: `exe_path`, `user`, `parent_pid`, `start_time`, `parent_name`, `cpu_time_secs`, `open_files` and `child_count` in all four; `cwd` and `command` in `tree` (nodes and `--ancestors` chain) and in `wait` and `unstick`; `cpu_percent` and `memory_mb` in `why` (process and ancestry entries), `wait` and `unstick`; `status` and `uptime_secs` in `wait` and `unstick`. A `wait` process that exited carries the last reading proc had of it before it went, and a still-running one the reading taken when `wait` began. Human output is unchanged. **Library API:** none; the shared fields are a crate-private struct
@@ -947,7 +949,8 @@ All commands accept **targets**: `:port`, `PID`, or `name` where applicable.
 
 ---
 
-[Unreleased]: https://github.com/yazeed/proc-cli/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/yazeed/proc-cli/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/yazeed/proc-cli/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/yazeed/proc-cli/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/yazeed/proc-cli/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/yazeed/proc-cli/compare/v2.0.2...v2.1.0
