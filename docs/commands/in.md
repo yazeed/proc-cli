@@ -26,7 +26,7 @@ The table is the one `proc list` prints, with the directory as its second column
 | `--cmd` | | Match `--by` as a substring of the process name or full command line (like `pkill -f`) |
 | `--min-cpu <n>` | | Minimum CPU % |
 | `--min-mem <n>` | | Minimum memory (MB) |
-| `--status <s>` | | Filter by status: running, sleeping, stopped, zombie |
+| `--status <s>` | | Filter by status: running, sleeping, stopped, zombie, idle (Linux), starting (macOS, FreeBSD, NetBSD), disk-wait (Linux; `disk_wait` also works) |
 | `--min-uptime <s>` | | Minimum uptime in seconds |
 | `--parent <pid>` | | Only children of this parent PID |
 | `--sort <key>` | `-s` | Sort by: cpu, mem (biggest first); pid, name (ascending). Ties come by PID (default: cpu) |

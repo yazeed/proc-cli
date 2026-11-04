@@ -150,16 +150,10 @@ pub(crate) fn known(field: &Option<String>) -> Option<&str> {
     field.as_deref().filter(|text| !text.is_empty())
 }
 
-/// The status as the JSON and the filters spell it; `None` when the OS gave none
+/// The status as a person reads it (see [`ProcessStatus::word`]); `None` when the OS
+/// gave none
 fn status_word(status: ProcessStatus) -> Option<&'static str> {
-    match status {
-        ProcessStatus::Running => Some("running"),
-        ProcessStatus::Sleeping => Some("sleeping"),
-        ProcessStatus::Stopped => Some("stopped"),
-        ProcessStatus::Zombie => Some("zombie"),
-        ProcessStatus::Dead => Some("dead"),
-        ProcessStatus::Unknown => None,
-    }
+    (status != ProcessStatus::Unknown).then(|| status.word())
 }
 
 /// CPU, memory, CPU time and open files, each when the OS gave it (a value the OS
@@ -956,12 +950,18 @@ mod tests {
             ProcessStatus::Stopped,
             ProcessStatus::Zombie,
             ProcessStatus::Dead,
+            ProcessStatus::Idle,
+            ProcessStatus::Starting,
+            ProcessStatus::DiskWait,
         ] {
             process.status = status;
             let lines = render(&process, &[], &options(120, false));
             let word = status_word(status).unwrap();
             assert!(lines.contains(&format!("  Status:      {word}")));
         }
+        process.status = ProcessStatus::DiskWait;
+        let lines = render(&process, &[], &options(120, false));
+        assert!(lines.contains(&"  Status:      disk wait".to_string()));
         // a status the OS did not give is no line at all
         process.status = ProcessStatus::Unknown;
         let lines = render(&process, &[], &options(120, false));

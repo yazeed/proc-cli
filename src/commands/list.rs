@@ -48,7 +48,7 @@ pub struct ListCommand {
     #[arg(long)]
     pub min_mem: Option<f64>,
 
-    /// Filter by status: running, sleeping, stopped, zombie
+    /// Filter by status: running, sleeping, stopped, zombie, idle, starting, disk-wait
     #[arg(long, value_enum, ignore_case = true)]
     pub status: Option<StatusFilter>,
 

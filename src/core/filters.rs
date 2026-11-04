@@ -24,6 +24,13 @@ pub enum StatusFilter {
     Stopped,
     /// Exited, but not yet reaped by its parent
     Zombie,
+    /// Linux only: an idle kernel thread, with nothing to run
+    Idle,
+    /// macOS, FreeBSD and NetBSD: still being created by `fork`, not running yet
+    Starting,
+    /// Linux only: in uninterruptible sleep, waiting on the disk or other I/O
+    #[value(alias = "disk_wait")]
+    DiskWait,
 }
 
 impl StatusFilter {
@@ -35,6 +42,9 @@ impl StatusFilter {
                 | (StatusFilter::Sleeping, ProcessStatus::Sleeping)
                 | (StatusFilter::Stopped, ProcessStatus::Stopped)
                 | (StatusFilter::Zombie, ProcessStatus::Zombie)
+                | (StatusFilter::Idle, ProcessStatus::Idle)
+                | (StatusFilter::Starting, ProcessStatus::Starting)
+                | (StatusFilter::DiskWait, ProcessStatus::DiskWait)
         )
     }
 }
@@ -409,6 +419,58 @@ pub fn strip_verbatim_prefix(path: &str) -> String {
         }
     }
     path.to_string()
+}
+
+#[cfg(test)]
+mod status_filter_tests {
+    use super::StatusFilter;
+    use crate::core::ProcessStatus;
+    use clap::ValueEnum;
+
+    #[test]
+    fn each_filter_matches_its_own_status_and_no_other() {
+        let all = [
+            ProcessStatus::Running,
+            ProcessStatus::Sleeping,
+            ProcessStatus::Stopped,
+            ProcessStatus::Zombie,
+            ProcessStatus::Dead,
+            ProcessStatus::Idle,
+            ProcessStatus::Starting,
+            ProcessStatus::DiskWait,
+            ProcessStatus::Unknown,
+        ];
+        for (filter, own) in [
+            (StatusFilter::Running, ProcessStatus::Running),
+            (StatusFilter::Sleeping, ProcessStatus::Sleeping),
+            (StatusFilter::Stopped, ProcessStatus::Stopped),
+            (StatusFilter::Zombie, ProcessStatus::Zombie),
+            (StatusFilter::Idle, ProcessStatus::Idle),
+            (StatusFilter::Starting, ProcessStatus::Starting),
+            (StatusFilter::DiskWait, ProcessStatus::DiskWait),
+        ] {
+            for status in all {
+                assert_eq!(
+                    filter.matches(status),
+                    status == own,
+                    "{filter:?} {status:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_new_values_are_spelled_idle_starting_and_disk_wait_either_way() {
+        for (word, filter) in [
+            ("idle", StatusFilter::Idle),
+            ("starting", StatusFilter::Starting),
+            ("disk-wait", StatusFilter::DiskWait),
+            ("disk_wait", StatusFilter::DiskWait),
+        ] {
+            let parsed = StatusFilter::from_str(word, false).unwrap();
+            assert_eq!(format!("{parsed:?}"), format!("{filter:?}"), "{word}");
+        }
+    }
 }
 
 #[cfg(test)]

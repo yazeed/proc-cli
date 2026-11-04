@@ -29,6 +29,8 @@ Every process table in proc (`list`, `by`, `in`, `for` with several hits, `orpha
 
 One process is always one line. COMMAND takes the width the other columns leave and ends with `…` where it is cut. Every other column keeps its width, except the directory under `--in`, which is cut in the middle (`/Users/…/maliqe-website/.next/standalone`) before it takes more than a third of the line. `--verbose` and `--wide` print everything whole, even when the line is longer than the terminal. The list in front of a `--dry-run` or a question prints the command line whole, since that is what you approve.
 
+The status is `running`, `sleeping`, `stopped`, `zombie`, `dead` or `unknown`, and three more where the OS tells them apart: `idle` (Linux: an idle kernel thread), `starting` (macOS, FreeBSD and NetBSD: a process still being created by `fork`) and `disk wait` (Linux: uninterruptible sleep on the disk, shown as `disk_wait` in JSON and spelled `disk-wait` or `disk_wait` for `--status`). Before 2.3.0 these three were all `unknown`.
+
 ## Options
 
 | Flag | Short | Description |
@@ -38,7 +40,7 @@ One process is always one line. COMMAND takes the width the other columns leave 
 | `--path <path>` | `-p` | Filter by executable path |
 | `--min-cpu <n>` | | Minimum CPU % |
 | `--min-mem <n>` | | Minimum memory (MB) |
-| `--status <s>` | | Filter by status: running, sleeping, stopped, zombie |
+| `--status <s>` | | Filter by status: running, sleeping, stopped, zombie, idle (Linux), starting (macOS, FreeBSD, NetBSD), disk-wait (Linux; `disk_wait` also works) |
 | `--min-uptime <s>` | | Minimum uptime in seconds |
 | `--parent <pid>` | | Only children of this parent PID |
 | `--sort <key>` | `-s` | Sort by: cpu, mem (biggest first); pid, name (ascending). Ties come by PID (default: cpu) |

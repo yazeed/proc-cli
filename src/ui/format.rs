@@ -238,8 +238,8 @@ pub fn usage_label(process: &Process) -> String {
 pub fn colorize_status(status: &ProcessStatus, status_str: &str) -> ColoredString {
     match status {
         ProcessStatus::Running => status_str.green(),
-        ProcessStatus::Sleeping => status_str.blue(),
-        ProcessStatus::Stopped => status_str.yellow(),
+        ProcessStatus::Sleeping | ProcessStatus::Idle => status_str.blue(),
+        ProcessStatus::Stopped | ProcessStatus::DiskWait => status_str.yellow(),
         ProcessStatus::Zombie => status_str.red(),
         _ => status_str.white(),
     }
@@ -455,6 +455,9 @@ mod tests {
             (ProcessStatus::Stopped, Color::Yellow),
             (ProcessStatus::Zombie, Color::Red),
             (ProcessStatus::Dead, Color::White),
+            (ProcessStatus::Idle, Color::Blue),
+            (ProcessStatus::Starting, Color::White),
+            (ProcessStatus::DiskWait, Color::Yellow),
             (ProcessStatus::Unknown, Color::White),
         ] {
             let coloured = colorize_status(&status, "word");

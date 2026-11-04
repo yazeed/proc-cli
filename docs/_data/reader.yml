@@ -79,7 +79,7 @@ groups:
             kind: name
             text: "Lists only the processes named <code>node</code>."
           - t: "--status zombie"
-            rule: "Flags narrow any listing. <code>--status</code> takes running, sleeping, stopped or zombie."
+            rule: "Flags narrow any listing. <code>--status</code> takes running, sleeping, stopped, zombie, idle, starting or disk-wait."
             text: "Lists zombie processes: ones that have exited but haven't been cleaned up by their parent."
       - verb: info
         examples:

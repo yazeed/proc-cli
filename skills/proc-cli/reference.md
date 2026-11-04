@@ -149,7 +149,7 @@ Filters (a command takes only those its `--help` lists):
 | `--cmd` (substring of name or command line) | every command that takes a name or `--by` |
 | `--start-time <secs>` (one PID target; the `start_time` from its JSON) | `kill`, `stop`, `freeze`, `thaw`, `wait`, `info`, `unstick` |
 | `--min-cpu <pct>`, `--min-mem <MB>` | `list`, `by`, `in`, `for`, `tree`, `watch` |
-| `--status <s>` (running, sleeping, stopped, zombie), `--min-uptime <secs>` | `list`, `by`, `in`, `for`, `tree` |
+| `--status <s>` (running, sleeping, stopped, zombie, idle, starting, disk-wait), `--min-uptime <secs>` | `list`, `by`, `in`, `for`, `tree` |
 | `--parent <pid>` | `list`, `by`, `in` |
 | `--path <path>` (`-p`) | `list` |
 | `--sort`: cpu, mem (biggest first), pid, name (`ports`: port, pid, name; ascending) | `list`, `by`, `in`, `for`, `watch`, `ports` |
@@ -207,7 +207,7 @@ The same machine gives the same order on every run, so a list can be compared wi
 }
 ```
 
-`exe_path`, `cwd`, `command`, `user`, `parent_pid`, `start_time`, `uptime_secs`, `parent_name`, `cpu_time_secs`, `open_files` and `child_count` are omitted when unavailable (on macOS the start time of other users' processes), never `null`. `--min-uptime` never matches those. `user` falls back to the numeric ID. `status` is `running`, `sleeping`, `stopped`, `zombie`, `dead` or `unknown`.
+`exe_path`, `cwd`, `command`, `user`, `parent_pid`, `start_time`, `uptime_secs`, `parent_name`, `cpu_time_secs`, `open_files` and `child_count` are omitted when unavailable (on macOS the start time of other users' processes), never `null`. `--min-uptime` never matches those. `user` falls back to the numeric ID. `status` is `running`, `sleeping`, `stopped`, `zombie`, `dead`, `idle` (Linux: an idle kernel thread), `starting` (macOS, FreeBSD and NetBSD: being created by `fork`), `disk_wait` (Linux: uninterruptible sleep on the disk, state `D`) or `unknown`. Before 2.3.0 those last three were `unknown`; match on the words, not on `unknown` as "the rest".
 
 `cpu_percent` is a percent of one core (over 100 with several), measured over 0.2 s by `list`, `by`, `in`, `for`, `info`, `on`, `tree`, `orphans`, `wait -v` and any `--dry-run` or confirmation. In `succeeded` after an action it is not meaningful, and `status` there is the status before the action (a frozen process shows `running`).
 

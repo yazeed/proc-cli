@@ -24,7 +24,7 @@ proc by node --min-cpu 5   # node using >5% CPU
 | `--in [<dir>]` | `-i` | Filter by directory. Takes the next word as its directory unless it starts with `-` (bare `--in` is the current directory, `--in=DIR` is explicit) |
 | `--min-cpu <n>` | | Minimum CPU % |
 | `--min-mem <n>` | | Minimum memory (MB) |
-| `--status <s>` | | Filter by status: running, sleeping, stopped, zombie |
+| `--status <s>` | | Filter by status: running, sleeping, stopped, zombie, idle (Linux), starting (macOS, FreeBSD, NetBSD), disk-wait (Linux; `disk_wait` also works) |
 | `--min-uptime <s>` | | Minimum uptime in seconds |
 | `--parent <pid>` | | Only children of this parent PID |
 | `--sort <key>` | `-s` | Sort by: cpu, mem (biggest first); pid, name (ascending). Ties come by PID (default: cpu) |

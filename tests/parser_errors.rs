@@ -345,7 +345,7 @@ fn the_json_error_keeps_the_missing_argument_and_the_allowed_values() {
     assert_eq!(
         json_error(&["list", "--status", "bogus", "-j"]),
         "invalid value 'bogus' for '--status <STATUS>' \
-         [possible values: running, sleeping, stopped, zombie]"
+         [possible values: running, sleeping, stopped, zombie, idle, starting, disk-wait]"
     );
     // the "did you mean" suggestion stays
     assert_eq!(

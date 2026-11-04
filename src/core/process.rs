@@ -561,20 +561,67 @@ pub enum ProcessStatus {
     Zombie,
     /// Process is being terminated
     Dead,
+    /// Linux only: an idle kernel thread (state `I` in `/proc/<pid>/stat`), which has
+    /// nothing to run. Before 2.3.0 this was `unknown`.
+    Idle,
+    /// macOS, FreeBSD and NetBSD: the process is being created by `fork` and is not
+    /// running yet (`SIDL`). Before 2.3.0 this was `unknown`.
+    Starting,
+    /// Linux only: uninterruptible sleep, waiting on the disk or other I/O that a signal
+    /// cannot cut short (state `D`). Before 2.3.0 this was `unknown`.
+    #[serde(rename = "disk_wait")]
+    DiskWait,
     /// Process status could not be determined
     Unknown,
 }
 
-impl From<SysProcessStatus> for ProcessStatus {
-    fn from(status: SysProcessStatus) -> Self {
+impl ProcessStatus {
+    /// The status as a person reads it: the word the card shows after `Status:`,
+    /// lowercase (a table capitalises it). JSON spells it with `_` where this has a space.
+    pub(crate) fn word(self) -> &'static str {
+        match self {
+            ProcessStatus::Running => "running",
+            ProcessStatus::Sleeping => "sleeping",
+            ProcessStatus::Stopped => "stopped",
+            ProcessStatus::Zombie => "zombie",
+            ProcessStatus::Dead => "dead",
+            ProcessStatus::Idle => "idle",
+            ProcessStatus::Starting => "starting",
+            ProcessStatus::DiskWait => "disk wait",
+            ProcessStatus::Unknown => "unknown",
+        }
+    }
+
+    /// What sysinfo's `Idle` means on the OS named (`std::env::consts::OS`): an idle
+    /// kernel thread on Linux, a process still being created by `fork` (`SIDL`) on
+    /// macOS, FreeBSD and NetBSD, and nothing on any other OS (sysinfo does not give it
+    /// there).
+    fn of_sysinfo_idle(os: &str) -> ProcessStatus {
+        match os {
+            "linux" | "android" => ProcessStatus::Idle,
+            "macos" | "freebsd" | "netbsd" => ProcessStatus::Starting,
+            _ => ProcessStatus::Unknown,
+        }
+    }
+
+    /// The status for a sysinfo one on the OS named (`std::env::consts::OS`)
+    fn from_sysinfo_on(status: SysProcessStatus, os: &str) -> ProcessStatus {
         match status {
             SysProcessStatus::Run => ProcessStatus::Running,
             SysProcessStatus::Sleep => ProcessStatus::Sleeping,
             SysProcessStatus::Stop => ProcessStatus::Stopped,
             SysProcessStatus::Zombie => ProcessStatus::Zombie,
             SysProcessStatus::Dead => ProcessStatus::Dead,
+            SysProcessStatus::Idle => ProcessStatus::of_sysinfo_idle(os),
+            SysProcessStatus::UninterruptibleDiskSleep => ProcessStatus::DiskWait,
             _ => ProcessStatus::Unknown,
         }
+    }
+}
+
+impl From<SysProcessStatus> for ProcessStatus {
+    fn from(status: SysProcessStatus) -> Self {
+        ProcessStatus::from_sysinfo_on(status, std::env::consts::OS)
     }
 }
 
@@ -2397,15 +2444,79 @@ mod tests {
 
     #[test]
     fn every_sysinfo_status_maps_to_ours() {
-        for (sys, ours) in [
-            (SysProcessStatus::Run, ProcessStatus::Running),
-            (SysProcessStatus::Sleep, ProcessStatus::Sleeping),
-            (SysProcessStatus::Stop, ProcessStatus::Stopped),
-            (SysProcessStatus::Zombie, ProcessStatus::Zombie),
-            (SysProcessStatus::Dead, ProcessStatus::Dead),
-            (SysProcessStatus::Idle, ProcessStatus::Unknown),
+        use ProcessStatus::{DiskWait, Idle, Starting, Unknown};
+        // What sysinfo's Idle means, per OS: SIDL (a process being created) on macOS and
+        // the BSDs, an idle kernel thread on Linux, nothing elsewhere
+        for (os, idle) in [
+            ("linux", Idle),
+            ("android", Idle),
+            ("macos", Starting),
+            ("freebsd", Starting),
+            ("netbsd", Starting),
+            ("windows", Unknown),
+            ("openbsd", Unknown),
         ] {
-            assert_eq!(ProcessStatus::from(sys), ours, "{sys:?}");
+            assert_eq!(
+                ProcessStatus::from_sysinfo_on(SysProcessStatus::Idle, os),
+                idle,
+                "{os}"
+            );
+        }
+        // Everything else is the same on every OS
+        for os in ["linux", "macos", "freebsd", "netbsd", "windows"] {
+            for (sys, ours) in [
+                (SysProcessStatus::Run, ProcessStatus::Running),
+                (SysProcessStatus::Sleep, ProcessStatus::Sleeping),
+                (SysProcessStatus::Stop, ProcessStatus::Stopped),
+                (SysProcessStatus::Zombie, ProcessStatus::Zombie),
+                (SysProcessStatus::Dead, ProcessStatus::Dead),
+                (SysProcessStatus::UninterruptibleDiskSleep, DiskWait),
+                (SysProcessStatus::LockBlocked, Unknown),
+                (SysProcessStatus::Suspended, Unknown),
+                (SysProcessStatus::Tracing, Unknown),
+                (SysProcessStatus::Parked, Unknown),
+                (SysProcessStatus::Wakekill, Unknown),
+                (SysProcessStatus::Waking, Unknown),
+                (SysProcessStatus::Unknown(7), Unknown),
+            ] {
+                assert_eq!(
+                    ProcessStatus::from_sysinfo_on(sys, os),
+                    ours,
+                    "{os} {sys:?}"
+                );
+            }
+        }
+        // ... and the conversion proc uses is the one for this OS
+        assert_eq!(
+            ProcessStatus::from(SysProcessStatus::Idle),
+            ProcessStatus::of_sysinfo_idle(std::env::consts::OS)
+        );
+        assert_eq!(
+            ProcessStatus::from(SysProcessStatus::Run),
+            ProcessStatus::Running
+        );
+    }
+
+    #[test]
+    fn a_status_is_a_lowercase_word_in_json_and_the_new_ones_round_trip() {
+        for (status, json, word) in [
+            (ProcessStatus::Running, "running", "running"),
+            (ProcessStatus::Sleeping, "sleeping", "sleeping"),
+            (ProcessStatus::Stopped, "stopped", "stopped"),
+            (ProcessStatus::Zombie, "zombie", "zombie"),
+            (ProcessStatus::Dead, "dead", "dead"),
+            (ProcessStatus::Idle, "idle", "idle"),
+            (ProcessStatus::Starting, "starting", "starting"),
+            (ProcessStatus::DiskWait, "disk_wait", "disk wait"),
+            (ProcessStatus::Unknown, "unknown", "unknown"),
+        ] {
+            let text = serde_json::to_string(&status).unwrap();
+            assert_eq!(text, format!("\"{json}\""));
+            assert_eq!(
+                serde_json::from_str::<ProcessStatus>(&text).unwrap(),
+                status
+            );
+            assert_eq!(status.word(), word);
         }
     }
 

@@ -24,7 +24,7 @@ One process gets the same card as `proc on`, under the line `✓ Found 1 process
 | `--cmd` | | Match `--by` as a substring of the process name or full command line (like `pkill -f`) |
 | `--min-cpu <n>` | | Minimum CPU % |
 | `--min-mem <n>` | | Minimum memory (MB) |
-| `--status <s>` | | Filter by status: running, sleeping, stopped, zombie |
+| `--status <s>` | | Filter by status: running, sleeping, stopped, zombie, idle (Linux), starting (macOS, FreeBSD, NetBSD), disk-wait (Linux; `disk_wait` also works) |
 | `--min-uptime <s>` | | Minimum uptime in seconds |
 | `--sort <key>` | `-s` | Sort by: cpu, mem (biggest first); pid, name (ascending). Ties come by PID (default: cpu) |
 | `--limit <n>` | `-n` | Limit results |

@@ -1039,6 +1039,9 @@ mod tests {
             ProcessStatus::Stopped,
             ProcessStatus::Zombie,
             ProcessStatus::Dead,
+            ProcessStatus::Idle,
+            ProcessStatus::Starting,
+            ProcessStatus::DiskWait,
             ProcessStatus::Unknown,
         ];
         let list: Vec<Process> = statuses
@@ -1053,7 +1056,10 @@ mod tests {
         let verbose = Printer::new(OutputFormat::Human, true);
         let table = written(|w| verbose.write_process_rows(w, screen(120), &list, false));
         for (i, status) in statuses.iter().enumerate() {
-            let name = format!("{status:?}");
+            let name = match status {
+                ProcessStatus::DiskWait => "Disk wait".to_string(),
+                other => format!("{other:?}"),
+            };
             let row = &rows(&table)[i + 1];
             assert!(row.contains(&format!(" {name} ")), "{table}");
         }

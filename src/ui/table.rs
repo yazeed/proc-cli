@@ -146,8 +146,8 @@ impl Column {
             Column::Name => Some(Color::White),
             Column::Status => Some(match process.status {
                 ProcessStatus::Running => Color::Green,
-                ProcessStatus::Sleeping => Color::Blue,
-                ProcessStatus::Stopped => Color::Yellow,
+                ProcessStatus::Sleeping | ProcessStatus::Idle => Color::Blue,
+                ProcessStatus::Stopped | ProcessStatus::DiskWait => Color::Yellow,
                 ProcessStatus::Zombie => Color::Red,
                 _ => Color::White,
             }),
@@ -174,7 +174,11 @@ impl Column {
             Column::Ppid => process
                 .parent_pid
                 .map_or_else(|| UNKNOWN.to_string(), |pid| pid.to_string()),
-            Column::Status => format!("{:?}", process.status),
+            Column::Status => {
+                // `Running`, `Disk wait`: the card's word, capitalised
+                let word = process.status.word();
+                format!("{}{}", word[..1].to_uppercase(), &word[1..])
+            }
             Column::Command => known(&process.command).unwrap_or(UNKNOWN).to_string(),
         }
     }

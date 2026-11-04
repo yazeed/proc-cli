@@ -57,7 +57,7 @@ pub struct TreeCommand {
     #[arg(long)]
     min_mem: Option<f64>,
 
-    /// Filter by status: running, sleeping, stopped, zombie
+    /// Filter by status: running, sleeping, stopped, zombie, idle, starting, disk-wait
     #[arg(long, value_enum, ignore_case = true)]
     status: Option<StatusFilter>,
 
@@ -645,9 +645,10 @@ impl TreeCommand {
 fn status_indicator(status: ProcessStatus) -> ColoredString {
     match status {
         ProcessStatus::Running => "●".green(),
-        ProcessStatus::Sleeping => "○".blue(),
-        ProcessStatus::Stopped => "◐".yellow(),
+        ProcessStatus::Sleeping | ProcessStatus::Idle => "○".blue(),
+        ProcessStatus::Stopped | ProcessStatus::DiskWait => "◐".yellow(),
         ProcessStatus::Zombie => "✗".red(),
+        ProcessStatus::Starting => "◌".white(),
         _ => "?".white(),
     }
 }
@@ -824,6 +825,12 @@ mod tests {
         assert_eq!(text(ProcessStatus::Zombie), "✗");
         assert_eq!(text(ProcessStatus::Dead), "?");
         assert_eq!(text(ProcessStatus::Unknown), "?");
+        assert_eq!(text(ProcessStatus::Idle), "○");
+        assert_eq!(text(ProcessStatus::Starting), "◌");
+        assert_eq!(text(ProcessStatus::DiskWait), "◐");
+        assert_eq!(color(ProcessStatus::Idle), Some(Color::Blue));
+        assert_eq!(color(ProcessStatus::Starting), Some(Color::White));
+        assert_eq!(color(ProcessStatus::DiskWait), Some(Color::Yellow));
         assert_eq!(color(ProcessStatus::Running), Some(Color::Green));
         assert_eq!(color(ProcessStatus::Sleeping), Some(Color::Blue));
         assert_eq!(color(ProcessStatus::Stopped), Some(Color::Yellow));

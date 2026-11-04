@@ -25,7 +25,7 @@ Each line shows the process's status, name, PID, CPU, memory and uptime (`up 3m 
 | `--compact` | `-C` | Show PIDs only |
 | `--min-cpu <n>` | | Minimum CPU % |
 | `--min-mem <n>` | | Minimum memory (MB) |
-| `--status <s>` | | Filter by status |
+| `--status <s>` | | Filter by status: running, sleeping, stopped, zombie, idle (Linux), starting (macOS, FreeBSD, NetBSD), disk-wait (Linux; `disk_wait` also works) |
 | `--min-uptime <s>` | | Minimum uptime in seconds |
 | `--in [<dir>]` | `-i` | Filter by directory. Takes the next word as its directory unless it starts with `-` (bare `--in` is the current directory, `--in=DIR` is explicit). With no target, shows the processes in that directory, each with its subtree |
 | `--by <name>` | `-b` | Filter by process name (the whole name, ignoring case). With no target, shows the processes with that name, each with its subtree |

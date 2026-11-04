@@ -930,6 +930,9 @@ mod tests {
             (ProcessStatus::Stopped, "Stopped"),
             (ProcessStatus::Zombie, "Zombie"),
             (ProcessStatus::Dead, "Dead"),
+            (ProcessStatus::Idle, "Idle"),
+            (ProcessStatus::Starting, "Starting"),
+            (ProcessStatus::DiskWait, "Disk wait"),
             (ProcessStatus::Unknown, "Unknown"),
         ] {
             let mut p = process(4242, "x");

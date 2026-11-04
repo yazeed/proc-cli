@@ -377,9 +377,10 @@ fn ancestor_chain<'a>(target: &Process, pid_map: &HashMap<u32, &'a Process>) -> 
 fn status_indicator(status: ProcessStatus) -> ColoredString {
     match status {
         ProcessStatus::Running => "●".green(),
-        ProcessStatus::Sleeping => "○".blue(),
-        ProcessStatus::Stopped => "◐".yellow(),
+        ProcessStatus::Sleeping | ProcessStatus::Idle => "○".blue(),
+        ProcessStatus::Stopped | ProcessStatus::DiskWait => "◐".yellow(),
         ProcessStatus::Zombie => "✗".red(),
+        ProcessStatus::Starting => "◌".white(),
         _ => "?".white(),
     }
 }
@@ -521,6 +522,9 @@ mod tests {
         assert_eq!(symbol(ProcessStatus::Zombie), "✗");
         assert_eq!(symbol(ProcessStatus::Dead), "?");
         assert_eq!(symbol(ProcessStatus::Unknown), "?");
+        assert_eq!(symbol(ProcessStatus::Idle), "○");
+        assert_eq!(symbol(ProcessStatus::Starting), "◌");
+        assert_eq!(symbol(ProcessStatus::DiskWait), "◐");
     }
 
     #[test]
