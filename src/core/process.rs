@@ -2846,12 +2846,10 @@ mod tests {
     #[test]
     fn a_missing_open_file_program_is_an_error_naming_it() {
         let found = open_file_pids_with("proc-no-such-lsof", std::path::Path::new("/"));
-        match found {
-            Err(ProcError::NotSupported(why)) => {
-                assert!(why.contains("proc-no-such-lsof"), "{why}")
-            }
-            other => panic!("expected NotSupported, got {other:?}"),
-        }
+        assert!(
+            matches!(&found, Err(ProcError::NotSupported(why)) if why.contains("proc-no-such-lsof")),
+            "{found:?}"
+        );
     }
 
     /// A fake `/proc`: PID entries with the links and maps a holder has
@@ -2902,10 +2900,10 @@ mod tests {
     fn a_proc_that_cannot_be_read_is_an_error_not_an_empty_answer() {
         let missing = std::path::Path::new("/proc-no-such-dir");
         let found = linux_open_file_holders(missing, std::path::Path::new("/"));
-        match found {
-            Err(ProcError::SystemError(why)) => assert!(why.contains("/proc-no-such-dir"), "{why}"),
-            other => panic!("expected SystemError, got {other:?}"),
-        }
+        assert!(
+            matches!(&found, Err(ProcError::SystemError(why)) if why.contains("/proc-no-such-dir")),
+            "{found:?}"
+        );
     }
 
     #[cfg(unix)]
