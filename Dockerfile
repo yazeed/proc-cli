@@ -27,7 +27,7 @@ COPY build.rs ./
 COPY src ./src
 
 # Build the actual binary, and fail the build if it isn't static
-RUN touch src/main.rs && cargo build --release \
+RUN rustc --version && touch src/main.rs && cargo build --release \
     && readelf -d target/release/proc > /tmp/dynamic \
     && ! grep -q NEEDED /tmp/dynamic
 

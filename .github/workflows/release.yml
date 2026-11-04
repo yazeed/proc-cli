@@ -57,6 +57,11 @@ jobs:
           echo '[target.aarch64-unknown-linux-musl]' >> ~/.cargo/config.toml
           echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
 
+      # The toolchain follows stable (the oldest supported Rust is tested in
+      # RELEASE.md's checks); the log records the one each binary was built with
+      - name: Record the Rust version
+        run: rustc --version && cargo --version
+
       - name: Build release
         run: cargo build --release --target ${{ matrix.target }}
 
