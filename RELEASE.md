@@ -169,13 +169,11 @@ To automate once the port is in: a workflow job that runs step 1 in a FreeBSD VM
 
 ### After the tag: pkgsrc
 
-`sysutils/proc-cli` (`pkg/pkgsrc/`) is in pkgsrc-wip as `wip/proc-cli` (account `yazeed`, key `~/.ssh/pkgsrc-wip` on the maintainer's Mac). An import into pkgsrc itself is requested (tech-pkg, and Thomas Klausner, who created the wip account). Every release moves wip to the new version:
+`sysutils/proc-cli` (`pkg/pkgsrc/`) is in pkgsrc itself, imported at 2.2.0 by Marcin Gondek (drixter) on 2026-11-04; `wip/proc-cli` was removed then. Thomas Klausner (wiz) named two ways to send an update: a diff through a problem report at https://gnats.netbsd.org for a small change such as a version bump, or the new version re-added to pkgsrc-wip (account `yazeed`, key `~/.ssh/pkgsrc-wip` on the maintainer's Mac) for a committer to take. Every release sends one:
 
-1. In a NetBSD VM with pkgsrc and pkgsrc-wip checked out, copy `pkg/pkgsrc/*` to `wip/proc-cli/`, set `DISTNAME`, then `make print-cargo-depends > cargo-depends.mk` and `make makesum`. `make package`, the installed `proc --version` and `pkglint` must pass. Build against a quarterly branch if trunk needs a newer system library than the NetBSD release has (2.2.0: trunk wanted libunwind >= 22.1).
+1. In a NetBSD VM with a current pkgsrc checked out, copy `pkg/pkgsrc/*` to `sysutils/proc-cli/`, set `DISTNAME`, then `make print-cargo-depends > cargo-depends.mk` and `make makesum`. `make package`, the installed `proc --version` and `pkglint` must pass. Build against a quarterly branch if trunk needs a newer system library than the NetBSD release has (2.2.0: trunk wanted libunwind >= 22.1).
 2. Copy the changed files back to `pkg/pkgsrc/` and commit them to `main`; update `COMMIT_MSG` to the version.
-3. Commit and push to pkgsrc-wip from the maintainer's Mac with that key (wip asks a human to review what is pushed).
-
-Once the package is in pkgsrc itself, updates go to its committer instead (send-pr, or mail to whoever imported it). To automate wip: a CI-only key that Thomas adds to the wip account, and a job that does steps 1 and 3.
+3. Send it: `cvs diff -u` (or `diff -ru` against the tree) of `sysutils/proc-cli` attached to a gnats problem report, category `pkg`, synopsis `sysutils/proc-cli: update to X.Y.Z`. The maintainer files it; a pkgsrc developer commits it.
 
 ## 6. Verify CI
 
@@ -195,7 +193,7 @@ After tag push, monitor GitHub Actions:
 - [ ] "Update COPR" passed: the build for the new version succeeded on every chroot (https://copr.fedorainfracloud.org/coprs/yazeed/proc-cli/builds/)
 - [ ] The "Install the PyPI wheel" jobs passed (Linux x86_64 and aarch64, Alpine, macOS arm64 and x86_64, Windows)
 - [ ] PyPI published: https://pypi.org/project/proc-cli/ shows the new version
-- [ ] The after-the-tag steps are done: nixpkgs, the Ubuntu PPA, the FreeBSD port's patch filed, pkgsrc-wip pushed (step 5)
+- [ ] The after-the-tag steps are done: nixpkgs, the Ubuntu PPA, the FreeBSD port's patch filed, the pkgsrc update sent (step 5)
 
 ## 7. Post-Release Verification
 
@@ -224,8 +222,8 @@ curl -s 'https://aur.archlinux.org/rpc/v5/info?arg[]=proc-cli&arg[]=proc-cli-bin
 
 # FreeBSD port: the bug (300492 until the port is in, then the update bug) has the new patch;
 # once committed, https://www.freshports.org/sysutils/proc-cli/ shows the new version
-# pkgsrc: wip/proc-cli is at the new version (its commits are mirrored on GitHub)
-gh api 'repos/NetBSD/pkgsrc-wip/commits?path=proc-cli&per_page=1' -q '.[0].commit.message'
+# pkgsrc: sysutils/proc-cli is at the new version once a developer commits the update (mirrored on GitHub)
+gh api 'repos/NetBSD/pkgsrc/commits?path=sysutils/proc-cli&per_page=1' -q '.[0].commit.message'
 
 # Linux binaries are static (musl): they must run on an older distro and on Alpine
 mkdir -p /tmp/proc-linux && cd /tmp/proc-linux
@@ -363,7 +361,7 @@ Grouped by system, as docs/install.md and the README list them. "Updates" says h
 | Arch | AUR (community, Rafael Dominiquini) | proc-cli, proc-cli-bin | `yay -S proc-cli` (from source), `yay -S proc-cli-bin` (release binary) | when the maintainer publishes it |
 | FreeBSD | ports (not live yet) | proc-cli | `pkg install proc-cli` | step 5; waits for a committer: bug 300492. Not in install.md or the README until it is in the tree; install.md says it is submitted |
 | FreeBSD, NetBSD | release binaries | proc-freebsd-x86_64, proc-netbsd-x86_64 | `install.sh`, `cargo binstall proc-cli`, `npm install -g proc-cli` | run again |
-| NetBSD | pkgsrc-wip | wip/proc-cli | from pkgsrc-wip now; `pkgin install proc-cli` once imported (step 5) | the maintainer moves wip to each release |
+| NetBSD | pkgsrc | sysutils/proc-cli | from a pkgsrc tree; `pkgin` once pkgsrc's binary packages include it | the maintainer sends each release as a gnats diff (step 5) |
 | Any | crates.io | proc-cli | `cargo install proc-cli` | run again |
 | Any | npm | proc-cli | `npm install -g proc-cli` | `npm update -g proc-cli` |
 | Any | PyPI | proc-cli | `pip install proc-cli`, `pipx install proc-cli`, `uv tool install proc-cli` | `pip install --upgrade proc-cli`; `publish-pypi`, first published with 2.3.0 |

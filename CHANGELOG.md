@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **NetBSD's pkgsrc, `sysutils/proc-cli`.** pkgsrc imported proc 2.2.0 on 2026-11-04 (Marcin Gondek), from the pkgsrc-wip package, which is gone. Each release now goes to pkgsrc as a diff a pkgsrc developer commits (RELEASE.md, "After the tag: pkgsrc"); the README and the install page name the package
+
 ### Changed
 
 - **The Docker image is a static binary on distroless.** It was the glibc binary on `debian:bookworm-slim`, whose packages Docker Scout flagged with 53 known vulnerabilities on 2.3.0 (6 high: util-linux, perl, glibc, zlib), none of them in proc and none fixed in Debian yet. The image is now the static musl build, the same one the Linux release binaries are, on `gcr.io/distroless/static-debian13`, which holds no shell and no package manager. `docker run --rm -it --pid=host --net=host yazeed/proc-cli` works as before, as root, on linux/amd64 and linux/arm64. **What changes:** there is no shell to `docker exec` into or to give `--entrypoint sh`, and no `apt-get` for an image built `FROM` it; `COPY --from=yazeed/proc-cli /usr/local/bin/proc` now works in any Linux image, since the binary needs no C library. A process's user is named from the image's `/etc/passwd`, which now lists root, nobody and nonroot only, so with `--pid=host` other host users show as their number (as they did whenever Debian's list had no such ID)

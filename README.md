@@ -70,7 +70,7 @@ proc free :3000 --yes             # a port target: no question
 | Fedora / RHEL, AlmaLinux, Rocky / Amazon Linux 2023 | `sudo dnf copr enable yazeed/proc-cli && sudo dnf install proc-cli` | `dnf upgrade`; every release builds there |
 | Arch Linux | `yay -S proc-cli-bin` (release binary) or `yay -S proc-cli` (from source), AUR, community-maintained (Rafael Dominiquini) | when the maintainer publishes it |
 | Any Linux, FreeBSD / NetBSD (x86_64) | `curl -fsSL https://raw.githubusercontent.com/yazeed/proc-cli/main/install.sh \| bash` (`sh` on the BSDs, where `curl` is a package) | run it again |
-| NetBSD (pkgsrc-wip) | `wip/proc-cli` | the maintainer moves it to each release |
+| NetBSD (pkgsrc) | `sysutils/proc-cli` | the maintainer sends each release to pkgsrc |
 | npm / bun | `npm install -g proc-cli` | `npm update -g proc-cli` |
 | PyPI (new in 2.3.0) | `pip install proc-cli`, `pipx install proc-cli` or `uv tool install proc-cli` | `pip install --upgrade proc-cli` |
 | Rust | `cargo install proc-cli` (or `cargo binstall proc-cli` for the pre-built binary) | run it again |

@@ -119,7 +119,7 @@ curl -fsSL https://raw.githubusercontent.com/yazeed/proc-cli/main/install.sh | s
 
 Does not update itself. Run it again for a newer version. `cargo binstall proc-cli` and `npm install -g proc-cli` download the same binaries. On other CPUs, build it with `cargo install proc-cli`.
 
-**pkgsrc-wip**, for NetBSD users of pkgsrc-wip: the package is `wip/proc-cli`. The maintainer moves it to each release.
+**pkgsrc**: the package is `sysutils/proc-cli`, in pkgsrc since 2026-11-04. From a current pkgsrc tree: `cd /usr/pkgsrc/sysutils/proc-cli && make install`. The maintainer sends each release to pkgsrc, where a pkgsrc developer commits it.
 
 There is no FreeBSD port yet. It is submitted and waits for review.
 
