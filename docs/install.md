@@ -68,7 +68,7 @@ A file is not a repository, so `apt upgrade` never updates it: download the new 
 
 ### Fedora, RHEL and its rebuilds, Amazon Linux
 
-**COPR**, for Fedora 43, 44, 45 and rawhide, EPEL 9 and 10 (RHEL, AlmaLinux, Rocky) and Amazon Linux 2023, on x86_64 and aarch64:
+**COPR**, for the Fedora releases Fedora still supports and rawhide, EPEL 9 and 10 (RHEL, AlmaLinux, Rocky) and Amazon Linux 2023, on x86_64 and aarch64. When a Fedora release reaches its end of life, COPR stops building for it, and the packages already there stay installable for 180 days:
 
 ```bash
 sudo dnf copr enable yazeed/proc-cli
