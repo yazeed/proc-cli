@@ -2572,15 +2572,15 @@ mod tests {
                 .expect("run ps");
             String::from_utf8_lossy(&ps.stdout).trim().starts_with('Z')
         };
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-        // Wait, then look, until `ps` shows the zombie or the deadline passes.
-        // All of it is the loop's condition: a loop whose lines run only on
-        // some timings leaves one uncovered on some runs (the coverage gate
-        // failed both ways on 2026-11-04)
-        while std::time::Instant::now() < deadline && {
+        // Wait, then look, until `ps` shows the zombie, for up to 30 s (1500
+        // looks 20 ms apart). No loop: a loop has lines that run only on some
+        // timings (its body, or the code after a check), and the coverage gate
+        // failed on each of them in turn on 2026-11-04. The closure runs in
+        // full at least once whatever the timing
+        let _zombie = (0..1500).any(|_| {
             std::thread::sleep(std::time::Duration::from_millis(20));
-            !is_zombie()
-        } {}
+            is_zombie()
+        });
         child
     }
 
