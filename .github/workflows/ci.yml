@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+# CI only reads the repository; nothing here writes with the workflow's token
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1

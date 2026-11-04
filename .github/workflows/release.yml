@@ -10,6 +10,13 @@ on:
   # branch build is a -dev build
   workflow_dispatch:
 
+# The workflow's own token can only read. A job that writes says so in its own
+# permissions (create-release, the publish jobs, update-apt); the jobs that
+# push to other repositories use their own tokens (HOMEBREW_TAP_TOKEN,
+# SCOOP_BUCKET_TOKEN, WINGET_TOKEN)
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
