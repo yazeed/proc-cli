@@ -15,10 +15,10 @@ Every process on a Unix system is in one of a handful of states at any given mom
 ```
 USER   PID  %CPU %MEM    VSZ   RSS  STAT START   TIME COMMAND
 root     1   0.0  0.1 169312 13092 Ss   Feb28   0:08 /sbin/init
-zee   4821   2.3  1.4 982340 11520 Sl   10:02   0:45 node server.js
-zee   5190   0.0  0.0      0     0 Z    10:15   0:00 [build] <defunct>
+dev   4821   2.3  1.4 982340 11520 Sl   10:02   0:45 node server.js
+dev   5190   0.0  0.0      0     0 Z    10:15   0:00 [build] <defunct>
 root   312   0.1  0.0      0     0 D    09:58   0:12 [nfsd]
-zee   6700   0.0  0.2 225880  3200 T    10:30   0:01 vim notes.txt
+dev   6700   0.0  0.2 225880  3200 T    10:30   0:01 vim notes.txt
 ```
 
 The STAT column is the one that matters here. The first character tells you the process state:
@@ -60,7 +60,7 @@ ps aux | awk '$8 ~ /Z/'
 This filters `ps aux` output where column 8 (the STAT column) matches the pattern `/Z/`. The `~` operator in awk means "matches regex." You will see output like:
 
 ```
-zee   5190  0.0  0.0      0  0 Z+   10:15   0:00 [build] <defunct>
+dev   5190  0.0  0.0      0  0 Z+   10:15   0:00 [build] <defunct>
 ```
 
 Note the `<defunct>` tag -- that is `ps` telling you this is a zombie.
@@ -275,7 +275,7 @@ proc stuck
 ⚠ Found 1 potentially stuck process
 
  PID   NAME  USER   CPU%    MEM  UPTIME  COMMAND
- 4821  node  zee   475.7  5.9GB  1h 12m  node /Users/zee/my-agent/node_modules/.bin/ts-node index.ts
+ 4821  node  dev   475.7  5.9GB  1h 12m  node /Users/dev/my-agent/node_modules/.bin/ts-node index.ts
 ```
 
 Attempt recovery with escalating signals (SIGCONT, then SIGINT):

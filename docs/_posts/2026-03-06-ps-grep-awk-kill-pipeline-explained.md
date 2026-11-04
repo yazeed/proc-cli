@@ -27,8 +27,8 @@ The output looks like this:
 ```
 USER       PID  %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
 root         1   0.0  0.1 169376 13292 ?        Ss   Feb28   0:10 /sbin/init
-zee      48291   2.1  1.3 985432 108764 pts/1   Sl+  10:22   1:45 node server.js
-zee      48350   0.0  0.0  12784  3340 pts/2    S+   10:23   0:00 vim notes.txt
+dev      48291   2.1  1.3 985432 108764 pts/1   Sl+  10:22   1:45 node server.js
+dev      48350   0.0  0.0  12784  3340 pts/2    S+   10:23   0:00 vim notes.txt
 ```
 
 The columns that matter for process management:
@@ -56,7 +56,7 @@ This matches:
 
 - `node server.js` -- yes, you want this
 - `node worker.js` -- probably want this too
-- `vim /home/zee/node_modules/express/index.js` -- probably not
+- `vim /home/dev/node_modules/express/index.js` -- probably not
 - `grep node` -- definitely not (more on this next)
 
 Grep matches against the entire line, including the COMMAND column and all its arguments. If you're looking for `python`, you'll also match `python-config`, `/usr/lib/python3.11/something`, and any process whose arguments happen to contain the word "python".
@@ -74,8 +74,8 @@ ps aux | grep node
 You'll get output like:
 
 ```
-zee      48291   2.1  1.3 985432 108764 pts/1   Sl+  10:22   1:45 node server.js
-zee      49102   0.0  0.0  12340  2140 pts/2    S+   10:25   0:00 grep node
+dev      48291   2.1  1.3 985432 108764 pts/1   Sl+  10:22   1:45 node server.js
+dev      49102   0.0  0.0  12340  2140 pts/2    S+   10:25   0:00 grep node
 ```
 
 The `grep` process itself shows up in the results, because `grep node` is a running process whose command line contains the word "node". It matched itself.
@@ -97,7 +97,7 @@ The square brackets make grep search for the regex character class `[n]` followe
 Before awk:
 
 ```
-zee      48291   2.1  1.3 985432 108764 pts/1   Sl+  10:22   1:45 node server.js
+dev      48291   2.1  1.3 985432 108764 pts/1   Sl+  10:22   1:45 node server.js
 ```
 
 After `awk '{print $2}'`:
@@ -121,7 +121,7 @@ ps aux | awk '$6 > 1048576'
 ps aux | awk '$8 ~ /Z/'
 
 # Processes owned by a specific user
-ps aux | awk '$1 == "zee"'
+ps aux | awk '$1 == "dev"'
 
 # Print PID and command only (cleaner output)
 ps aux | awk '{print $2, $11}'
@@ -178,7 +178,7 @@ The `ps | grep | awk` pipeline is so common that dedicated tools exist to replac
 ```bash
 pgrep node           # PIDs of processes whose name contains "node" (add -x for exactly "node")
 pgrep -f "node.*server"  # Match against full command line
-pgrep -u zee node    # Only processes owned by user zee
+pgrep -u dev node    # Only processes owned by user dev
 pgrep -l node        # Show PID and process name
 pgrep -lf node       # Show PID and full command line (macOS and Linux; on Linux `pgrep -a` also works)
 ```

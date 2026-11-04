@@ -25,8 +25,8 @@ $ proc on :53581
   Process:     python3 (PID 39158)
   Command:     python3 -m http.server 0 --bind 127.0.0.1
   Directory:   /private/tmp/…/srv
-  Path:        /Users/zee/.local/bin/python3
-  User:        zee
+  Path:        /Users/dev/.local/bin/python3
+  User:        dev
   Parent:      zsh (PID 38120)
   Status:      running
   Resources:   0.0% CPU, 26.8MB, 0s CPU time, 9 open files

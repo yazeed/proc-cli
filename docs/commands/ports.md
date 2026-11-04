@@ -58,7 +58,7 @@ Each port has its listener (`port`, `protocol`, `pid`, `process_name`, `address`
 
 ```json
 { "port": 3000, "protocol": "tcp", "pid": 1234, "process_name": "node", "address": "127.0.0.1",
-  "exposure": "local", "command": "node server.js", "user": "zee", "uptime_secs": 34, "memory_mb": 41.5 }
+  "exposure": "local", "command": "node server.js", "user": "dev", "uptime_secs": 34, "memory_mb": 41.5 }
 ```
 
 ## See also
