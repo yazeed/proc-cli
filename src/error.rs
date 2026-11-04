@@ -41,6 +41,11 @@ pub enum ProcError {
     #[error("No process listening on port {0}\n  Try: proc ports")]
     PortNotFound(u16),
 
+    /// Something listens on the port, but its holder belongs to another user,
+    /// whose sockets proc can't see unless it runs as root
+    #[error("Port {0} is in use, but proc can't see which process holds it: it belongs to another user\n  Try: sudo proc <command>")]
+    PortInUseUnseen(u16),
+
     /// Insufficient permissions to operate on the process
     #[error("Permission denied for PID {0}\n  Try: sudo proc <command>")]
     PermissionDenied(u32),
@@ -175,7 +180,9 @@ impl ProcError {
             | ProcError::ProcessGone(_) => Some(REASON_NOT_FOUND),
             ProcError::NameNotFound { .. } => Some(REASON_COMMAND_LINE_ONLY),
             ProcError::FilteredOut { .. } => Some(REASON_RULED_OUT),
-            ProcError::PermissionDenied(_) => Some(REASON_PERMISSION_DENIED),
+            ProcError::PermissionDenied(_) | ProcError::PortInUseUnseen(_) => {
+                Some(REASON_PERMISSION_DENIED)
+            }
             ProcError::InvalidInput(_) => Some(REASON_INVALID_INPUT),
             ProcError::ConfirmationRequired { .. } => Some(REASON_NEEDS_CONFIRMATION),
             ProcError::NotSupported(_) => Some(REASON_NOT_SUPPORTED),
@@ -275,7 +282,9 @@ impl From<&ProcError> for ExitCode {
             | ProcError::FilteredOut { .. }
             | ProcError::PortNotFound(_)
             | ProcError::ProcessGone(_) => ExitCode::NotFound,
-            ProcError::PermissionDenied(_) => ExitCode::PermissionDenied,
+            ProcError::PermissionDenied(_) | ProcError::PortInUseUnseen(_) => {
+                ExitCode::PermissionDenied
+            }
             ProcError::InvalidInput(_)
             | ProcError::NotSupported(_)
             | ProcError::ConfirmationRequired { .. } => ExitCode::InvalidInput,
@@ -342,6 +351,12 @@ mod tests {
                 "No process listening on port 3000\n  Try: proc ports",
                 2,
                 Some("not_found"),
+            ),
+            (
+                ProcError::PortInUseUnseen(80),
+                "Port 80 is in use, but proc can't see which process holds it: it belongs to another user\n  Try: sudo proc <command>",
+                3,
+                Some("permission_denied"),
             ),
             (
                 ProcError::PermissionDenied(42),

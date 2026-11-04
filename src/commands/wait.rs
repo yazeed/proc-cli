@@ -13,7 +13,8 @@
 
 use crate::core::process::ProcessDetails;
 use crate::core::{
-    flatten_targets, guard_targets, resolve_targets, Guards, NameMatch, Process, ProcessStatus,
+    flatten_targets, guard_targets, nothing_resolved, resolve_targets, Guards, NameMatch, Process,
+    ProcessStatus,
 };
 use crate::error::{ExitCode, ProcError, Result};
 use crate::out_println;
@@ -100,7 +101,7 @@ impl WaitCommand {
         guard_targets(&mut processes, &self.target, &guards, mode)?;
 
         if processes.is_empty() {
-            return Err(ProcError::ProcessNotFound(self.target.join(" ")));
+            return Err(nothing_resolved(self.target.join(" "), &resolved.unseen));
         }
 
         // Real CPU readings for the verbose list, the only view that shows CPU;

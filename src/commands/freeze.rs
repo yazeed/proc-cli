@@ -12,10 +12,10 @@
 
 #[cfg(unix)]
 use crate::core::{
-    apply_to_each, flatten_targets, guard_targets, resolve_targets_excluding_self, Guards,
-    NameMatch, Process,
+    apply_to_each, flatten_targets, guard_targets, nothing_resolved,
+    resolve_targets_excluding_self, Guards, NameMatch, Process,
 };
-use crate::error::{ProcError, Result};
+use crate::error::Result;
 #[cfg(unix)]
 use crate::ui::Printer;
 use clap::Args;
@@ -94,7 +94,7 @@ impl FreezeCommand {
         }
 
         if processes.is_empty() {
-            return Err(ProcError::ProcessNotFound(self.target.join(" ")));
+            return Err(nothing_resolved(self.target.join(" "), &resolved.unseen));
         }
 
         if self.dry_run {
@@ -117,7 +117,7 @@ impl FreezeCommand {
     /// Windows stub
     #[cfg(not(unix))]
     pub fn execute(&self) -> Result<()> {
-        Err(ProcError::NotSupported(
+        Err(crate::error::ProcError::NotSupported(
             "freeze (SIGSTOP) is not supported on Windows".to_string(),
         ))
     }

@@ -184,6 +184,31 @@ impl PortInfo {
         Ok(holders_in(Self::get_all_listening()?, port))
     }
 
+    /// [`holders_of`](Self::holders_of), but a port with no holder proc can
+    /// see while something listens on it is an error,
+    /// [`ProcError::PortInUseUnseen`], not an empty list: an empty list says
+    /// nobody holds the port, and proc can't back that
+    pub fn holders_seen(port: u16) -> Result<Vec<PortInfo>> {
+        visible_holders(port, Self::holders_of(port)?, Self::in_use_unseen)
+    }
+
+    /// Whether something listens on `port` whose holder proc can't see, asked
+    /// once no holder was found. Linux's tables in /proc/net list every
+    /// listening socket whoever owns it, but proc can read the owner only of
+    /// its own user's processes (every process as root), so a listening row
+    /// for the port means another user's process holds it. The other systems
+    /// give proc no such table, and there this is false
+    pub fn in_use_unseen(port: u16) -> bool {
+        #[cfg(target_os = "linux")]
+        return Self::proc_net_tables(Path::new("/proc/net"))
+            .is_ok_and(|tables| listens_in(&tables, port));
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = port;
+            false
+        }
+    }
+
     /// Get the full process info for this port's process
     pub fn get_process(&self) -> Result<Option<Process>> {
         Process::find_by_pid(self.pid)
@@ -445,7 +470,7 @@ impl PortInfo {
     /// Parse a line of /proc/net/tcp or tcp6 into (socket inode, port, address),
     /// keeping only listening sockets. Addresses are hex in the kernel's byte
     /// order: 0100007F:1F90 is 127.0.0.1:8080.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", test))]
     fn parse_proc_net_line(line: &str, v6: bool) -> Option<(u64, u16, String)> {
         const LISTEN: &str = "0A";
         let fields: Vec<&str> = line.split_whitespace().collect();
@@ -685,6 +710,32 @@ fn name_as_processes(ports: &mut [PortInfo], names: &std::collections::HashMap<u
             port.process_name = name.clone();
         }
     }
+}
+
+/// `holders`, the holders of `port` proc found, or
+/// [`ProcError::PortInUseUnseen`] when there are none and `unseen` says
+/// something listens on the port all the same
+pub(crate) fn visible_holders(
+    port: u16,
+    holders: Vec<PortInfo>,
+    unseen: impl FnOnce(u16) -> bool,
+) -> Result<Vec<PortInfo>> {
+    if holders.is_empty() && unseen(port) {
+        return Err(ProcError::PortInUseUnseen(port));
+    }
+    Ok(holders)
+}
+
+/// Whether one of `tables` (the text of /proc/net/tcp and tcp6, each with
+/// whether it is the IPv6 table) has a listening socket on `port`
+#[cfg(any(target_os = "linux", test))]
+fn listens_in(tables: &[(String, bool)], port: u16) -> bool {
+    tables.iter().any(|(text, v6)| {
+        text.lines()
+            .skip(1)
+            .filter_map(|line| PortInfo::parse_proc_net_line(line, *v6))
+            .any(|(_, listening, _)| listening == port)
+    })
 }
 
 /// The listeners in `listening` that hold `port`, one per process: a process
@@ -1295,6 +1346,49 @@ Active Connections
             .collect();
         assert_eq!(seen, vec![(10, "127.0.0.1"), (11, "::1")]);
         assert!(holders_in(listening, 7).is_empty());
+    }
+
+    // An empty list says nobody holds the port; proc says so only when the
+    // kernel's tables agree
+    #[test]
+    fn a_port_in_use_by_a_holder_proc_cannot_see_is_an_error_not_nobody() {
+        let held = PortInfo {
+            port: 80,
+            protocol: Protocol::Tcp,
+            pid: 1,
+            process_name: "nginx".to_string(),
+            address: Some("0.0.0.0".to_string()),
+        };
+        // a holder proc can see is returned whatever the tables say
+        let seen = visible_holders(80, vec![held], |_| true).unwrap();
+        assert_eq!(seen.len(), 1);
+        // no holder, and nothing listens: nobody holds it
+        assert!(visible_holders(80, vec![], |_| false).unwrap().is_empty());
+        // no holder, but something listens: another user's process holds it
+        let unseen = visible_holders(80, vec![], |port| port == 80);
+        assert!(
+            matches!(unseen, Err(ProcError::PortInUseUnseen(80))),
+            "{unseen:?}"
+        );
+    }
+
+    #[test]
+    fn the_kernel_tables_say_whether_anything_listens_on_a_port() {
+        // root's sshd on 0.0.0.0:22 (inode 777, which proc as a user can't
+        // trace to a PID), an established connection from 8080, and an IPv6
+        // listener on [::]:80
+        let v4 = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n\
+            \x20  1: 00000000:0016 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 777 1 0000000000000000 100 0 0 10 0\n\
+            \x20  2: 0100007F:1F90 0100007F:D431 01 00000000:00000000 00:00000000 00000000  1000        0 888 1 0000000000000000 20 4 30 10 -1\n";
+        let v6 = "  sl  local_address remote_address st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n\
+            \x20  0: 00000000000000000000000000000000:0050 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 222 1 0000000000000000 100 0 0 10 0\n";
+        let tables = vec![(v4.to_string(), false), (v6.to_string(), true)];
+        assert!(listens_in(&tables, 22));
+        assert!(listens_in(&tables, 80));
+        // an established connection is not a listener
+        assert!(!listens_in(&tables, 8080));
+        assert!(!listens_in(&tables, 9999));
+        assert!(!listens_in(&[], 22));
     }
 
     #[test]

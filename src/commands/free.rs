@@ -75,7 +75,7 @@ impl FreeCommand {
         for (target, port) in &ports {
             // A port nobody listens on, or whose holders have all gone, is not found
             let mut held = false;
-            for listener in PortInfo::holders_of(*port)? {
+            for listener in PortInfo::holders_seen(*port)? {
                 if let Some(proc) = Process::find_by_pid(listener.pid)? {
                     port_processes.push((*port, proc));
                     held = true;

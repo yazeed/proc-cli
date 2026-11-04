@@ -16,8 +16,8 @@ use super::held::{card_options, measure_with_known_ports_from, write_process, He
 use crate::core::port::SocketReading;
 use crate::core::target::resolve_port_in;
 use crate::core::{
-    flatten_targets, guard_targets, parse_target, resolve_target, Guards, NameMatch, Process,
-    Resolved, TargetType,
+    flatten_targets, guard_targets, nothing_resolved, parse_target, resolve_target, Guards,
+    NameMatch, Process, Resolved, TargetType,
 };
 use crate::error::{ExitCode, ProcError, Result};
 use crate::ui::{out, Printer};
@@ -84,8 +84,12 @@ impl InfoCommand {
         let Resolved {
             processes: mut found,
             not_found,
+            unseen,
             ..
         } = resolved;
+        // what nothing matching means: not found, or a port in use by a
+        // process proc can't see
+        let nothing = nothing_resolved(self.targets.join(" "), &unseen);
 
         // Apply --in and --by: guards that rule out everything found say so
         let guards = Guards::new(&self.in_dir, &self.by_name, self.start_time);
@@ -122,8 +126,13 @@ impl InfoCommand {
                 processes: &processes,
                 not_found: &not_found,
                 error: not_found_error.as_deref(),
-                exit_code: not_found_error.is_some().then_some(2),
-                reason: not_found_error.is_some().then_some("not_found"),
+                exit_code: not_found_error
+                    .is_some()
+                    .then_some(ExitCode::from(&nothing) as i32),
+                reason: not_found_error
+                    .is_some()
+                    .then(|| nothing.reason())
+                    .flatten(),
                 count: found.len(),
             });
         } else {
@@ -144,10 +153,11 @@ impl InfoCommand {
         }
 
         if found.is_empty() {
-            return Err(ProcError::reported(
-                ExitCode::NotFound,
-                format!("No process found matching '{}'", self.targets.join(" ")),
-            ));
+            let message = match &nothing {
+                ProcError::PortInUseUnseen(_) => nothing.to_string(),
+                _ => format!("No process found matching '{}'", self.targets.join(" ")),
+            };
+            return Err(ProcError::reported(ExitCode::from(&nothing), message));
         }
 
         Ok(())
@@ -160,6 +170,7 @@ fn resolve_all(targets: &[String], resolve: impl Fn(&str) -> Result<Vec<Process>
     let mut found = Vec::new();
     let mut not_found = Vec::new();
     let mut hints = Vec::new();
+    let mut unseen = Vec::new();
     let mut seen_pids = std::collections::HashSet::new();
 
     for target in targets {
@@ -177,6 +188,9 @@ fn resolve_all(targets: &[String], resolve: impl Fn(&str) -> Result<Vec<Process>
                 }
             }
             Err(error) => {
+                if let ProcError::PortInUseUnseen(port) = error {
+                    unseen.push((target.clone(), port));
+                }
                 not_found.push(target.clone());
                 hints.extend(error.command_line_hint());
             }
@@ -187,6 +201,7 @@ fn resolve_all(targets: &[String], resolve: impl Fn(&str) -> Result<Vec<Process>
         processes: found,
         not_found,
         hints,
+        unseen,
     }
 }
 

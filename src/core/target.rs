@@ -76,14 +76,18 @@ pub fn resolve_target(target: &str, mode: NameMatch) -> Result<Vec<Process>> {
 pub(crate) fn resolve_port_in(port: u16, listening: &[PortInfo]) -> Result<Vec<Process>> {
     processes_on_port(
         port,
-        crate::core::port::holders_in(listening.to_vec(), port),
+        crate::core::port::visible_holders(
+            port,
+            crate::core::port::holders_in(listening.to_vec(), port),
+            PortInfo::in_use_unseen,
+        )?,
         Process::find_by_pid,
     )
 }
 
 /// Resolve a port to every process listening on it
 fn resolve_port(port: u16) -> Result<Vec<Process>> {
-    processes_on_port(port, PortInfo::holders_of(port)?, Process::find_by_pid)
+    processes_on_port(port, PortInfo::holders_seen(port)?, Process::find_by_pid)
 }
 
 /// The processes behind `listeners`, what was found listening on `port`, in
@@ -235,20 +239,47 @@ pub struct Resolved {
     /// For a name that matched nothing, but is in some command lines: what
     /// `--cmd` would find
     pub hints: Vec<String>,
+    /// The targets that are ports in use by a process proc can't see (another
+    /// user's), each with its port. They are in `not_found` too, since they
+    /// resolved to no process, but nobody holding them would be untrue
+    pub unseen: Vec<(String, u16)>,
 }
 
 impl Resolved {
     /// The warning for the targets that matched nothing, if there were any
     pub fn warning(&self) -> Option<String> {
-        if self.not_found.is_empty() {
-            return None;
+        let missing: Vec<&str> = self
+            .not_found
+            .iter()
+            .filter(|target| !self.unseen.iter().any(|(unseen, _)| unseen == *target))
+            .map(String::as_str)
+            .collect();
+        let mut lines = Vec::new();
+        if !missing.is_empty() {
+            let mut warning = format!("Not found: {}", missing.join(", "));
+            for hint in &self.hints {
+                warning.push_str("\n  ");
+                warning.push_str(hint);
+            }
+            lines.push(warning);
         }
-        let mut warning = format!("Not found: {}", self.not_found.join(", "));
-        for hint in &self.hints {
-            warning.push_str("\n  ");
-            warning.push_str(hint);
+        for (_, port) in &self.unseen {
+            lines.push(format!(
+                "Port {port} is in use, but proc can't see which process holds it: it belongs to another user"
+            ));
         }
-        Some(warning)
+        (!lines.is_empty()).then(|| lines.join("\n"))
+    }
+}
+
+/// The error for targets (`typed`, as the user wrote them) that resolved to no
+/// process: a port in use by a process proc can't see when one of them was
+/// (`unseen`, from [`Resolved`]), since "not found" would be untrue, and
+/// otherwise not found
+pub fn nothing_resolved(typed: String, unseen: &[(String, u16)]) -> ProcError {
+    match unseen.first() {
+        Some(&(_, port)) => ProcError::PortInUseUnseen(port),
+        None => ProcError::ProcessNotFound(typed),
     }
 }
 
@@ -286,6 +317,9 @@ fn resolve_targets_impl(targets: &[String], exclude_self: bool, mode: NameMatch)
                 }
             }
             Err(error) => {
+                if let ProcError::PortInUseUnseen(port) = error {
+                    resolved.unseen.push((target.clone(), port));
+                }
                 resolved.not_found.push(target.clone());
                 resolved.hints.extend(error.command_line_hint());
             }
@@ -525,5 +559,41 @@ mod tests {
         let resolved = resolve_targets(&[me], NameMatch::Exact);
         assert!(resolved.not_found.is_empty());
         assert_eq!(resolved.warning(), None);
+    }
+
+    // A port another user's process holds resolved to nothing proc can act
+    // on, but saying nobody holds it would be untrue
+    #[test]
+    fn a_port_held_by_a_process_proc_cannot_see_is_not_called_not_found() {
+        let unseen = Resolved {
+            not_found: vec![":80".to_string()],
+            unseen: vec![(":80".to_string(), 80)],
+            ..Resolved::default()
+        };
+        assert_eq!(
+            unseen.warning().unwrap(),
+            "Port 80 is in use, but proc can't see which process holds it: it belongs to another user"
+        );
+        assert!(matches!(
+            nothing_resolved(":80".to_string(), &unseen.unseen),
+            ProcError::PortInUseUnseen(80)
+        ));
+
+        // beside a target that matched nothing, each is said for what it is
+        let both = Resolved {
+            not_found: vec!["ghost".to_string(), ":80".to_string()],
+            unseen: vec![(":80".to_string(), 80)],
+            ..Resolved::default()
+        };
+        assert_eq!(
+            both.warning().unwrap(),
+            "Not found: ghost\nPort 80 is in use, but proc can't see which process holds it: it belongs to another user"
+        );
+
+        // no port of another user's: not found, as before
+        assert!(matches!(
+            nothing_resolved("ghost".to_string(), &[]),
+            ProcError::ProcessNotFound(ref typed) if typed == "ghost"
+        ));
     }
 }

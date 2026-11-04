@@ -18,10 +18,10 @@ use super::held::{
     ConnectionReader, HeldPort,
 };
 use crate::core::connections::Connections;
-use crate::core::port::{holders_in, SocketReading};
+use crate::core::port::{holders_in, visible_holders, SocketReading};
 use crate::core::{
-    flatten_targets, parse_target, resolve_in_dir, resolve_target, ruled_out_by, Exposure, Guards,
-    NameMatch, PortInfo, Process, TargetType,
+    flatten_targets, nothing_resolved, parse_target, resolve_in_dir, resolve_target, ruled_out_by,
+    Exposure, Guards, NameMatch, PortInfo, Process, TargetType,
 };
 use crate::error::{ExitCode, ProcError, Result};
 use crate::out_println;
@@ -142,6 +142,8 @@ impl OnCommand {
     fn show_multi_json(&self, targets: &[String]) -> Result<()> {
         let mut results: Vec<TargetResult> = Vec::new();
         let mut not_found: Vec<String> = Vec::new();
+        // the ports in use by a process proc can't see
+        let mut unseen: Vec<(String, u16)> = Vec::new();
 
         for target in targets {
             let found = match parse_target(target) {
@@ -158,12 +160,16 @@ impl OnCommand {
                         ports,
                     }))
                 }
+                Err(ProcError::PortInUseUnseen(port)) => {
+                    unseen.push((target.clone(), port));
+                    not_found.push(target.clone());
+                }
                 _ => not_found.push(target.clone()),
             }
         }
 
         if results.is_empty() {
-            return Err(ProcError::ProcessNotFound(self.target.join(" ")));
+            return Err(nothing_resolved(self.target.join(" "), &unseen));
         }
 
         Printer::from_flags(true, self.verbose).print_json(&MultiTargetOutput {
@@ -214,7 +220,11 @@ impl OnCommand {
     fn lookup_port(&self, port: u16, limit: usize, split: bool) -> Result<PortHolders> {
         // The socket tables are read once, for the holders and for the connections
         let reading = SocketReading::read()?;
-        let listeners = holders_in(reading.ports, port);
+        let listeners = visible_holders(
+            port,
+            holders_in(reading.ports, port),
+            PortInfo::in_use_unseen,
+        )?;
         if listeners.is_empty() {
             return Err(ProcError::PortNotFound(port));
         }
