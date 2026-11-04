@@ -180,6 +180,12 @@ docker run --rm -it --pid=host --net=host yazeed/proc-cli
 
 Update with `docker pull yazeed/proc-cli`.
 
+The image is proc's static Linux binary on [distroless](https://github.com/GoogleContainerTools/distroless), with nothing else in it: no shell and no package manager. To add proc to an image of your own, copy the binary out of it:
+
+```dockerfile
+COPY --from=yazeed/proc-cli /usr/local/bin/proc /usr/local/bin/proc
+```
+
 ## Release files
 
 Every release on the [releases page](https://github.com/yazeed/proc-cli/releases/latest) has the binaries for macOS, Linux, Windows, FreeBSD and NetBSD, the `.deb` and `.rpm` files, and `checksums.txt`. Download a file and put the binary on your `PATH`. Nothing updates it.

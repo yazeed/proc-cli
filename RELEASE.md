@@ -73,7 +73,7 @@ mkdir -p /tmp/proc-npm/install && cd /tmp/proc-npm/install
 npm install /tmp/proc-npm/proc-cli-*.tgz && ./node_modules/.bin/proc --version
 ```
 
-Build and run the Docker image from the release tree too. The release workflow builds it the same way, from a context without `.git` (so it prints the plain version):
+Build and run the Docker image from the release tree too. The release workflow builds it the same way, from a context without `.git` (so it prints the plain version). `docker-check.yml` already builds the image on each change to the Dockerfile, the manifests or `src/`, natively on amd64 and arm64, and checks `--version`, `list`, `on :port`, `ports` and `for` in it; this run is the release tree's own check:
 
 ```bash
 docker build -t proc-cli:release-check .
@@ -321,7 +321,7 @@ Nix has nothing to publish: the flake lives in the repository, so `nix run githu
 
 nfpm is pinned in `release.yml` (`NFPM_VERSION`) with the SHA-256 of its Linux x86_64 tarball (`NFPM_SHA256`, from that release's `checksums.txt`). To update it, change both together, then rebuild the packages and run the install check in step 7.
 
-Third-party actions in `release.yml` and `docker.yml` are pinned to commit SHAs, with the version in a comment, because those jobs hold the publishing tokens. To update one, resolve the new tag's commit (`gh api repos/<owner>/<action>/commits/<tag> --jq .sha`) and change the SHA and the comment together.
+Third-party actions in `release.yml` and `docker.yml` are pinned to commit SHAs, with the version in a comment, because those jobs hold the publishing tokens; `docker-check.yml` holds none but uses the same SHAs as `docker.yml`, so the image it checks is built the way the published one is. To update one, resolve the new tag's commit (`gh api repos/<owner>/<action>/commits/<tag> --jq .sha`) and change the SHA and the comment together.
 
 ## Required Secrets
 

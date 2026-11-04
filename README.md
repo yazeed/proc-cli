@@ -303,7 +303,7 @@ The skill lives in [`skills/proc-cli/`](skills/proc-cli/SKILL.md) and follows th
 | NetBSD | x86_64 (other CPUs: `cargo install proc-cli`) | ✅ (see below) |
 | Docker | linux/amd64, linux/arm64 | ✅ |
 
-The Linux binaries are statically linked (musl) and need no particular glibc version, so they also run on Alpine and on older releases such as Debian 10, Ubuntu 20.04 and Amazon Linux 2.
+The Linux binaries are statically linked (musl) and need no particular glibc version, so they also run on Alpine and on older releases such as Debian 10, Ubuntu 20.04 and Amazon Linux 2. On Linux proc reads processes, ports and open files from `/proc`, so it needs nothing else installed. The Docker image is the same binary on distroless, with no shell; `COPY --from=yazeed/proc-cli /usr/local/bin/proc /usr/local/bin/proc` adds it to an image of your own.
 
 On FreeBSD and NetBSD proc reads ports with `sockstat` and open files with `fstat`, both in the base system, so it needs nothing installed. The kernel forgets the path of a working directory once the directory is deleted, so `proc in` a deleted directory exits 4 there, where Linux and macOS still find the processes in it.
 

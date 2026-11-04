@@ -1,0 +1,91 @@
+name: Docker image
+
+# Builds the Docker image on each change that can affect it and checks that it
+# works, without publishing it: docker.yml publishes only on a tag, so a broken
+# image used to show up only after a release. Twice it did: from 1.12.3 to
+# 1.13.1 it didn't start (GLIBC_2.39 not found), and until 1.13.4 its port
+# lookups failed (no ss). Each platform builds on its own runner, natively.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'build.rs'
+      - 'src/**'
+      - '.github/workflows/docker-check.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'build.rs'
+      - 'src/**'
+      - '.github/workflows/docker-check.yml'
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  check:
+    name: Build and check (${{ matrix.arch }})
+    timeout-minutes: 30
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      # The Dockerfile fails the build if the binary isn't static
+      - name: Build the image
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          push: false
+          tags: proc-cli:check
+          cache-from: type=gha,scope=check-${{ matrix.arch }}
+          cache-to: type=gha,scope=check-${{ matrix.arch }},mode=max
+
+      - name: Run it as the install page does
+        run: |
+          set -eu
+          docker run --rm proc-cli:check --version | grep -q '^proc '
+          docker run --rm --pid=host proc-cli:check list --json | jq -e '.success and .count > 0' >/dev/null
+
+          # a port held on the host: what `on :port` and `ports` read with --net=host
+          python3 -m http.server 4799 >/dev/null 2>&1 &
+          listener=$!
+          # a file held open on the host, mounted at the same path, so the
+          # image (which has no lsof) must read /proc to find its holder
+          echo held > /tmp/held.txt
+          # sleep doesn't read its stdin; the redirect only holds the file open
+          # shellcheck disable=SC2217
+          sleep 120 < /tmp/held.txt &
+          holder=$!
+          trap 'kill "$listener" "$holder" 2>/dev/null || true' EXIT
+          sleep 1
+
+          docker run --rm --pid=host --net=host proc-cli:check on :4799 --json \
+            | jq -e --argjson pid "$listener" '[.processes[].pid] | index($pid) != null' >/dev/null
+          docker run --rm --pid=host --net=host proc-cli:check ports --json \
+            | jq -e '[.ports[].port] | index(4799) != null' >/dev/null
+          docker run --rm --pid=host -v /tmp/held.txt:/tmp/held.txt:ro proc-cli:check for /tmp/held.txt --json \
+            | jq -e --argjson pid "$holder" '[.results[].process.pid] | index($pid) != null' >/dev/null
+          echo "the image works: version, list, on :port, ports, for"
