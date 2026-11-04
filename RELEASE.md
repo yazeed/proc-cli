@@ -319,7 +319,7 @@ Nix has nothing to publish: the flake lives in the repository, so `nix run githu
 
 nfpm is pinned in `release.yml` (`NFPM_VERSION`) with the SHA-256 of its Linux x86_64 tarball (`NFPM_SHA256`, from that release's `checksums.txt`). To update it, change both together, then rebuild the packages and run the install check in step 7.
 
-Third-party actions in `release.yml` and `docker.yml` are pinned to commit SHAs, with the version in a comment, because those jobs hold the publishing tokens; `docker-check.yml` holds none but uses the same SHAs as `docker.yml`, so the image it checks is built the way the published one is. To update one, resolve the new tag's commit (`gh api repos/<owner>/<action>/commits/<tag> --jq .sha`) and change the SHA and the comment together.
+Every third-party action in every workflow is pinned to a commit SHA, with the version in a comment: `release.yml` and `docker.yml` hold the publishing tokens, and the others build and test what they publish. The Dockerfile pins both base images to a digest. Dependabot (`.github/dependabot.yml`) opens a weekly pull request that moves the action pins (one grouped pull request) and the image digests; merge it once its CI is green. `winget-releaser` is left out of Dependabot until the first automated winget update succeeds. To move a pin by hand, resolve the new tag's commit (`gh api repos/<owner>/<action>/commits/<tag> --jq .sha`) and change the SHA and the comment together.
 
 ## Required Secrets
 

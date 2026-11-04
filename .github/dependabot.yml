@@ -1,0 +1,28 @@
+# Version updates for what the workflows and the Docker image are pinned to.
+# Every third-party action is pinned to a commit SHA with its version in a
+# comment, and both Docker base images to a digest; Dependabot moves the pins
+# (SHA and comment together) by pull request. Nothing changes until a pull
+# request is merged. Crate updates stay manual (cargo update in RELEASE.md's
+# checks; cargo audit runs in CI).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"
+    ignore:
+      # Stays on its pinned commit until the first automated winget update
+      # succeeds (RELEASE.md, step 6), then moves to a release
+      - dependency-name: "vedantmgoyal9/winget-releaser"
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "build"

@@ -1,6 +1,8 @@
 # Build stage: a static musl binary, the same build as the Linux binaries of
 # each GitHub release, so the runtime stage needs no C library
-FROM rust:1-alpine AS builder
+# Both base images are pinned to a digest, so a build is reproducible;
+# Dependabot (.github/dependabot.yml) opens a pull request when either moves
+FROM rust:1-alpine@sha256:27cd9befd4a05d6f6eb407c3e28365f5092f008bfc5946207cca76ae5179ef23 AS builder
 
 WORKDIR /app
 
@@ -36,7 +38,7 @@ RUN touch src/main.rs && cargo build --release \
 # process another user owns also needs --cap-add SYS_PTRACE, and on a host
 # with AppArmor --security-opt apparmor=unconfined. proc reads
 # processes, ports and open files from /proc, so it needs no other program
-FROM gcr.io/distroless/static-debian13
+FROM gcr.io/distroless/static-debian13@sha256:448810357cc8e67b7208988abdba0f5ec3d3aebee0a5b13eb624979792cffc0f
 
 # Copy binary from builder
 COPY --from=builder /app/target/release/proc /usr/local/bin/proc
