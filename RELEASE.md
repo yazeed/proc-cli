@@ -157,6 +157,26 @@ pkg/ppa/release.sh X.Y.Z      # builds the source packages in Docker, signs and 
 
 It builds in an `ubuntu:26.04` container (`pkg/ppa/build-source.sh`), signs with the maintainer's key (gpg asks for its passphrase unless the agent or the macOS keychain has it) and uploads by FTP (`pkg/ppa/upload.sh`). The first release's upload carries the two tarballs; the script then waits for Launchpad to publish them, usually within the hour, and sends the other three. It ends once Launchpad has accepted all four, and fails, naming the version, if one is not accepted within an hour (Launchpad emails why). Launchpad's FTP times out often: uploads retry, and running the command again sends only what has not gone. It stops before building if Docker is not running or the tag has no GitHub release, and a build that stops halfway is never reused. A packaging fix to a released version is `pkg/ppa/release.sh X.Y.Z 2`. A new Ubuntu release joins the list in `build-source.sh`; check its Rust is at least proc's `rust-version`. Step 7 checks the builds.
 
+### After the tag: FreeBSD port
+
+`sysutils/proc-cli` (`pkg/freebsd/`) was submitted as [bug 300492](https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=300492) and waits for a ports committer. Every release moves it to the new version:
+
+1. In a FreeBSD VM with a ports tree (`git clone https://git.FreeBSD.org/ports.git`), copy `pkg/freebsd/*` to `sysutils/proc-cli/`, set `DISTVERSION`, then `make makesum`, `make cargo-crates > Makefile.crates`, and `make makesum` again (the second picks up the crates). Build and check it: `make stage check-plist stage-qa package` and `portlint -AC` must pass, and the installed package's `proc --version` prints the new version.
+2. Copy the changed files back to `pkg/freebsd/` and commit them to `main`.
+3. Make the patch (`git format-patch` in the ports tree). Until bug 300492 is committed, attach it there and mark the old patch obsolete; once the port is in, each release is a new bug in Ports & Packages → Individual Port(s), `[PATCH] sysutils/proc-cli: Update to X.Y.Z`. Either way the maintainer files it from the Bugzilla account `me@yazeed.com` (the port's `MAINTAINER`), ticks "patch" (Bugzilla reads `git format-patch` output as a mailbox otherwise) and sets `maintainer-approval` to `+`.
+
+To automate once the port is in: a workflow job that runs step 1 in a FreeBSD VM, as `build-bsd` does, and uploads the patch, leaving only the filing.
+
+### After the tag: pkgsrc
+
+`sysutils/proc-cli` (`pkg/pkgsrc/`) is in pkgsrc-wip as `wip/proc-cli` (account `yazeed`, key `~/.ssh/pkgsrc-wip` on the maintainer's Mac). An import into pkgsrc itself is requested (tech-pkg, and Thomas Klausner, who created the wip account). Every release moves wip to the new version:
+
+1. In a NetBSD VM with pkgsrc and pkgsrc-wip checked out, copy `pkg/pkgsrc/*` to `wip/proc-cli/`, set `DISTNAME`, then `make print-cargo-depends > cargo-depends.mk` and `make makesum`. `make package`, the installed `proc --version` and `pkglint` must pass. Build against a quarterly branch if trunk needs a newer system library than the NetBSD release has (2.2.0: trunk wanted libunwind >= 22.1).
+2. Copy the changed files back to `pkg/pkgsrc/` and commit them to `main`; update `COMMIT_MSG` to the version.
+3. Commit and push to pkgsrc-wip from the maintainer's Mac with that key (wip asks a human to review what is pushed).
+
+Once the package is in pkgsrc itself, updates go to its committer instead (send-pr, or mail to whoever imported it). To automate wip: a CI-only key that Thomas adds to the wip account, and a job that does steps 1 and 3.
+
 ## 6. Verify CI
 
 After tag push, monitor GitHub Actions:
@@ -175,6 +195,7 @@ After tag push, monitor GitHub Actions:
 - [ ] "Update COPR" passed: the build for the new version succeeded on every chroot (https://copr.fedorainfracloud.org/coprs/yazeed/proc-cli/builds/)
 - [ ] The "Install the PyPI wheel" jobs passed (Linux x86_64 and aarch64, Alpine, macOS arm64 and x86_64, Windows)
 - [ ] PyPI published: https://pypi.org/project/proc-cli/ shows the new version
+- [ ] The after-the-tag steps are done: nixpkgs, the Ubuntu PPA, the FreeBSD port's patch filed, pkgsrc-wip pushed (step 5)
 
 ## 7. Post-Release Verification
 
@@ -200,6 +221,11 @@ docker run --rm -e NIX_CONFIG="experimental-features = nix-command flakes" nixos
 
 # AUR (Rafael Dominiquini's packages): both should reach the new version within a few days
 curl -s 'https://aur.archlinux.org/rpc/v5/info?arg[]=proc-cli&arg[]=proc-cli-bin' | jq -r '.results[] | "\(.Name) \(.Version)"'
+
+# FreeBSD port: the bug (300492 until the port is in, then the update bug) has the new patch;
+# once committed, https://www.freshports.org/sysutils/proc-cli/ shows the new version
+# pkgsrc: wip/proc-cli is at the new version (its commits are mirrored on GitHub)
+gh api 'repos/NetBSD/pkgsrc-wip/commits?path=proc-cli&per_page=1' -q '.[0].commit.message'
 
 # Linux binaries are static (musl): they must run on an older distro and on Alpine
 mkdir -p /tmp/proc-linux && cd /tmp/proc-linux
@@ -333,3 +359,11 @@ If the repository or the workflow file is renamed, all three trusted publishers 
 | Fedora, RHEL (release file) | proc-cli | `sudo dnf install ./proc-cli-X.Y.Z-1.x86_64.rpm` |
 | Nix (flake in this repo) | proc-cli | `nix profile install github:yazeed/proc-cli` |
 | AUR (community, Rafael Dominiquini) | proc-cli, proc-cli-bin | `yay -S proc-cli` (from source), `yay -S proc-cli-bin` (release binary) |
+| Debian, Ubuntu (apt repository) | proc-cli | see https://proc-cli.com/apt/ (`update-apt`, every release) |
+| Ubuntu PPA | proc-cli | `sudo add-apt-repository ppa:yazeedaloyoun/proc-cli` (one command on the maintainer's Mac, step 5) |
+| Fedora, EPEL, Amazon Linux (COPR) | proc-cli | `sudo dnf copr enable yazeed/proc-cli && sudo dnf install proc-cli` (`update-copr`, every release) |
+| PyPI | proc-cli | `pip install proc-cli`, `pipx install proc-cli`, `uv tool install proc-cli` (`publish-pypi`; first published with 2.3.0) |
+| winget | yazeed.proc-cli | `winget install yazeed.proc-cli` (`update-winget`; the first version waits for a moderator: microsoft/winget-pkgs#469298) |
+| nixpkgs | proc-cli | `nix run nixpkgs#proc-cli` (step 5; waits to be merged: NixOS/nixpkgs#581248) |
+| FreeBSD ports | proc-cli | `pkg install proc-cli` (step 5; waits for a committer: bug 300492) |
+| pkgsrc (NetBSD) | proc-cli | from pkgsrc-wip now (`wip/proc-cli`); `pkgin install proc-cli` once imported (step 5) |
