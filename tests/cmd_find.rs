@@ -771,11 +771,14 @@ fn for_filters_drop_what_does_not_match() {
     }
 }
 
-/// Whether the program the open-file lookup runs is installed: lsof, or the
-/// base system's fstat on FreeBSD and NetBSD. Windows has no open-file
-/// lookup, and a minimal Linux image has no lsof.
+/// Whether this system has an open-file lookup to test. Linux reads `/proc`
+/// itself, so it always has one; macOS needs lsof, and FreeBSD and NetBSD the
+/// base system's fstat. Windows has no open-file lookup.
 #[cfg(unix)]
 fn has_open_file_lookup() -> bool {
+    if cfg!(target_os = "linux") {
+        return true;
+    }
     #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
     let (program, probe) = ("fstat", &["-p", "1"][..]);
     #[cfg(not(any(target_os = "freebsd", target_os = "netbsd")))]
