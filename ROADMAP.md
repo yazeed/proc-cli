@@ -12,9 +12,17 @@ Each candidate lists what it would look like, how it fares against the feature t
 
 The same release removes `proc_cli::ui::process_table_budget` and `ProcessTableBudget`, deprecated since 2.3.0 (the process table no longer uses them).
 
-It also marks `proc_cli::core::Process` `#[non_exhaustive]`, so a later field never breaks code that builds a `Process` with a struct literal again, and the enums `ProcessStatus` and `StatusFilter` too, so a new status never breaks an exhaustive `match` (2.3.0 adds `idle`, `starting` and `disk_wait`). 2.3.0 adds four public fields to it (`parent_name`, `cpu_time_secs`, `open_files`, `child_count`), which is such a break in a minor release; the maintainer accepted it there because no crate depends on proc-cli (crates.io lists none) and the CHANGELOG says so.
+It also marks `proc_cli::core::Process` `#[non_exhaustive]`, so a later field never breaks code that builds a `Process` with a struct literal again, and the enums `ProcessStatus`, `StatusFilter` and `ProcError` too, so a new status never breaks an exhaustive `match` (2.3.0 adds `idle`, `starting` and `disk_wait`). 2.3.0 adds four public fields to it (`parent_name`, `cpu_time_secs`, `open_files`, `child_count`), which is such a break in a minor release; the maintainer accepted it there because no crate depends on proc-cli (crates.io lists none) and the CHANGELOG says so.
 
 **Open:** what a comma does once removed: an error that shows the separate-argument form, or treating the whole word as one name.
+
+### Spellings that mean one thing
+
+Decided with the convention for guesses; 2.4.0 prints a notice on each spelling that changes, and this release changes them:
+
+- **`-n` is `--limit` everywhere.** Today it is `--limit` in `list`, `by`, `in`, `for` and `ports` but `--interval` in `watch` and `wait`. The interval keeps `--interval` and gets no new short letter (`-d` is `tree --depth`), and `watch`'s `-l` for its limit goes.
+- **`ports -l` stops being `--local`.** Every row of `ports` is a listening port, so `-l` is then accepted as `ss`'s "listening", with a note.
+- **`list -p` stops being `--path`,** and a `--path` that matches nothing and does not exist exits 4, as `--in` does.
 
 ### One set of JSON names: the shapes that change, and the old names go
 
@@ -63,9 +71,9 @@ These get fixed together, from one convention, not one error message at a time:
 3. **Write the convention down** in CONTRIBUTING.md, with the table of guesses and their answers, and a test for each guess, so every new command and flag is checked against it.
 4. **Change the code in one release**, with the CHANGELOG giving each guess's answer. Anything that changes what an existing spelling does (`-n`, the aliases) waits for a major release, with a deprecation notice first.
 
-This takes in the candidates "Errors that name what you meant", "Signal words, not numbers", "`proc :3000`" and "One meaning for `-n`" below, and the human clock is how it is measured: time to a correct answer for someone new, before and after.
+This takes in the candidates "Errors that name what you meant", "Signal words, not numbers" and "`proc :3000`" below (and "One meaning for `-n`", now decided for the next major release), and the human clock is how it is measured: time to a correct answer for someone new, before and after.
 
-**Feature test:** obvious, explicit, and one spelling per intent with habits kept (PHILOSOPHY.md, "Easy to Remember"). **Open:** which release; how far a hint may go before it is a guess.
+**Feature test:** obvious, explicit, and one spelling per intent with habits kept (PHILOSOPHY.md, "Easy to Remember"). **Decided (2026-11-03):** the convention ships in 2.4.0, everything that only adds (tips, notes, `kill -9`, `proc :3000`); the changes to existing spellings are in "Spellings that mean one thing" under the next major release. A hint names proc's spelling for each likely reading and reports at most one cheap read-only fact; it never runs a reading, never offers a `--yes` line, and never becomes a JSON key a script could act on.
 
 ## Candidates
 
@@ -165,10 +173,6 @@ The column is already shown and `--min-uptime` already filters by it. On `list`,
 ### Sorting `orphans` and `stuck`
 
 Both print processes in PID order (81 orphans on one Mac), which says nothing about which to look at first. A `--sort` like `list`'s would. **Feature test:** fits, but it's another way to ask a `list` question; `list --parent 1` is not the orphan set, so it isn't redundant. **Open:** real demand. `--limit` must never limit what `--kill` acts on.
-
-### One meaning for `-n`
-
-`-n` is `--limit` in `list`, `by`, `in`, `for` and `ports`, but `--interval` in `watch` and `wait` (where the limit is `-l`). **Feature test:** "Easy to remember" says one spelling means one thing. **Open:** which side moves, and how to deprecate the other without breaking scripts (a major release).
 
 ### The human clock
 
