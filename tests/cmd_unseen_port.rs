@@ -1,11 +1,12 @@
 //! A port held by another user's process, which proc, when it isn't root,
 //! can't trace to a PID. Every command that takes `:port` says the port is in
 //! use and that proc can't see its holder (exit 3, `permission_denied`), never
-//! that nobody holds it. Linux only: its kernel tables list every listening
-//! socket, whoever owns it. The holder runs as root through `sudo -n`; where
-//! that can't be done (no password-less sudo, or the tests run as root, who
-//! sees every process) the tests skip, which CI turns into a failure.
-#![cfg(target_os = "linux")]
+//! that nobody holds it. Linux and macOS, whose socket tables (/proc/net,
+//! netstat) list every listening socket, whoever owns it. The holder runs as
+//! root through `sudo -n`; where that can't be done (no password-less sudo,
+//! or the tests run as root, who sees every process) the tests skip, which CI
+//! turns into a failure.
+#![cfg(any(target_os = "linux", target_os = "macos"))]
 
 mod contract;
 mod skip;

@@ -42,7 +42,7 @@ $ proc on :53581
                … and 2 more (-v for all)
 ```
 
-- **By port:** the headline counts the processes holding the port and, when they are all bound alike, says who can reach it (`reachable from this machine only` or `reachable from the network`). A card follows for each holder, with the connections that came in on that holder's own sockets. A port another user's process holds, when proc isn't root, is "in use, but proc can't see which process holds it", exit 3 (Linux), never "No process listening"; `sudo` shows the holder.
+- **By port:** the headline counts the processes holding the port and, when they are all bound alike, says who can reach it (`reachable from this machine only` or `reachable from the network`). A card follows for each holder, with the connections that came in on that holder's own sockets. A port another user's process holds, when proc isn't root, is "in use, but proc can't see which process holds it", exit 3 (Linux and macOS), never "No process listening"; `sudo` shows the holder.
 - **By PID:** the headline names the process (`✓ python3 (PID 39158)`) and the card follows. `Listening:` lists every port it holds, or says `none`; for another user's process (unless proc runs as root) it is left out, since proc cannot see that process's sockets. The JSON `ports` is `[]` there, as before, and does not mean none.
 - **By name:** the headline counts the processes (`✓ 2 processes named 'node'`, or `matching` with `--cmd`) and a card follows for each.
 

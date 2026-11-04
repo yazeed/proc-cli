@@ -193,16 +193,23 @@ impl PortInfo {
     }
 
     /// Whether something listens on `port` whose holder proc can't see, asked
-    /// once no holder was found. Linux's tables in /proc/net list every
-    /// listening socket whoever owns it, but proc can read the owner only of
-    /// its own user's processes (every process as root), so a listening row
-    /// for the port means another user's process holds it. The other systems
-    /// give proc no such table, and there this is false
+    /// once no holder was found. Linux's tables in /proc/net, and macOS's
+    /// `netstat`, list every listening socket whoever owns it, but proc can
+    /// read the owner only of its own user's processes (every process as
+    /// root), so a listening socket on the port means another user's process
+    /// holds it. Windows and the BSDs aren't checked, and there this is false
     pub fn in_use_unseen(port: u16) -> bool {
         #[cfg(target_os = "linux")]
         return Self::proc_net_tables(Path::new("/proc/net"))
             .is_ok_and(|tables| listens_in(&tables, port));
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "macos")]
+        return crate::ui::interrupt::unblocked_in_child(&mut std::process::Command::new(
+            "netstat",
+        ))
+        .args(["-an", "-p", "tcp"])
+        .output()
+        .is_ok_and(|output| netstat_listens_on(&String::from_utf8_lossy(&output.stdout), port));
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         {
             let _ = port;
             false
@@ -735,6 +742,19 @@ fn listens_in(tables: &[(String, bool)], port: u16) -> bool {
             .skip(1)
             .filter_map(|line| PortInfo::parse_proc_net_line(line, *v6))
             .any(|(_, listening, _)| listening == port)
+    })
+}
+
+/// Whether macOS's `netstat -an -p tcp` lists a socket listening on `port`.
+/// Its rows are `PROTO RECV-Q SEND-Q LOCAL FOREIGN STATE`, the local address
+/// ending in `.<port>` (`*.4790`, `127.0.0.1.8080`, `::1.631`)
+#[cfg(any(target_os = "macos", test))]
+fn netstat_listens_on(stdout: &str, port: u16) -> bool {
+    let suffix = format!(".{port}");
+    stdout.lines().any(|line| {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        fields.get(5) == Some(&"LISTEN")
+            && fields.get(3).is_some_and(|local| local.ends_with(&suffix))
     })
 }
 
@@ -1389,6 +1409,24 @@ Active Connections
         assert!(!listens_in(&tables, 8080));
         assert!(!listens_in(&tables, 9999));
         assert!(!listens_in(&[], 22));
+    }
+
+    #[test]
+    fn netstat_says_whether_anything_listens_on_a_port() {
+        // as macOS 15 printed it, with root's listener on *.4790
+        let netstat = "Active Internet connections (including servers)\n\
+            Proto Recv-Q Send-Q  Local Address          Foreign Address        (state)\n\
+            tcp46      0      0  *.4790                 *.*                    LISTEN\n\
+            tcp4       0      0  127.0.0.1.8080         *.*                    LISTEN\n\
+            tcp6       0      0  ::1.631                *.*                    LISTEN\n\
+            tcp4       0      0  192.168.1.5.52100      140.82.112.4.443       ESTABLISHED\n";
+        assert!(netstat_listens_on(netstat, 4790));
+        assert!(netstat_listens_on(netstat, 8080));
+        assert!(netstat_listens_on(netstat, 631));
+        // a connection is not a listener, and 479 is not 4790
+        assert!(!netstat_listens_on(netstat, 52100));
+        assert!(!netstat_listens_on(netstat, 479));
+        assert!(!netstat_listens_on("", 4790));
     }
 
     #[test]
