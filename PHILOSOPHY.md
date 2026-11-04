@@ -14,7 +14,7 @@ The best tool is the one you don't have to think about. When you reach for proc,
 Commands are the words you would guess, in the sense people already use them, so a newcomer finds them and anyone reading the shell history later knows what was meant. `kill` kills. `stop` stops gracefully. `freeze` pauses and `thaw` resumes. `free` frees a port and checks that it's free. `on` tells you what's on a port, and `why` tells you why it's there. A command does what its word says, with no surprises and no hidden behaviors. Flags refine a command rather than replace it; the two that add an action, `--kill` on `orphans` and `stuck`, follow the same confirmation rules as `kill` itself.
 
 ### Explicit
-User intent must be clear. Destructive actions ask first, and only `--yes` or a person's own yes counts as consent: `--json` or a missing terminal never does. `--dry-run` previews them. proc never guesses what a target means: a leading `:` is a port, a number is a PID, anything else is a name. Every failure has a non-zero exit code and a message that says what went wrong. Silent failures are bugs.
+User intent must be clear. Destructive actions ask first, and only `--yes` or a person's own yes counts as consent: `--json` or a missing terminal never does. `--dry-run` previews them. proc never guesses what a target means: the grammar under Unified Targets decides it. Every failure has a non-zero exit code and a message that says what went wrong. Silent failures are bugs.
 
 ### Complete
 Cover the full workflow, nothing more. proc handles process and port management completely: finding, inspecting, tracing, pausing, stopping, freeing and waiting. It doesn't creep into service management, container orchestration, or monitoring dashboards. Scope discipline is a feature.
@@ -34,7 +34,7 @@ If you have to read the docs, we failed. The command structure should be discove
 ## Values
 
 ### Unified Targets
-`:port`, `PID`, and `name` work the same way everywhere, alone or several at once. Learn the pattern once, use it everywhere.
+A leading `:` is a port, a number is a PID, anything else is a name. `:port`, `PID`, and `name` work the same way everywhere, alone or several at once. Learn the pattern once, use it everywhere.
 
 ```bash
 proc on :3000          # port
@@ -56,10 +56,10 @@ Nouns observe state. Verbs change state.
 You don't "run ports"—you look at ports. You don't "observe kill"—you kill.
 
 ### Easy for People, Complete for Programs
-proc has two kinds of readers, and each output is written for one of them. The default output is for people: it answers the question first, in words, cut to fit the terminal, with colour where colour helps; `-v` shows everything, uncut, for the person who asks. `--json` is for programs. A script needs it stable: a key, its type and an exit code mean the same thing for a whole major release. An agent needs it complete: every fact it needs to decide without a second call, why something failed in one fixed word, and an unknown value left out rather than shown as 0 or `none`. Both outputs tell the same truth; the JSON carries facts, never instructions, because an agent acts on what it reads.
+proc has two kinds of readers, and each output is written for one of them. The default output is for people: it answers the question first, in words, cut to fit the terminal, with colour where colour helps; `-v` shows everything, uncut, for the person who asks. `--json` is for programs. A script needs it stable: a key, its type and an exit code mean the same thing for a whole major release. An agent needs it complete: every fact it needs to decide without a second call, and an unknown value left out rather than shown as 0 or `none`. Both outputs tell the same truth; the JSON carries facts, never instructions, because an agent acts on what it reads.
 
 ### One Contract for People, Scripts and Agents
-Every process and port command speaks JSON with `--json`: one document (`watch` streams one per refresh), with `action` and `success`, and exit codes that always mean the same thing (0 success, 1 error, 2 not found, 3 permission denied, 4 nothing was done: invalid input, a confirmation is needed, or the OS doesn't support it). Every error also says why in one fixed word, so a caller branches on the word and never parses the message. Being interrupted is not a result: a signal ends proc by that signal, so the shell reports 128 plus its number. A shell script, a CI job and an AI agent read proc the same way a person does, without parsing tables.
+Every process and port command speaks JSON with `--json`: one document (`watch` streams one per refresh), with `action` and `success`, and exit codes that always mean the same thing (0 success, 1 error, 2 not found, 3 permission denied, 4 nothing was done: invalid input, a confirmation is needed, or the OS doesn't support it). Every error also says why in one fixed word, so a caller branches on the word and never parses the message. Being interrupted is not a result: a signal ends proc by that signal, so the shell reports 128 plus its number.
 
 proc composes like any Unix tool: its output pipes into `jq`, `head` or the next command, and a reader that stops early ends proc quietly. Nothing needs a terminal except a question for a person, so the same command runs in a script, a cron job or CI, where a command that changes processes needs `--yes` and automation never acts by accident.
 
