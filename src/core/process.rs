@@ -255,13 +255,110 @@ fn same_start(recorded: Option<u64>, current: u64) -> bool {
 }
 
 /// The program `find_by_open_file` asks which processes have a file open
+/// (Linux reads `/proc` instead)
 #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
 pub(crate) const OPEN_FILE_PROGRAM: &str = "fstat";
-#[cfg(all(unix, not(any(target_os = "freebsd", target_os = "netbsd"))))]
+#[cfg(all(
+    unix,
+    not(any(target_os = "freebsd", target_os = "netbsd", target_os = "linux"))
+))]
 pub(crate) const OPEN_FILE_PROGRAM: &str = "lsof";
 
+/// The PIDs that `program` (`lsof`, or `fstat`) says have `path` open. A
+/// program that can't be started is an error naming it: finding no holders
+/// because nothing could look would be a silent wrong answer
+#[cfg(all(unix, any(not(target_os = "linux"), test)))]
+fn open_file_pids_with(program: &str, path: &std::path::Path) -> Result<Vec<u32>> {
+    use std::process::Command;
+
+    let mut command = Command::new(program);
+    // -t = terse (PIDs only); fstat has no such option
+    #[cfg(not(any(target_os = "freebsd", target_os = "netbsd")))]
+    command.arg("-t");
+    let output = crate::ui::interrupt::unblocked_in_child(&mut command)
+        .arg(&*path.to_string_lossy())
+        .output()
+        .map_err(|e| {
+            ProcError::NotSupported(format!(
+                "proc reads open files with {program}, which could not be run ({e})"
+            ))
+        })?;
+
+    if !output.status.success() {
+        return Ok(vec![]); // No processes have file open
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+    let pids = fstat_pids(&stdout);
+    #[cfg(not(any(target_os = "freebsd", target_os = "netbsd")))]
+    let pids = lsof_pids(&stdout);
+    Ok(pids)
+}
+
+/// The PIDs whose entry under `proc_root` (`/proc`) shows `path` in use the
+/// ways lsof reports it: an open file descriptor, the working directory, the
+/// root directory, the executable, or a file mapped into memory (a shared
+/// library). An entry proc may not read (another user's process, without
+/// root) is left out, as lsof leaves it out. PID ascending. A `proc_root`
+/// that can't be read is an error, so a system without `/proc` doesn't read
+/// as one where nothing holds the file
+#[cfg(all(unix, any(target_os = "linux", test)))]
+fn linux_open_file_holders(
+    proc_root: &std::path::Path,
+    path: &std::path::Path,
+) -> Result<Vec<u32>> {
+    let entries = std::fs::read_dir(proc_root)
+        .map_err(|e| ProcError::SystemError(format!("{}: {e}", proc_root.display())))?;
+    let mut pids: Vec<u32> = entries
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let pid: u32 = entry.file_name().to_str()?.parse().ok()?;
+            holds_path(&entry.path(), path).then_some(pid)
+        })
+        .collect();
+    pids.sort_unstable();
+    Ok(pids)
+}
+
+/// Whether the `/proc/<pid>` entry `entry` shows `path` in use (see
+/// `linux_open_file_holders`)
+#[cfg(all(unix, any(target_os = "linux", test)))]
+fn holds_path(entry: &std::path::Path, path: &std::path::Path) -> bool {
+    let links_to = |link: std::path::PathBuf| std::fs::read_link(link).is_ok_and(|to| to == path);
+    ["cwd", "root", "exe"]
+        .iter()
+        .any(|name| links_to(entry.join(name)))
+        || std::fs::read_dir(entry.join("fd"))
+            .is_ok_and(|fds| fds.flatten().any(|fd| links_to(fd.path())))
+        || std::fs::read_to_string(entry.join("maps"))
+            .is_ok_and(|maps| maps.lines().any(|line| mapped_path(line) == Some(path)))
+}
+
+/// The file a line of `/proc/<pid>/maps` maps, if it maps one:
+/// `address perms offset dev inode path`, the path last and free to hold
+/// spaces, absent for anonymous memory and `[heap]`-style names
+#[cfg(all(unix, any(target_os = "linux", test)))]
+fn mapped_path(line: &str) -> Option<&std::path::Path> {
+    let mut rest = line;
+    for _ in 0..5 {
+        rest = rest.trim_start();
+        rest = &rest[rest.find(' ')?..];
+    }
+    let mapped = rest.trim_start();
+    mapped
+        .starts_with('/')
+        .then(|| std::path::Path::new(mapped))
+}
+
 /// The PIDs `lsof -t` printed, one per line
-#[cfg(any(all(unix, not(any(target_os = "freebsd", target_os = "netbsd"))), test))]
+#[cfg(any(
+    all(
+        unix,
+        not(any(target_os = "freebsd", target_os = "netbsd", target_os = "linux"))
+    ),
+    test
+))]
 fn lsof_pids(stdout: &str) -> Vec<u32> {
     stdout
         .lines()
@@ -1035,45 +1132,22 @@ impl Process {
             .collect())
     }
 
-    /// Find processes that have a file open (Unix only): `lsof`, or on FreeBSD
-    /// and NetBSD `fstat`, which their base system has. pkgsrc's lsof 4.91
-    /// found no holder at all on NetBSD 11 x86_64, and fstat is built with the
-    /// kernel it reads
+    /// Find processes that have a file open (Unix only), proc itself left out.
+    /// On Linux proc reads `/proc` itself (`linux_open_file_holders`), so a
+    /// system without lsof, such as the Docker image, still gets an answer.
+    /// macOS asks `lsof`, and FreeBSD and NetBSD `fstat`, which their base
+    /// system has: pkgsrc's lsof 4.91 found no holder at all on NetBSD 11
+    /// x86_64, and fstat is built with the kernel it reads
     #[cfg(unix)]
     pub fn find_by_open_file(path: &std::path::Path) -> Result<Vec<Process>> {
-        Self::find_by_open_file_with(OPEN_FILE_PROGRAM, path)
-    }
+        #[cfg(target_os = "linux")]
+        let pids = linux_open_file_holders(std::path::Path::new("/proc"), path)?;
+        #[cfg(not(target_os = "linux"))]
+        let pids = open_file_pids_with(OPEN_FILE_PROGRAM, path)?;
 
-    /// `find_by_open_file` with the program to run, so a test can have it missing
-    #[cfg(unix)]
-    fn find_by_open_file_with(program: &str, path: &std::path::Path) -> Result<Vec<Process>> {
-        use std::process::Command;
-
-        let mut command = Command::new(program);
-        // -t = terse (PIDs only); fstat has no such option
-        #[cfg(not(any(target_os = "freebsd", target_os = "netbsd")))]
-        command.arg("-t");
-        let output = crate::ui::interrupt::unblocked_in_child(&mut command)
-            .arg(&*path.to_string_lossy())
-            .output();
-
-        let output = match output {
-            Ok(o) => o,
-            Err(_) => return Ok(vec![]), // the program is not available
-        };
-
-        if !output.status.success() {
-            return Ok(vec![]); // No processes have file open
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
-        let pids = fstat_pids(&stdout);
-        #[cfg(not(any(target_os = "freebsd", target_os = "netbsd")))]
-        let pids = lsof_pids(&stdout);
-
+        let self_pid = std::process::id();
         let mut processes = Vec::new();
-        for pid in pids {
+        for pid in pids.into_iter().filter(|&pid| pid != self_pid) {
             if let Ok(Some(proc)) = Self::find_by_pid(pid) {
                 processes.push(proc);
             }
@@ -2767,11 +2841,96 @@ mod tests {
         assert_eq!(pids, vec![10]);
     }
 
+    // A missing lsof or fstat used to read as "no process holds the file"
     #[cfg(unix)]
     #[test]
-    fn a_missing_lsof_finds_no_open_file_owners() {
-        let found = Process::find_by_open_file_with("proc-no-such-lsof", std::path::Path::new("/"));
-        assert!(found.unwrap().is_empty());
+    fn a_missing_open_file_program_is_an_error_naming_it() {
+        let found = open_file_pids_with("proc-no-such-lsof", std::path::Path::new("/"));
+        match found {
+            Err(ProcError::NotSupported(why)) => {
+                assert!(why.contains("proc-no-such-lsof"), "{why}")
+            }
+            other => panic!("expected NotSupported, got {other:?}"),
+        }
+    }
+
+    /// A fake `/proc`: PID entries with the links and maps a holder has
+    #[cfg(unix)]
+    fn fake_proc(target: &std::path::Path) -> tempfile::TempDir {
+        use std::os::unix::fs::symlink;
+        let root = tempfile::tempdir().unwrap();
+        let entry = |pid: &str| {
+            let dir = root.path().join(pid);
+            std::fs::create_dir_all(dir.join("fd")).unwrap();
+            dir
+        };
+        let other = std::path::Path::new("/somewhere/else");
+        symlink(target, entry("10").join("fd").join("3")).unwrap();
+        symlink(target, entry("11").join("cwd")).unwrap();
+        std::fs::write(
+            entry("12").join("maps"),
+            format!(
+                "55d0c0a00000-55d0c0a21000 rw-p 00000000 00:00 0                          [heap]\n\
+                 7f1c2a000000-7f1c2a021000 r-xp 00000000 08:01 1234                       {}\n",
+                target.display()
+            ),
+        )
+        .unwrap();
+        symlink(other, entry("13").join("exe")).unwrap();
+        symlink(other, entry("13").join("fd").join("0")).unwrap();
+        symlink(target, entry("14").join("root")).unwrap();
+        symlink(target, entry("15").join("exe")).unwrap();
+        // not PID entries: a file, and a name that isn't a number
+        std::fs::write(root.path().join("uptime"), "1.0 1.0\n").unwrap();
+        symlink(target, entry("self").join("cwd")).unwrap();
+        root
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn every_way_a_process_uses_a_file_is_found_in_proc() {
+        let target = std::path::Path::new("/srv/app/data file.db");
+        let root = fake_proc(target);
+        let pids = linux_open_file_holders(root.path(), target).unwrap();
+        // 10 an open descriptor, 11 the working directory, 12 a mapping,
+        // 14 the root directory, 15 the executable; 13 uses another file
+        assert_eq!(pids, vec![10, 11, 12, 14, 15]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_proc_that_cannot_be_read_is_an_error_not_an_empty_answer() {
+        let missing = std::path::Path::new("/proc-no-such-dir");
+        let found = linux_open_file_holders(missing, std::path::Path::new("/"));
+        match found {
+            Err(ProcError::SystemError(why)) => assert!(why.contains("/proc-no-such-dir"), "{why}"),
+            other => panic!("expected SystemError, got {other:?}"),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_maps_line_gives_the_file_it_maps() {
+        let line =
+            |rest: &str| format!("7f1c2a000000-7f1c2a021000 r-xp 00000000 08:01 1234   {rest}");
+        let mapped = line("/usr/lib/libc.so.6");
+        assert_eq!(
+            mapped_path(&mapped),
+            Some(std::path::Path::new("/usr/lib/libc.so.6"))
+        );
+        // a path keeps its spaces
+        let spaced = line("/srv/my app/lib.so");
+        assert_eq!(
+            mapped_path(&spaced),
+            Some(std::path::Path::new("/srv/my app/lib.so"))
+        );
+        // anonymous memory and named regions map no file
+        assert_eq!(
+            mapped_path("7f1c2a000000-7f1c2a021000 rw-p 00000000 00:00 0"),
+            None
+        );
+        assert_eq!(mapped_path(&line("[stack]")), None);
+        assert_eq!(mapped_path("garbage"), None);
     }
 
     #[test]

@@ -735,6 +735,21 @@ fn for_a_file_nothing_runs_or_holds_is_not_found() {
     assert_eq!(json["success"], false);
 }
 
+// proc's own working directory is the directory it's asked about, which is a
+// use of it: proc leaves itself out, as every other lookup does
+#[test]
+fn for_the_directory_proc_runs_in_leaves_proc_itself_out() {
+    let (_tmp, dir) = fresh_dir();
+    let output = proc_cmd()
+        .current_dir(&dir)
+        .args(["for", ".", "--json"])
+        .output()
+        .unwrap();
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output.status.code(), Some(2), "{json}");
+    assert_eq!(json["success"], false, "{json}");
+}
+
 #[test]
 fn for_filters_drop_what_does_not_match() {
     let p = Owned::listener();

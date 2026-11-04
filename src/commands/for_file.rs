@@ -86,7 +86,7 @@ impl ForCommand {
         // 2. Find processes by executable path
         let exe_processes = Process::find_by_exe_path(&file_path)?;
 
-        // 3. Find processes with file open (lsof)
+        // 3. Find processes with file open (/proc on Linux, lsof or fstat elsewhere)
         let open_file_procs = Process::find_by_open_file(&file_path)?;
 
         // 4. Merge and deduplicate by PID

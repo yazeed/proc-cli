@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`proc for` finds open files on Linux without lsof.** It asked `lsof` which processes had the file open, and where lsof was missing (the Docker image, minimal containers and servers) it found none and said "No process found", exit 2, though processes held the file. On Linux proc now reads `/proc` itself, for every way lsof reports a file in use: an open descriptor, the working directory, the root directory, the executable and a file mapped into memory. On macOS (lsof), FreeBSD and NetBSD (fstat), a missing program is an error that names it, exit 4 (`not_supported`), not an empty answer
+- **`proc for` leaves proc itself out.** Asked about the directory it runs in (`proc for .`), it listed its own process, since its working directory is that directory; every other lookup leaves proc out, and this one does too
 - **The apt repository gets the release's packages.** On the 2.3.0 release it kept listing 2.2.0. A Pages deploy is named after its commit, and Pages keeps the first deploy of a commit: the release commit's push to main deployed the site before the release had its `.deb` files, and the release's own deploy of the same commit, which had them, changed nothing. The push of a release commit (`chore: release v…`) no longer deploys; the release does, once its packages exist. 2.3.0's packages were added by the next push to main
 
 ## [2.3.0] - 2026-11-03

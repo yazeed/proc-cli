@@ -13,6 +13,8 @@ proc for /usr/bin/node     # processes using this executable
 proc for ~/bin/myapp       # tilde expansion
 ```
 
+A process counts when it runs the file or uses it: an open file, its working directory or root directory, or a file mapped into memory (a shared library). On Linux proc reads this from `/proc`, so nothing needs installing; macOS asks `lsof`, and FreeBSD and NetBSD `fstat`. Where that program is missing, `proc for` says so and exits 4 (`not_supported`) rather than reporting no processes. Windows finds the processes running the file only. proc leaves itself out.
+
 One process gets the same card as `proc on`, under the line `✓ Found 1 process for ./server`: its command line, directory, path, user, parent, status, resources, start time, children, the ports it listens on and the connections to them. Several get the standard process table (the one `proc list` prints; `--verbose` adds PPID, STATUS and DIR), followed by the ports they listen on. `--json` is the same for one process or several. If the OS gives no port table (for example macOS without `lsof` on the PATH), the card and the table leave the ports out, and `--json` has no `ports` key for those processes.
 
 ## Options

@@ -439,7 +439,7 @@ Both list candidates. Neither proves that a process is hung or abandoned. Never 
 |------|---------|-------|-------|-----------------|
 | `freeze`, `thaw`, `stop --signal` | exit 4, not supported | works | works | works |
 | `kill --graceful` | `taskkill` without `/F`: fails for console programs (exit 1). Use `stop`, which escalates. | SIGTERM | SIGTERM | SIGTERM |
-| `for` (open files) | finds none (executables only) | works | works | `fstat`, in the base system |
+| `for` (open files) | finds none (executables only) | read from `/proc`, nothing to install | `lsof` (exit 4, `not_supported`, without it) | `fstat`, in the base system |
 | `orphans` | exit 4, not supported | PID 1 test | many app false positives | PID 1 test |
 | Names | `.exe` optional | cut to 15 chars; the executable and argv[0] file names also match | full names | full names |
 | Port tables | built in | read from `/proc`, nothing to install | `lsof` | `sockstat`, in the base system |
