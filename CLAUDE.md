@@ -193,13 +193,13 @@ Every change to a command, flag, argument or output gets tests for its cases (ta
 
 Work is committed and pushed to `main` without a tag, and every change goes under `## [Unreleased]` in `CHANGELOG.md` in the same commit. Every place that describes proc is updated with the change, so `main` describes the next release:
 
-- `README.md`, and `pkg/npm/README.md` (the npm page)
+- `README.md` (also the Docker Hub page), `pkg/npm/README.md` (the npm page) and `pkg/pypi/README.md` (the PyPI page)
 - `skills/proc-cli/` (`SKILL.md`, `reference.md`) and `.claude-plugin/marketplace.json` descriptions
-- the website, `docs/`: `index.html`, `install.md`, `faq.md`, `skill.md`, `commands/` (`index.md` and each command's page) and `_data/`
+- the website, `docs/`: `index.html`, `install.md`, `faq.md`, `skill.md`, `commands/` (`index.md` and each command's page), `_data/`, and the blog posts in `_posts/`, which stay true for the current release
 - the Rust docs on docs.rs: `src/lib.rs` and the doc comments of public items
 - `--help`, the man page and completions, which come from the doc comments in `src/cli.rs` and `src/commands/`
 
-To find them, search for what the change makes untrue (the old flag, message, exit code or behaviour) across all of these, not only the file you changed. Nothing is tagged or version-bumped until the maintainer decides to ship; the release then turns `[Unreleased]` into the new version (see RELEASE.md).
+To find them, search for what the change makes untrue (the old flag, message, exit code or behaviour) across all of these, not only the file you changed. Examples and sample output use generic names (the user `dev`, `/Users/dev` or `/home/dev`, a project called `my-app`), never a real machine's user, paths or projects. Nothing is tagged or version-bumped until the maintainer decides to ship; the release then turns `[Unreleased]` into the new version (see RELEASE.md).
 
 ## Releasing
 
