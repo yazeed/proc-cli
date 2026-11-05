@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Every action and base image is pinned, and Dependabot moves the pins.** `ci.yml` used floating tags (`actions/checkout@v4`, `dtolnay/rust-toolchain@stable` and four more); they are pinned to commit SHAs with the version in a comment, as the release workflows were. The Dockerfile's `rust:1-alpine` and `gcr.io/distroless/static-debian13` are pinned to digests. `.github/dependabot.yml` opens weekly pull requests that move them (`winget-releaser` stays on its commit until the first automated winget update)
 
+- **A build on a system proc doesn't support says so.** proc reads processes, ports and open files with code for macOS, Linux, Windows, FreeBSD and NetBSD. Built anywhere else, illumos (SmartOS, OmniOS) for one, it failed with ``cannot find value `ports` in this scope``, which named no cause. The build now stops first with "proc supports macOS, Linux, Windows, FreeBSD and NetBSD, and this system is not one of them". ROADMAP.md lists illumos as a candidate
+
 ### Fixed
 
 - **`proc for` finds open files on Linux without lsof.** It asked `lsof` which processes had the file open, and where lsof was missing (the Docker image, minimal containers and servers) it found none and said "No process found", exit 2, though processes held the file. On Linux proc now reads `/proc` itself, for every way lsof reports a file in use: an open descriptor, the working directory, the root directory, the executable and a file mapped into memory. On macOS (lsof), FreeBSD and NetBSD (fstat), a missing program is an error that names it, exit 4 (`not_supported`), not an empty answer

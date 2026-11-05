@@ -95,6 +95,21 @@
 //! prompt is waiting (SIGINT, SIGTERM, SIGHUP, SIGQUIT) puts the terminal back,
 //! then ends proc by that signal, so a shell shows 128 plus its number.
 
+// proc reads processes, ports and open files with code for each system it
+// supports; anywhere else the build would fail on whichever of those it hits
+// first, so it stops here and says which systems those are
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "windows",
+    target_os = "freebsd",
+    target_os = "netbsd"
+)))]
+compile_error!(
+    "proc supports macOS, Linux, Windows, FreeBSD and NetBSD, and this system is not one of them \
+     (ROADMAP.md, \"More operating systems\", lists the ones under consideration)"
+);
+
 pub mod cli;
 pub mod commands;
 pub mod core;
