@@ -184,8 +184,9 @@ proc runs on macOS, Linux, Windows, FreeBSD and NetBSD. It reads processes throu
 
 1. **Android (Termux).** sysinfo supports it and Rust targets it, so proc may nearly work; the port reader is Linux's, which reads `/proc/net`, and Android limits that for apps. Try it before deciding.
 2. **OpenBSD**, the BSD that's left: `fstat` and `netstat` in the base system cover open files and ports. The larger part is OpenBSD support in sysinfo, best contributed there, where other tools gain from it too.
+3. **illumos (SmartOS, OmniOS, OpenIndiana).** sysinfo's maintainer declined illumos support in 2026-09, so proc would read processes itself, from `/proc/<pid>/psinfo`, `usage` and `path/`, which first needs proc's sysinfo calls behind one interface. Ports come from `netstat -u` (each socket's processes) or `/proc/<pid>/fdinfo`, open files from `/proc/<pid>/path/<fd>`, and CI from an OmniOS VM; Rust's `x86_64-unknown-illumos` is Tier 2 with host tools. One limit: illumos keeps only the first 80 characters of a command line, and the rest is readable only for one's own processes. Revisit when a user asks for it, or if sysinfo takes illumos after all.
 
-Not planned: illumos and Solaris (no sysinfo support and few users), Cygwin (its users are on Windows, where proc already runs natively) and Redox (too early). **Feature test:** a platform, not a feature; it puts the same commands where people already are. **Open:** what Android allows an app to read in `/proc`; whether sysinfo would take OpenBSD support.
+Not planned: Solaris (no sysinfo support, few users and a closed source base), Cygwin (its users are on Windows, where proc already runs natively) and Redox (too early). **Feature test:** a platform, not a feature; it puts the same commands where people already are. **Open:** what Android allows an app to read in `/proc`; whether sysinfo would take OpenBSD support; for illumos, how much of proc's process code a reader of its own touches.
 
 ### More ways to install
 
