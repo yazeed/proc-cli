@@ -7,7 +7,10 @@
 //!   proc by node --min-cpu 5   # Node processes using >5% CPU
 //!   proc by "my app"           # Processes with spaces in name
 
-use crate::core::{resolve_in_dir, sort_processes, NameMatch, Process, SortKey, StatusFilter};
+use crate::core::target::{includes_note, left_out_warning};
+use crate::core::{
+    resolve_in_dir, sort_processes, Ancestors, NameMatch, Process, SortKey, StatusFilter,
+};
 use crate::error::Result;
 use crate::ui::Printer;
 use clap::Args;
@@ -76,8 +79,16 @@ impl ByCommand {
             .wide(self.wide)
             .scoped_to_dir(self.in_dir.is_some());
 
-        // Get processes by name
-        let mut processes = Process::find_by_name(&self.name, NameMatch::from_flag(self.cmd))?;
+        // Get processes by name: one proc runs under is listed, marked, when its
+        // name matches; a match in its command line (which holds proc's own
+        // arguments) is left out, and named
+        let lookup =
+            Process::lookup_name(&self.name, NameMatch::from_flag(self.cmd), Ancestors::Mark)?;
+        if let Some(warning) = left_out_warning(&lookup.left_out) {
+            printer.warning(&warning);
+        }
+        let printer = printer.with_left_out(&lookup.left_out);
+        let mut processes = lookup.processes;
 
         // Real CPU readings for the table, --min-cpu and --sort cpu
         Process::measure_cpu(&mut processes);
@@ -110,6 +121,9 @@ impl ByCommand {
         let context = Some(context_parts.join(" "));
 
         printer.print_processes_as("by", &processes, context.as_deref());
+        if let Some(note) = includes_note(&processes) {
+            printer.note(&note);
+        }
         Ok(())
     }
 
@@ -215,6 +229,7 @@ mod tests {
             cpu_time_secs: None,
             open_files: None,
             child_count: None,
+            runs_proc: false,
         }
     }
 

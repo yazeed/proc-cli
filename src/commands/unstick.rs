@@ -24,8 +24,8 @@
 
 use crate::core::process::ProcessDetails;
 use crate::core::{
-    apply_filters, flatten_targets, guard_targets, resolve_targets_excluding_self, Guards,
-    NameMatch, Process, ProcessStatus, Resolved,
+    apply_filters, flatten_targets, guard_targets, nothing_resolved,
+    resolve_targets_excluding_self, Guards, NameMatch, Process, ProcessStatus, Resolved,
 };
 use crate::error::{ExitCode, ProcError, Result};
 use crate::ui::{format_duration, must_confirm, plural, prompt, Printer};
@@ -102,18 +102,20 @@ impl UnstickCommand {
     pub fn execute(&self) -> Result<()> {
         let printer = Printer::from_flags(self.json, self.verbose);
 
-        // Get processes to unstick, and the targets that matched nothing
-        let (mut stuck, not_found) = if !self.target.is_empty() {
+        // Get processes to unstick, the targets that matched nothing, and the
+        // processes proc runs under that a target matched and left out
+        let (mut stuck, not_found, left_out) = if !self.target.is_empty() {
             // Specific targets
             let resolved = self.resolve_target_processes(&self.target)?;
             if let Some(warning) = resolved.warning() {
                 printer.warning(&warning);
             }
-            (resolved.processes, resolved.not_found)
+            let left_out = resolved.left_out_ancestors();
+            (resolved.processes, resolved.not_found, left_out)
         } else {
             // Auto-discover stuck processes
             let timeout = Duration::from_secs(self.timeout);
-            (Process::find_stuck(timeout)?, Vec::new())
+            (Process::find_stuck(timeout)?, Vec::new(), Vec::new())
         };
 
         // Apply --in and --by: with targets they are guards, which say so when
@@ -143,6 +145,7 @@ impl UnstickCommand {
                     terminated: 0,
                     failed: 0,
                     not_found: &not_found,
+                    left_out: &left_out,
                     processes: Vec::new(),
                     count: 0,
                     recovered_count: 0,
@@ -189,6 +192,7 @@ impl UnstickCommand {
                     terminated: 0,
                     failed: 0,
                     not_found: &not_found,
+                    left_out: &left_out,
                     processes: stuck
                         .iter()
                         .map(|p| ProcessOutcome::of(p, "would_attempt".to_string()))
@@ -299,6 +303,7 @@ impl UnstickCommand {
                 terminated,
                 failed,
                 not_found: &not_found,
+                left_out: &left_out,
                 processes: outcomes
                     .iter()
                     .map(|(p, o)| ProcessOutcome::of(p, outcome_label(o)))
@@ -332,12 +337,17 @@ impl UnstickCommand {
         Ok(())
     }
 
-    /// Resolve target to processes, excluding self
+    /// Resolve target to processes, excluding self and the processes proc
+    /// runs under (see [`resolve_targets_excluding_self`])
     fn resolve_target_processes(&self, typed: &[String]) -> Result<Resolved> {
         let targets = flatten_targets(typed);
         let resolved = resolve_targets_excluding_self(&targets, NameMatch::from_flag(self.cmd));
         if resolved.processes.is_empty() {
-            Err(ProcError::ProcessNotFound(typed.join(" ")))
+            Err(nothing_resolved(
+                typed.join(" "),
+                &resolved.unseen,
+                &resolved.left_out,
+            ))
         } else {
             Ok(resolved)
         }
@@ -614,6 +624,10 @@ struct UnstickOutput<'a> {
     failed: usize,
     /// The targets that matched nothing
     not_found: &'a [String],
+    /// The processes proc runs under that a target matched and that were left
+    /// out; absent when there are none
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    left_out: &'a [crate::core::Ancestor],
     processes: Vec<ProcessOutcome>,
     /// The counts above under the names every other command's counts have:
     /// `count` for the processes found, `<outcome>_count` for the rest. The

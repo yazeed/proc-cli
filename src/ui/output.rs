@@ -110,6 +110,9 @@ pub struct Printer {
     /// The targets that matched nothing, for a command that takes targets. When
     /// set, every JSON result the printer writes has them as `not_found`.
     not_found: Option<Vec<String>>,
+    /// The processes proc runs under that a target matched and that were left
+    /// out (see [`Printer::with_left_out`])
+    left_out: Vec<crate::core::Ancestor>,
     /// The processes the preview listed, in its order, for the receipt of an
     /// action (see [`Printer::with_processes`])
     processes: Option<Vec<Process>>,
@@ -144,8 +147,17 @@ impl Printer {
             wide: false,
             scoped_to_dir: false,
             not_found: None,
+            left_out: Vec::new(),
             processes: None,
         }
+    }
+
+    /// Say which processes proc runs under a target matched and left out: the
+    /// JSON results (dry run, action and the empty result) then list them as
+    /// `left_out`, which is absent when there are none
+    pub fn with_left_out(mut self, left_out: &[crate::core::Ancestor]) -> Self {
+        self.left_out = left_out.to_vec();
+        self
     }
 
     /// Say which targets matched nothing: the JSON results (dry run, action,
@@ -217,7 +229,20 @@ impl Printer {
                 count: 0,
                 message,
                 not_found: self.not_found.as_deref(),
+                left_out: Some(&self.left_out),
             }),
+        }
+    }
+
+    /// Print a note, for people only: `ℹ <message>`
+    pub fn note(&self, message: &str) {
+        to_stdout(|out| self.write_note(out, message));
+    }
+
+    fn write_note(&self, out: &mut impl Write, message: &str) -> std::io::Result<()> {
+        match self.format {
+            OutputFormat::Human => writeln!(out, "{} {}", "ℹ".cyan().bold(), message.cyan()),
+            OutputFormat::Json => Ok(()),
         }
     }
 
@@ -245,6 +270,7 @@ impl Printer {
                 success: true,
                 count: processes.len(),
                 processes,
+                left_out: Some(&self.left_out),
             }),
         }
     }
@@ -435,6 +461,7 @@ impl Printer {
                     succeeded_count: succeeded.len(),
                     failed_count: failed.len(),
                     not_found: self.not_found.as_deref(),
+                    left_out: Some(&self.left_out),
                     succeeded,
                     failed: &failed
                         .iter()
@@ -554,6 +581,7 @@ impl Printer {
                 dry_run: true,
                 count: processes.len(),
                 not_found: self.not_found.as_deref(),
+                left_out: Some(&self.left_out),
                 processes,
             }),
         }
@@ -621,6 +649,13 @@ struct EmptyResult<'a> {
     message: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     not_found: Option<&'a [String]>,
+    #[serde(skip_serializing_if = "none_left_out")]
+    left_out: Option<&'a [crate::core::Ancestor]>,
+}
+
+/// No process was left out, so the document has no `left_out`
+fn none_left_out(left_out: &Option<&[crate::core::Ancestor]>) -> bool {
+    left_out.is_none_or(|left_out| left_out.is_empty())
 }
 
 #[derive(Serialize)]
@@ -629,6 +664,8 @@ struct ProcessListOutput<'a> {
     success: bool,
     count: usize,
     processes: &'a [Process],
+    #[serde(skip_serializing_if = "none_left_out")]
+    left_out: Option<&'a [crate::core::Ancestor]>,
 }
 
 #[derive(Serialize)]
@@ -639,6 +676,8 @@ struct DryRunOutput<'a> {
     count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     not_found: Option<&'a [String]>,
+    #[serde(skip_serializing_if = "none_left_out")]
+    left_out: Option<&'a [crate::core::Ancestor]>,
     processes: &'a [Process],
 }
 
@@ -650,6 +689,8 @@ struct ActionOutput<'a> {
     failed_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     not_found: Option<&'a [String]>,
+    #[serde(skip_serializing_if = "none_left_out")]
+    left_out: Option<&'a [crate::core::Ancestor]>,
     succeeded: &'a [Process],
     failed: &'a [FailedAction<'a>],
     /// Every process acted on, in the preview's order, each with its `outcome`
@@ -707,6 +748,73 @@ impl Default for Printer {
 mod tests {
     use super::*;
     use crate::test_support::assert_stops_at_a_failed_write;
+
+    #[test]
+    fn a_document_with_left_out_names_them() {
+        let zsh = [crate::core::Ancestor {
+            pid: 81340,
+            name: "zsh".to_string(),
+        }];
+        let dry = serde_json::to_value(DryRunOutput {
+            action: "kill",
+            success: true,
+            dry_run: true,
+            count: 0,
+            not_found: Some(&[]),
+            left_out: Some(&zsh),
+            processes: &[],
+        })
+        .unwrap();
+        assert_eq!(
+            dry["left_out"],
+            serde_json::json!([{"pid": 81340, "name": "zsh"}])
+        );
+        let empty = serde_json::to_value(EmptyResult {
+            action: "free",
+            success: true,
+            count: 0,
+            message: "m",
+            not_found: None,
+            left_out: Some(&[]),
+        })
+        .unwrap();
+        assert!(empty.get("left_out").is_none(), "{empty}");
+        let receipt = serde_json::to_value(ActionOutput {
+            action: "kill",
+            success: true,
+            succeeded_count: 0,
+            failed_count: 0,
+            not_found: None,
+            left_out: None,
+            succeeded: &[],
+            failed: &[],
+            processes: &[],
+            count: 0,
+        })
+        .unwrap();
+        assert!(receipt.get("left_out").is_none(), "{receipt}");
+    }
+
+    #[test]
+    fn a_note_is_for_people_only() {
+        let mut out = Vec::new();
+        Printer::new(OutputFormat::Human, false)
+            .write_note(&mut out, "Includes zsh (PID 1), which runs this proc")
+            .unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.ends_with("Includes zsh (PID 1), which runs this proc\n"),
+            "{text:?}"
+        );
+        let mut out = Vec::new();
+        Printer::new(OutputFormat::Json, false)
+            .write_note(&mut out, "x")
+            .unwrap();
+        assert!(out.is_empty());
+        assert_stops_at_a_failed_write(|w| {
+            Printer::new(OutputFormat::Human, false).write_note(w, "x")
+        });
+    }
 
     #[test]
     fn a_note_is_plain_unless_stderr_is_a_terminal_and_no_color_is_unset() {
@@ -788,6 +896,7 @@ mod tests {
             cpu_time_secs: Some(0),
             open_files: None,
             child_count: None,
+            runs_proc: false,
         }
     }
 

@@ -9,10 +9,12 @@
 //!   proc tree --min-cpu 10 # Only processes using >10% CPU
 //!   proc tree 1234 -a      # Show ancestry (path UP to root)
 
-use crate::core::process::ProcessDetails;
+use crate::core::process::{matches_outside_command_line, proc_ancestors, ProcessDetails};
+use crate::core::target::{includes_note, left_out_warning};
 use crate::core::{
     classify, matches_by_filter, matches_in_filter, parse_target, resolve_in_dir, resolve_target,
-    ruled_out_by, Guards, Hit, NameMatch, Process, ProcessStatus, StatusFilter, TargetType,
+    ruled_out_by, Ancestor, Guards, Hit, NameMatch, Process, ProcessStatus, StatusFilter,
+    TargetType,
 };
 use crate::error::{ProcError, Result};
 use crate::out_println;
@@ -118,52 +120,38 @@ impl TreeCommand {
             .collect()
     }
 
-    /// Build the set of ancestor PIDs to exclude from name matching.
-    ///
-    /// Walks up the process tree from the current process to avoid matching
-    /// shells whose command lines contain proc's own arguments. `all_processes`
-    /// leaves proc itself out, so its parent is looked up separately.
-    fn ancestor_pids(all_processes: &[Process]) -> std::collections::HashSet<u32> {
-        let mut pids = std::collections::HashSet::new();
-        let self_pid = std::process::id();
-        pids.insert(self_pid);
-        let mut next = Process::find_by_pid(self_pid)
-            .ok()
-            .flatten()
-            .and_then(|me| me.parent_pid);
-        for _ in 0..10 {
-            let Some(parent_pid) = next else { break };
-            pids.insert(parent_pid);
-            next = all_processes
-                .iter()
-                .find(|p| p.pid == parent_pid)
-                .and_then(|p| p.parent_pid);
-        }
-        pids
-    }
-
-    /// The processes a name matches, leaving out `ancestors` (proc and the shells
-    /// above it), and how many others have the name only in their command line
-    /// (what `--cmd` would add): both come from the one pass over `all`.
+    /// The processes a name matches in `all` (which leaves proc itself out).
+    /// One of `ancestors` (the processes proc runs under) is kept when its
+    /// name matches exactly, since tree only reads, and left out with `--cmd`,
+    /// whose match may be proc's own arguments in its command line. Also how
+    /// many others have the name only in their command line (what `--cmd`
+    /// would add), an ancestor never among them: all from one pass over `all`.
     fn named<'a>(
         all: impl Iterator<Item = &'a Process>,
         ancestors: &std::collections::HashSet<u32>,
         pattern: &str,
         mode: NameMatch,
-    ) -> (Vec<&'a Process>, usize) {
-        let mut others = 0;
-        let named = all
-            .filter(|p| !ancestors.contains(&p.pid))
-            .filter(|p| match classify(pattern, &p.names(), mode) {
-                Hit::Match => true,
-                Hit::CommandLineOnly => {
-                    others += 1;
-                    false
+    ) -> Named<'a> {
+        let mut found = Named {
+            kept: Vec::new(),
+            left_out: Vec::new(),
+            others: 0,
+        };
+        for p in all {
+            let runs_proc = ancestors.contains(&p.pid);
+            match classify(pattern, &p.names(), mode) {
+                // a --cmd hit in its command line alone is proc's own arguments
+                Hit::Match if runs_proc && mode != NameMatch::Exact => {
+                    if matches_outside_command_line(p, pattern, mode) {
+                        found.left_out.push(Ancestor::from(p))
+                    }
                 }
-                Hit::No => false,
-            })
-            .collect();
-        (named, others)
+                Hit::Match => found.kept.push(p),
+                Hit::CommandLineOnly if !runs_proc => found.others += 1,
+                Hit::CommandLineOnly | Hit::No => {}
+            }
+        }
+        found
     }
 
     /// Executes the tree command, displaying the process hierarchy.
@@ -228,7 +216,9 @@ impl TreeCommand {
             return self.show_ancestors(&printer, target, &pid_map, &all_processes, &in_and_by);
         }
 
-        // Determine target processes
+        // Determine target processes, and the processes proc runs under that
+        // a name matched and left out
+        let mut left_out: Vec<Ancestor> = Vec::new();
         let target_processes: Vec<&Process> = if let Some(ref target) = self.target {
             // Use unified target resolution
             match parse_target(target) {
@@ -244,17 +234,14 @@ impl TreeCommand {
                         .collect()
                 }
                 TargetType::Name(ref pattern) => {
-                    // For name, do pattern matching (exclude self and parent to avoid
-                    // false positives from proc's own args in the shell command line)
-                    let ancestor_pids = Self::ancestor_pids(&all_processes);
-                    let (named, others) =
-                        Self::named(all_processes.iter(), &ancestor_pids, pattern, mode);
+                    let found = Self::named(all_processes.iter(), proc_ancestors(), pattern, mode);
                     // A name that matches nothing is not found, as a PID or a
                     // port that matches nothing is
-                    if named.is_empty() {
-                        return Err(ProcError::name_not_found(pattern, others));
+                    if found.kept.is_empty() {
+                        return Err(found.nothing(pattern));
                     }
-                    named
+                    left_out = found.left_out;
+                    found.kept
                 }
             }
         } else {
@@ -281,6 +268,10 @@ impl TreeCommand {
         } else {
             target_processes
         };
+
+        if let Some(warning) = left_out_warning(&left_out) {
+            printer.warning(&warning);
+        }
 
         // Apply resource filters if specified
         let matches_filters = |p: &Process| self.matches_filters(p);
@@ -323,6 +314,7 @@ impl TreeCommand {
                 action: "tree",
                 success: true,
                 tree: tree_nodes,
+                left_out,
             });
         } else if self.target.is_some() {
             let filtered: Vec<_> = target_processes
@@ -349,6 +341,16 @@ impl TreeCommand {
             for proc in &filtered {
                 self.print_tree(proc, &children_map, "", true, 0);
                 out_println!();
+            }
+            // a name chose these; a PID or a port names its process
+            if matches!(
+                parse_target(self.target.as_ref().unwrap()),
+                TargetType::Name(_)
+            ) {
+                let shown: Vec<Process> = filtered.iter().map(|p| (*p).clone()).collect();
+                if let Some(note) = includes_note(&shown) {
+                    printer.note(&note);
+                }
             }
         } else if has_filters {
             let filtered: Vec<_> = all_processes
@@ -521,19 +523,24 @@ impl TreeCommand {
 
         let mode = NameMatch::from_flag(self.cmd);
 
-        // Resolve target to processes
+        // Resolve target to processes, and the processes proc runs under that
+        // a name matched and left out
+        let mut left_out: Vec<Ancestor> = Vec::new();
+        let by_name = matches!(parse_target(target), TargetType::Name(_));
         let target_processes: Vec<Process> = match parse_target(target) {
             TargetType::Port(_) | TargetType::Pid(_) => resolve_target(target, mode)?,
             TargetType::Name(ref pattern) => {
-                let ancestor_pids = Self::ancestor_pids(all_processes);
-                let (named, others) =
-                    Self::named(all_processes.iter(), &ancestor_pids, pattern, mode);
-                if named.is_empty() {
-                    return Err(ProcError::name_not_found(pattern, others));
+                let found = Self::named(all_processes.iter(), proc_ancestors(), pattern, mode);
+                if found.kept.is_empty() {
+                    return Err(found.nothing(pattern));
                 }
-                named.into_iter().cloned().collect()
+                left_out = found.left_out;
+                found.kept.into_iter().cloned().collect()
             }
         };
+        if let Some(warning) = left_out_warning(&left_out) {
+            printer.warning(&warning);
+        }
         // --in and --by guard the target here too, as without --ancestors
         let found = target_processes.clone();
         let target_processes: Vec<Process> = target_processes
@@ -557,6 +564,7 @@ impl TreeCommand {
                 action: "tree",
                 success: true,
                 ancestry: ancestry_output,
+                left_out,
             });
         } else {
             out_println!("{} Ancestry for '{}':\n", "✓".green().bold(), target.cyan());
@@ -564,6 +572,11 @@ impl TreeCommand {
             for proc in &target_processes {
                 self.print_ancestry(proc, pid_map);
                 out_println!();
+            }
+            if by_name {
+                if let Some(note) = includes_note(&target_processes) {
+                    printer.note(&note);
+                }
             }
         }
 
@@ -682,6 +695,10 @@ struct AncestryOutput {
     action: &'static str,
     success: bool,
     ancestry: Vec<AncestryNode>,
+    /// The processes proc runs under that the name matched and that were left
+    /// out; absent when there are none
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    left_out: Vec<Ancestor>,
 }
 
 #[derive(Serialize)]
@@ -714,6 +731,34 @@ struct TreeOutput {
     action: &'static str,
     success: bool,
     tree: Vec<TreeNode>,
+    /// The processes proc runs under that the name matched and that were left
+    /// out; absent when there are none
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    left_out: Vec<Ancestor>,
+}
+
+/// What a name found in the tree: the processes kept, the processes proc runs
+/// under that were left out, and how many others have the name only in their
+/// command line
+struct Named<'a> {
+    kept: Vec<&'a Process>,
+    left_out: Vec<Ancestor>,
+    others: usize,
+}
+
+impl Named<'_> {
+    /// The error for a name that kept nothing: the processes it left out, when
+    /// it left out any, else not found (with the `--cmd` hint)
+    fn nothing(self, pattern: &str) -> ProcError {
+        if self.left_out.is_empty() {
+            ProcError::name_not_found(pattern, self.others)
+        } else {
+            ProcError::AncestorsOnly {
+                name: pattern.to_string(),
+                ancestors: self.left_out,
+            }
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -777,6 +822,7 @@ mod tests {
             cpu_time_secs: None,
             open_files: None,
             child_count: None,
+            runs_proc: false,
         }
     }
 
@@ -792,17 +838,30 @@ mod tests {
         let all = [node, editor, shell];
         let skipped: std::collections::HashSet<u32> = [3].into();
 
-        let (named, others) = TreeCommand::named(all.iter(), &skipped, "node", NameMatch::Exact);
-        assert_eq!(named.iter().map(|p| p.pid).collect::<Vec<_>>(), vec![1]);
-        assert_eq!(others, 1);
+        // pid 3 runs proc: its exact name keeps it (tree only reads); a match
+        // with --cmd leaves it out, and says so
+        let found = TreeCommand::named(all.iter(), &skipped, "node", NameMatch::Exact);
+        assert_eq!(
+            found.kept.iter().map(|p| p.pid).collect::<Vec<_>>(),
+            vec![1, 3]
+        );
+        assert!(found.left_out.is_empty());
+        assert_eq!(found.others, 1);
 
-        let (named, others) = TreeCommand::named(all.iter(), &skipped, "node", NameMatch::Command);
-        assert_eq!(named.iter().map(|p| p.pid).collect::<Vec<_>>(), vec![1, 2]);
-        assert_eq!(others, 0);
+        let found = TreeCommand::named(all.iter(), &skipped, "node", NameMatch::Command);
+        assert_eq!(
+            found.kept.iter().map(|p| p.pid).collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        assert_eq!(
+            found.left_out.iter().map(|a| a.pid).collect::<Vec<_>>(),
+            vec![3]
+        );
+        assert_eq!(found.others, 0);
 
-        let (named, others) = TreeCommand::named(all.iter(), &skipped, "python", NameMatch::Exact);
-        assert!(named.is_empty());
-        assert_eq!(others, 0);
+        let found = TreeCommand::named(all.iter(), &skipped, "python", NameMatch::Exact);
+        assert!(found.kept.is_empty() && found.left_out.is_empty());
+        assert_eq!(found.others, 0);
     }
 
     #[test]

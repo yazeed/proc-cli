@@ -8,7 +8,8 @@
 //!   proc in ~/projects         # Processes in ~/projects
 
 use crate::core::filters::resolve_dir;
-use crate::core::{sort_processes, NameMatch, Process, SortKey, StatusFilter};
+use crate::core::target::{includes_note, left_out_warning};
+use crate::core::{sort_processes, Ancestors, NameMatch, Process, SortKey, StatusFilter};
 use crate::error::{ProcError, Result};
 use crate::ui::{OutputFormat, Printer};
 use clap::Args;
@@ -96,12 +97,20 @@ impl InCommand {
             .wide(self.wide)
             .scoped_to_dir(true);
 
-        // Get base process list
-        let mut processes = if let Some(ref name) = self.by_name {
-            Process::find_by_name(name, NameMatch::from_flag(self.cmd))?
+        // Get base process list: with `--by`, a process proc runs under is
+        // listed, marked, when its name matches; a match in its command line is
+        // left out, and named
+        let (mut processes, left_out) = if let Some(ref name) = self.by_name {
+            let lookup =
+                Process::lookup_name(name, NameMatch::from_flag(self.cmd), Ancestors::Mark)?;
+            (lookup.processes, lookup.left_out)
         } else {
-            Process::find_all()?
+            (Process::find_all()?, Vec::new())
         };
+        if let Some(warning) = left_out_warning(&left_out) {
+            printer.warning(&warning);
+        }
+        let printer = printer.with_left_out(&left_out);
 
         // Real CPU readings for the table, --min-cpu and --sort cpu
         Process::measure_cpu(&mut processes);
@@ -145,6 +154,11 @@ impl InCommand {
         let context = Some(context_parts.join(" "));
 
         printer.print_processes_as("in", &processes, context.as_deref());
+        if self.by_name.is_some() {
+            if let Some(note) = includes_note(&processes) {
+                printer.note(&note);
+            }
+        }
         Ok(())
     }
 
@@ -242,6 +256,7 @@ mod tests {
             cpu_time_secs: None,
             open_files: None,
             child_count: None,
+            runs_proc: false,
         }
     }
 

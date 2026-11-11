@@ -22,9 +22,11 @@ pub use name_match::{classify, matches_name, Hit, NameMatch, Names};
 pub use port::{parse_port, Exposure, PortInfo, Protocol, Unseen, UnseenPort};
 #[cfg(unix)]
 pub use process::parse_signal_name;
-pub use process::{escape_control, is_thread, Process, ProcessStatus, RawText};
+pub use process::{
+    escape_control, is_thread, Ancestor, Ancestors, NameLookup, Process, ProcessStatus, RawText,
+};
 pub use target::{
-    comma_notice, find_ports_for_pid, flatten_targets, nothing_resolved, parse_target,
-    parse_targets, resolve_target, resolve_targets, resolve_targets_excluding_self,
+    comma_notice, find_ports_for_pid, flatten_targets, lookup_target, nothing_resolved,
+    parse_target, parse_targets, resolve_target, resolve_targets, resolve_targets_excluding_self,
     validate_target_arg, with_ports, Resolved, TargetType,
 };

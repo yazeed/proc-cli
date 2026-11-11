@@ -12,10 +12,12 @@
 //! Commas still work (`proc list node,python`) but are deprecated.
 
 use crate::core::filters::resolve_dir;
+use crate::core::target::{includes_note, left_out_warning};
 use crate::core::{
-    flatten_targets, resolve_in_dir, sort_processes, NameMatch, Process, SortKey, StatusFilter,
+    flatten_targets, resolve_in_dir, sort_processes, Ancestor, Ancestors, NameMatch, Process,
+    SortKey, StatusFilter,
 };
-use crate::error::Result;
+use crate::error::{ProcError, Result};
 use crate::ui::Printer;
 use clap::Args;
 use std::path::PathBuf;
@@ -89,24 +91,38 @@ impl ListCommand {
             .scoped_to_dir(self.in_dir.is_some());
 
         // Get base process list (several names as separate arguments; each may
-        // still be a comma-separated list)
+        // still be a comma-separated list). A process proc runs under is listed,
+        // marked, when its name matches; a match in its command line is left
+        // out, and named
+        let mut left_out: Vec<Ancestor> = Vec::new();
         let mut processes = if !self.name.is_empty() {
             let names = flatten_targets(&self.name);
             let mut all = Vec::new();
             let mut seen = std::collections::HashSet::new();
             for n in &names {
-                if let Ok(found) = Process::find_by_name(n, NameMatch::from_flag(self.cmd)) {
-                    for p in found {
-                        if seen.insert(p.pid) {
-                            all.push(p);
+                match Process::lookup_name(n, NameMatch::from_flag(self.cmd), Ancestors::Mark) {
+                    Ok(found) => {
+                        for p in found.processes {
+                            if seen.insert(p.pid) {
+                                all.push(p);
+                            }
                         }
+                        left_out.extend(found.left_out);
                     }
+                    Err(ProcError::AncestorsOnly { ancestors, .. }) => left_out.extend(ancestors),
+                    Err(_) => {}
                 }
             }
             all
         } else {
             Process::find_all()?
         };
+        left_out.sort_by_key(|a| a.pid);
+        left_out.dedup_by_key(|a| a.pid);
+        if let Some(warning) = left_out_warning(&left_out) {
+            printer.warning(&warning);
+        }
+        let printer = printer.with_left_out(&left_out);
 
         // Real CPU readings for the table, --min-cpu and --sort cpu
         Process::measure_cpu(&mut processes);
@@ -143,6 +159,12 @@ impl ListCommand {
             .map(|p| format!("in {}", p.display()));
 
         printer.print_processes_with_context(&processes, context.as_deref());
+        // only a name chose these: a full list shows proc's ancestors anyway
+        if !self.name.is_empty() {
+            if let Some(note) = includes_note(&processes) {
+                printer.note(&note);
+            }
+        }
         Ok(())
     }
 
@@ -267,6 +289,7 @@ mod tests {
             cpu_time_secs: None,
             open_files: None,
             child_count: None,
+            runs_proc: false,
         }
     }
 

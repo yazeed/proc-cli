@@ -200,7 +200,14 @@ fn run() -> u8 {
                 if let Some(ref hint) = hint {
                     error.push_str(&format!("\n  {hint}"));
                 }
-                print_json_error(&error, exit_code, Some(REASON_INVALID_INPUT), None, None);
+                print_json_error(
+                    &error,
+                    exit_code,
+                    Some(REASON_INVALID_INPUT),
+                    None,
+                    None,
+                    None,
+                );
             } else {
                 err_println!("{}", parts.human());
                 if let Some(suggestion) = suggestion {
@@ -296,6 +303,7 @@ fn run() -> u8 {
                 e.reason(),
                 confirmation,
                 ruled_out_by.as_deref(),
+                e.left_out(),
             );
         } else {
             err_println!("{}", e);
@@ -317,13 +325,15 @@ fn run() -> u8 {
 /// changed and, for a command that takes targets, the targets that were not found.
 ///
 /// `ruled_out_by` is `Some` only for a target its guards ruled out: the flags
-/// of those guards (`["--start-time"]`).
+/// of those guards (`["--start-time"]`). `left_out` is `Some` only when every
+/// match was a process proc runs under: those processes, `{"pid", "name"}`.
 fn print_json_error(
     error: &str,
     exit_code: i32,
     reason: Option<&str>,
     confirmation: Option<(&[Process], Option<&[String]>)>,
     ruled_out_by: Option<&[&str]>,
+    left_out: Option<&[proc_cli::core::Ancestor]>,
 ) {
     let mut error_json = serde_json::json!({
         "action": action_name(),
@@ -343,6 +353,9 @@ fn print_json_error(
     }
     if let Some(ruled_out_by) = ruled_out_by {
         error_json["ruled_out_by"] = serde_json::json!(ruled_out_by);
+    }
+    if let Some(left_out) = left_out {
+        error_json["left_out"] = serde_json::json!(left_out);
     }
     out_println!("{}", serde_json::to_string_pretty(&error_json).unwrap());
 }
@@ -386,6 +399,7 @@ fn invalid_argument(message: &str) -> u8 {
             message,
             exit_code as i32,
             Some(REASON_INVALID_INPUT),
+            None,
             None,
             None,
         );

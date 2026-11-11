@@ -13,10 +13,10 @@
 use super::held::{card_options, measure_with_known_ports_from, write_process_card};
 use crate::core::port::SocketReading;
 use crate::core::process::ProcessDetails;
-use crate::core::target::resolve_port_in;
+use crate::core::target::{includes_note, left_out_warning, lookup_target, resolve_port_in};
 use crate::core::{
-    flatten_targets, parse_target, resolve_target, NameMatch, PortInfo, Process, ProcessStatus,
-    Protocol, TargetType,
+    flatten_targets, parse_target, Ancestor, Ancestors, NameLookup, NameMatch, PortInfo, Process,
+    ProcessStatus, Protocol, TargetType,
 };
 use crate::error::{ExitCode, ProcError, Result};
 use crate::out_println;
@@ -67,6 +67,10 @@ impl WhyCommand {
         let mut found_any = false;
         let mut first_error: Option<ProcError> = None;
         let mut not_found: Vec<String> = Vec::new();
+        // The processes proc runs under that a name matched: left out (with
+        // `--cmd`) or kept, marked
+        let mut left_out: Vec<Ancestor> = Vec::new();
+        let mut included: Vec<Process> = Vec::new();
         // The socket tables, read once for every port target, every process
         // shown in the JSON and the cards: a port target needs them first, a
         // PID or a name reads them while the cards wait for the CPU. `None`
@@ -95,12 +99,23 @@ impl WhyCommand {
 
             // Resolve to processes, a port from the table already read
             let resolve = |t: &str| match (&parsed, for_port) {
-                (TargetType::Port(port), Some(reading)) => resolve_port_in(*port, &reading.ports),
-                _ => resolve_target(t, mode),
+                (TargetType::Port(port), Some(reading)) => {
+                    resolve_port_in(*port, &reading.ports).map(NameLookup::of)
+                }
+                _ => lookup_target(t, mode, Ancestors::Mark),
             };
             let target_processes = match found_processes(target_str, resolve) {
-                Ok(procs) => procs,
+                Ok(lookup) => {
+                    left_out.extend(lookup.left_out);
+                    if matches!(parsed, TargetType::Name(_)) {
+                        included.extend(lookup.processes.iter().filter(|p| p.runs_proc).cloned());
+                    }
+                    lookup.processes
+                }
                 Err((error, warning)) => {
+                    if let ProcError::AncestorsOnly { ref ancestors, .. } = error {
+                        left_out.extend(ancestors.iter().cloned());
+                    }
                     printer.warning(&warning);
                     first_error.get_or_insert(error);
                     not_found.push(target_str.clone());
@@ -149,8 +164,19 @@ impl WhyCommand {
             }
         }
 
+        left_out.sort_by_key(|a| a.pid);
+        left_out.dedup_by_key(|a| a.pid);
+        if let Some(warning) = left_out_warning(&left_out) {
+            printer.warning(&warning);
+        }
+
         if !self.json {
             self.print_targets(&shown, &pid_map, read_if_done(&reading));
+            included.sort_by_key(|p| p.pid);
+            included.dedup_by_key(|p| p.pid);
+            if let Some(note) = includes_note(&included) {
+                printer.note(&note);
+            }
         }
 
         if !found_any {
@@ -172,6 +198,7 @@ impl WhyCommand {
                 success: true,
                 count: json_results.len(),
                 not_found,
+                left_out,
                 results: json_results,
             });
         }
@@ -336,14 +363,14 @@ impl WhyCommand {
 /// if the target resolved to nothing.
 fn found_processes(
     target: &str,
-    resolve: impl Fn(&str) -> Result<Vec<Process>>,
-) -> std::result::Result<Vec<Process>, (ProcError, String)> {
+    resolve: impl Fn(&str) -> Result<NameLookup>,
+) -> std::result::Result<NameLookup, (ProcError, String)> {
     match resolve(target) {
-        Ok(processes) if processes.is_empty() => Err((
+        Ok(lookup) if lookup.processes.is_empty() => Err((
             ProcError::ProcessNotFound(target.to_string()),
             format!("No process found for '{}'", target),
         )),
-        Ok(processes) => Ok(processes),
+        Ok(lookup) => Ok(lookup),
         Err(e) => {
             let warning = e.to_string();
             Err((e, warning))
@@ -400,6 +427,10 @@ struct WhyEnvelope {
     count: usize,
     /// The targets that matched nothing
     not_found: Vec<String>,
+    /// The processes proc runs under that a target matched and that were left
+    /// out; absent when there are none
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    left_out: Vec<Ancestor>,
     results: Vec<WhyOutput>,
 }
 
@@ -474,6 +505,7 @@ mod tests {
             cpu_time_secs: None,
             open_files: None,
             child_count: None,
+            runs_proc: false,
         }
     }
 
@@ -529,7 +561,7 @@ mod tests {
 
     #[test]
     fn a_target_that_resolves_to_nothing_is_not_found() {
-        let (error, warning) = found_processes("ghost", |_| Ok(Vec::new())).unwrap_err();
+        let (error, warning) = found_processes("ghost", |_| Ok(NameLookup::default())).unwrap_err();
         assert!(
             matches!(&error, ProcError::ProcessNotFound(t) if t == "ghost"),
             "{error:?}"
@@ -547,8 +579,28 @@ mod tests {
 
     #[test]
     fn a_target_that_resolves_gives_its_processes() {
-        let found = found_processes("p", |_| Ok(vec![process(5, None)])).unwrap();
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0].pid, 5);
+        let found = found_processes("p", |_| Ok(NameLookup::of(vec![process(5, None)]))).unwrap();
+        assert_eq!(found.processes.len(), 1);
+        assert_eq!(found.processes[0].pid, 5);
+    }
+
+    #[test]
+    fn a_name_whose_matches_all_run_proc_warns_with_the_error() {
+        let shell = crate::core::Ancestor {
+            pid: 7,
+            name: "zsh".to_string(),
+        };
+        let (error, warning) = found_processes("zsh", |t| {
+            Err(ProcError::AncestorsOnly {
+                name: t.to_string(),
+                ancestors: vec![shell.clone()],
+            })
+        })
+        .unwrap_err();
+        assert_eq!(error.reason(), Some("ruled_out"));
+        assert_eq!(
+            warning,
+            "zsh (PID 7) matches 'zsh', but proc runs under it, so it's left out"
+        );
     }
 }

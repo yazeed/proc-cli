@@ -78,8 +78,11 @@ impl ThawCommand {
         if let Some(warning) = resolved.warning() {
             printer.warning(&warning);
         }
-        // the JSON results list the targets that matched nothing
-        let printer = printer.with_not_found(&resolved.not_found);
+        // the JSON results list the targets that matched nothing, and the
+        // processes proc runs under that a target matched and left out
+        let printer = printer
+            .with_not_found(&resolved.not_found)
+            .with_left_out(&resolved.left_out_ancestors());
         let mut processes = resolved.processes;
 
         // Apply --in and --by: guards that rule out everything found say so
@@ -94,7 +97,11 @@ impl ThawCommand {
         }
 
         if processes.is_empty() {
-            return Err(nothing_resolved(self.target.join(" "), &resolved.unseen));
+            return Err(nothing_resolved(
+                self.target.join(" "),
+                &resolved.unseen,
+                &resolved.left_out,
+            ));
         }
 
         if self.dry_run {

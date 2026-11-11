@@ -6,7 +6,7 @@
 //! - `name` - Processes matching this name
 
 use crate::core::port::{parse_port, PortInfo, UnseenPort};
-use crate::core::{NameMatch, Process};
+use crate::core::{Ancestor, Ancestors, NameLookup, NameMatch, Process};
 use crate::error::{ProcError, Result};
 
 /// Resolved target type
@@ -68,6 +68,17 @@ pub fn resolve_target(target: &str, mode: NameMatch) -> Result<Vec<Process>> {
         TargetType::Port(port) => resolve_port(port),
         TargetType::Pid(pid) => resolve_pid(pid),
         TargetType::Name(name) => Process::find_by_name(&name, mode),
+    }
+}
+
+/// [`resolve_target`], with what `policy` does to a name's matches that proc
+/// runs under (see [`Ancestors`]) and the ones it left out. A PID or port
+/// target leaves nothing out: it names its process
+pub fn lookup_target(target: &str, mode: NameMatch, policy: Ancestors) -> Result<NameLookup> {
+    match parse_target(target) {
+        TargetType::Name(name) => Process::lookup_name(&name, mode, policy),
+        TargetType::Port(port) => resolve_port(port).map(NameLookup::of),
+        TargetType::Pid(pid) => resolve_pid(pid).map(NameLookup::of),
     }
 }
 
@@ -244,6 +255,13 @@ pub struct Resolved {
     /// its port and why. They are in `not_found` too, since they resolved to no
     /// process, but nobody holding them would be untrue
     pub unseen: Vec<(String, UnseenPort)>,
+    /// The processes proc runs under that a target's name matched and that
+    /// were left out, each with its target. A target whose matches were all
+    /// left out is in `not_found` too, and the warning names the processes
+    pub left_out: Vec<(String, Ancestor)>,
+    /// The processes proc runs under that a name matched and that were kept,
+    /// marked `runs_proc` (commands that only read)
+    pub included: Vec<Ancestor>,
 }
 
 impl Resolved {
@@ -253,6 +271,7 @@ impl Resolved {
             .not_found
             .iter()
             .filter(|target| !self.unseen.iter().any(|(unseen, _)| unseen == *target))
+            .filter(|target| !self.left_out.iter().any(|(left, _)| left == *target))
             .map(String::as_str)
             .collect();
         let mut lines = Vec::new();
@@ -267,35 +286,106 @@ impl Resolved {
         for (_, port) in &self.unseen {
             lines.push(port.to_string());
         }
+        lines.extend(left_out_warning(&self.left_out_ancestors()));
         (!lines.is_empty()).then(|| lines.join("\n"))
     }
+
+    /// The line for the processes proc runs under that a name matched and that
+    /// were kept, if there were any: `Includes zsh (PID 81340), which runs this proc`
+    pub fn note(&self) -> Option<String> {
+        (!self.included.is_empty()).then(|| format!("Includes {}", runs_this_proc(&self.included)))
+    }
+
+    /// The processes left out, each once, PID ascending, as the JSON lists them
+    pub fn left_out_ancestors(&self) -> Vec<Ancestor> {
+        let mut ancestors: Vec<Ancestor> = self.left_out.iter().map(|(_, a)| a.clone()).collect();
+        ancestors.sort_by_key(|a| a.pid);
+        ancestors.dedup_by_key(|a| a.pid);
+        ancestors
+    }
+}
+
+/// The warning for processes proc runs under that a name matched and that
+/// were left out: `Left out: zsh (PID 81340), which runs this proc`
+pub(crate) fn left_out_warning(left_out: &[Ancestor]) -> Option<String> {
+    (!left_out.is_empty()).then(|| format!("Left out: {}", runs_this_proc(left_out)))
+}
+
+/// The note for the processes shown that proc runs under, for a list a name
+/// chose: `Includes zsh (PID 81340), which runs this proc`
+pub(crate) fn includes_note(processes: &[Process]) -> Option<String> {
+    let included: Vec<Ancestor> = processes
+        .iter()
+        .filter(|p| p.runs_proc)
+        .map(Ancestor::from)
+        .collect();
+    (!included.is_empty()).then(|| format!("Includes {}", runs_this_proc(&included)))
+}
+
+/// `zsh (PID 81340), which runs this proc`, or `…, which run this proc` for several
+pub(crate) fn runs_this_proc(ancestors: &[Ancestor]) -> String {
+    let runs = if ancestors.len() == 1 { "runs" } else { "run" };
+    format!(
+        "{}, which {runs} this proc",
+        crate::core::process::ancestor_list(ancestors)
+    )
 }
 
 /// The error for targets (`typed`, as the user wrote them) that resolved to no
 /// process: a port whose holder proc can't see when one of them was
-/// (`unseen`, from [`Resolved`]), since "not found" would be untrue, and
-/// otherwise not found
-pub fn nothing_resolved(typed: String, unseen: &[(String, UnseenPort)]) -> ProcError {
-    match unseen.first() {
-        Some(&(_, port)) => ProcError::PortUnseen(port),
-        None => ProcError::ProcessNotFound(typed),
+/// (`unseen`, from [`Resolved`]), since "not found" would be untrue; else the
+/// processes proc runs under that matched and were left out (`left_out`), when
+/// there were any; otherwise not found
+pub fn nothing_resolved(
+    typed: String,
+    unseen: &[(String, UnseenPort)],
+    left_out: &[(String, Ancestor)],
+) -> ProcError {
+    if let Some(&(_, port)) = unseen.first() {
+        return ProcError::PortUnseen(port);
+    }
+    if left_out.is_empty() {
+        return ProcError::ProcessNotFound(typed);
+    }
+    let resolved = Resolved {
+        left_out: left_out.to_vec(),
+        ..Resolved::default()
+    };
+    // the targets that matched them, each once, as typed: `kill zsh ghost`
+    // says what zsh matched, not what "zsh ghost" did
+    let mut targets: Vec<&str> = Vec::new();
+    for (target, _) in left_out {
+        if !targets.contains(&target.as_str()) {
+            targets.push(target);
+        }
+    }
+    ProcError::AncestorsOnly {
+        name: targets.join(" "),
+        ancestors: resolved.left_out_ancestors(),
     }
 }
 
-/// Resolve multiple targets, deduplicating by PID
+/// Resolve multiple targets, deduplicating by PID, for a command that only
+/// reads: a name's match that proc runs under is kept and marked (see
+/// [`Ancestors::Mark`])
 pub fn resolve_targets(targets: &[String], mode: NameMatch) -> Resolved {
-    resolve_targets_impl(targets, false, mode)
+    resolve_targets_impl(targets, false, mode, Ancestors::Mark)
 }
 
-/// Resolve multiple targets, excluding the current process (self)
-///
-/// Use this for destructive commands (kill, stop) to avoid proc killing itself
-/// when the target pattern matches proc's own command line arguments.
+/// Resolve multiple targets for a command that acts on processes, or waits
+/// on them: proc itself is never one, and a name's match that proc runs under
+/// is left out (see [`Ancestors::LeaveOut`]) and listed in `left_out`, so
+/// `proc kill zsh` can't take down the shell proc runs in
 pub fn resolve_targets_excluding_self(targets: &[String], mode: NameMatch) -> Resolved {
-    resolve_targets_impl(targets, true, mode)
+    resolve_targets_impl(targets, true, mode, Ancestors::LeaveOut)
 }
 
-fn resolve_targets_impl(targets: &[String], exclude_self: bool, mode: NameMatch) -> Resolved {
+fn resolve_targets_impl(
+    targets: &[String],
+    exclude_self: bool,
+    mode: NameMatch,
+    policy: Ancestors,
+) -> Resolved {
     use std::collections::HashSet;
 
     let mut resolved = Resolved::default();
@@ -303,21 +393,34 @@ fn resolve_targets_impl(targets: &[String], exclude_self: bool, mode: NameMatch)
     let self_pid = std::process::id();
 
     for target in targets {
-        match resolve_target(target, mode) {
-            Ok(processes) => {
-                for proc in processes {
+        match lookup_target(target, mode, policy) {
+            Ok(lookup) => {
+                let by_name = matches!(parse_target(target), TargetType::Name(_));
+                for proc in lookup.processes {
                     // Skip self if requested (for destructive commands)
                     if exclude_self && proc.pid == self_pid {
                         continue;
                     }
                     if seen_pids.insert(proc.pid) {
+                        if by_name && proc.runs_proc {
+                            resolved.included.push(Ancestor::from(&proc));
+                        }
                         resolved.processes.push(proc);
                     }
                 }
+                for ancestor in lookup.left_out {
+                    resolved.left_out.push((target.clone(), ancestor));
+                }
             }
             Err(error) => {
-                if let ProcError::PortUnseen(port) = error {
-                    resolved.unseen.push((target.clone(), port));
+                match error {
+                    ProcError::PortUnseen(port) => resolved.unseen.push((target.clone(), port)),
+                    ProcError::AncestorsOnly { ref ancestors, .. } => {
+                        for ancestor in ancestors {
+                            resolved.left_out.push((target.clone(), ancestor.clone()));
+                        }
+                    }
+                    _ => {}
                 }
                 resolved.not_found.push(target.clone());
                 resolved.hints.extend(error.command_line_hint());
@@ -560,6 +663,138 @@ mod tests {
         assert_eq!(resolved.warning(), None);
     }
 
+    fn zsh(pid: u32) -> crate::core::Ancestor {
+        crate::core::Ancestor {
+            pid,
+            name: "zsh".to_string(),
+        }
+    }
+
+    #[test]
+    fn a_resolution_says_what_it_left_out() {
+        // one target matched only the shell proc runs in: left out, not "not found"
+        let one = Resolved {
+            not_found: vec!["zsh".to_string()],
+            left_out: vec![("zsh".to_string(), zsh(81340))],
+            ..Resolved::default()
+        };
+        assert_eq!(
+            one.warning().unwrap(),
+            "Left out: zsh (PID 81340), which runs this proc"
+        );
+        // two, beside a target that matched nothing; each said once, PID order
+        let two = Resolved {
+            not_found: vec!["ghost".to_string(), "zsh".to_string()],
+            left_out: vec![
+                ("zsh".to_string(), zsh(81340)),
+                ("zsh".to_string(), zsh(11849)),
+                (":1".to_string(), zsh(11849)),
+            ],
+            ..Resolved::default()
+        };
+        assert_eq!(
+            two.warning().unwrap(),
+            "Not found: ghost\nLeft out: zsh (PID 11849), zsh (PID 81340), which run this proc"
+        );
+        assert_eq!(two.left_out_ancestors(), vec![zsh(11849), zsh(81340)]);
+        assert!(Resolved::default().left_out_ancestors().is_empty());
+    }
+
+    #[test]
+    fn a_resolution_notes_the_ancestors_it_kept() {
+        assert_eq!(Resolved::default().note(), None);
+        let one = Resolved {
+            included: vec![zsh(81340)],
+            ..Resolved::default()
+        };
+        assert_eq!(
+            one.note().unwrap(),
+            "Includes zsh (PID 81340), which runs this proc"
+        );
+        let two = Resolved {
+            included: vec![zsh(11849), zsh(81340)],
+            ..Resolved::default()
+        };
+        assert_eq!(
+            two.note().unwrap(),
+            "Includes zsh (PID 11849), zsh (PID 81340), which run this proc"
+        );
+    }
+
+    #[test]
+    fn the_left_out_error_quotes_only_the_targets_that_matched_them() {
+        // `kill zsh ghost`: ghost matched nothing, zsh only the shell
+        let left_out = vec![("zsh".to_string(), zsh(81340))];
+        assert!(matches!(
+            nothing_resolved("zsh ghost".to_string(), &[], &left_out),
+            ProcError::AncestorsOnly { ref name, .. } if name == "zsh"
+        ));
+        // two targets that each matched only the shell
+        let both = vec![
+            ("zsh".to_string(), zsh(81340)),
+            ("-zsh".to_string(), zsh(81340)),
+        ];
+        assert!(matches!(
+            nothing_resolved("zsh -zsh".to_string(), &[], &both),
+            ProcError::AncestorsOnly { ref name, ref ancestors } if name == "zsh -zsh" && ancestors.len() == 1
+        ));
+    }
+
+    #[test]
+    fn nothing_resolved_names_the_ancestors_when_all_were_left_out() {
+        let left_out = vec![("zsh".to_string(), zsh(81340))];
+        assert!(matches!(
+            nothing_resolved("zsh".to_string(), &[], &left_out),
+            ProcError::AncestorsOnly { ref name, ref ancestors }
+                if name == "zsh" && ancestors == &vec![zsh(81340)]
+        ));
+        // a port proc can't see still wins: saying nobody holds it would be untrue
+        let unseen = vec![(
+            ":80".to_string(),
+            crate::core::UnseenPort {
+                port: 80,
+                why: crate::core::Unseen::OtherUser,
+            },
+        )];
+        assert!(matches!(
+            nothing_resolved(":80 zsh".to_string(), &unseen, &left_out),
+            ProcError::PortUnseen(_)
+        ));
+    }
+
+    #[test]
+    fn resolving_by_name_for_a_read_notes_the_process_proc_runs_under() {
+        // this test runs under its parent (cargo, or a shell): its exact name
+        // finds it, kept and marked, and the resolution notes it
+        let me = Process::find_by_pid(std::process::id()).unwrap().unwrap();
+        let parent = Process::find_by_pid(me.parent_pid.unwrap())
+            .unwrap()
+            .unwrap();
+        let resolved = resolve_targets(std::slice::from_ref(&parent.name), NameMatch::Exact);
+        assert!(
+            resolved.included.iter().any(|a| a.pid == parent.pid),
+            "{:?}",
+            resolved.included
+        );
+        assert!(resolved.note().is_some());
+        // the same name for a command that acts: left out, named
+        let acting =
+            resolve_targets_excluding_self(std::slice::from_ref(&parent.name), NameMatch::Exact);
+        assert!(acting.left_out.iter().any(|(_, a)| a.pid == parent.pid));
+    }
+
+    #[test]
+    fn a_name_lookup_through_a_target_keeps_or_leaves_out_by_policy() {
+        // proc itself is never a target: its own PID and name resolve to nothing
+        // as a name, and a PID target keeps working as before
+        let me = std::process::id().to_string();
+        let by_pid = lookup_target(&me, NameMatch::Exact, crate::core::Ancestors::Mark).unwrap();
+        assert_eq!(by_pid.processes.len(), 1);
+        assert!(by_pid.left_out.is_empty());
+        let resolved = resolve_targets(&[me], NameMatch::Exact);
+        assert!(resolved.left_out.is_empty() && resolved.included.is_empty());
+    }
+
     // A port another user's process holds resolved to nothing proc can act
     // on, but saying nobody holds it would be untrue
     #[test]
@@ -579,7 +814,7 @@ mod tests {
             "Port 80 is in use, but proc can't see which process holds it: it belongs to another user"
         );
         assert!(matches!(
-            nothing_resolved(":80".to_string(), &unseen.unseen),
+            nothing_resolved(":80".to_string(), &unseen.unseen, &[]),
             ProcError::PortUnseen(port) if port == other
         ));
 
@@ -596,7 +831,7 @@ mod tests {
 
         // no port of another user's: not found, as before
         assert!(matches!(
-            nothing_resolved("ghost".to_string(), &[]),
+            nothing_resolved("ghost".to_string(), &[], &[]),
             ProcError::ProcessNotFound(ref typed) if typed == "ghost"
         ));
 
@@ -615,7 +850,7 @@ mod tests {
             "proc can't tell whether port 22 is in use: this system hides other users' sockets (security.curtain=1)"
         );
         assert!(matches!(
-            nothing_resolved(":22".to_string(), &resolved.unseen),
+            nothing_resolved(":22".to_string(), &resolved.unseen, &[]),
             ProcError::PortUnseen(port) if port == hidden
         ));
     }

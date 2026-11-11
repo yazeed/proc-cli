@@ -19,9 +19,10 @@ use super::held::{
 };
 use crate::core::connections::Connections;
 use crate::core::port::{holders_in, visible_holders, SocketReading, UnseenPort};
+use crate::core::target::{includes_note, left_out_warning};
 use crate::core::{
-    flatten_targets, nothing_resolved, parse_target, resolve_in_dir, resolve_target, ruled_out_by,
-    Exposure, Guards, NameMatch, PortInfo, Process, TargetType,
+    flatten_targets, nothing_resolved, parse_target, resolve_in_dir, ruled_out_by, Ancestor,
+    Ancestors, Exposure, Guards, NameMatch, PortInfo, Process, Resolved, TargetType,
 };
 use crate::error::{ExitCode, ProcError, Result};
 use crate::out_println;
@@ -144,12 +145,17 @@ impl OnCommand {
         let mut not_found: Vec<String> = Vec::new();
         // the ports whose holder proc can't see
         let mut unseen: Vec<(String, UnseenPort)> = Vec::new();
+        // the processes proc runs under that a name matched and left out
+        let mut left_out: Vec<(String, Ancestor)> = Vec::new();
 
         for target in targets {
             let found = match parse_target(target) {
                 TargetType::Port(port) => self.lookup_port(port, 0, true).map(port_hits),
                 TargetType::Pid(pid) => self.lookup_pid(pid).map(|found| vec![found]),
-                TargetType::Name(ref name) => self.lookup_name(name),
+                TargetType::Name(ref name) => self.lookup_name(name).map(|(found, left)| {
+                    left_out.extend(left.into_iter().map(|a| (target.clone(), a)));
+                    found
+                }),
             };
 
             match found {
@@ -164,13 +170,22 @@ impl OnCommand {
                     unseen.push((target.clone(), port));
                     not_found.push(target.clone());
                 }
+                Err(ProcError::AncestorsOnly { ancestors, .. }) => {
+                    left_out.extend(ancestors.into_iter().map(|a| (target.clone(), a)));
+                    not_found.push(target.clone());
+                }
                 _ => not_found.push(target.clone()),
             }
         }
 
         if results.is_empty() {
-            return Err(nothing_resolved(self.target.join(" "), &unseen));
+            return Err(nothing_resolved(self.target.join(" "), &unseen, &left_out));
         }
+        let left_out = Resolved {
+            left_out,
+            ..Resolved::default()
+        }
+        .left_out_ancestors();
 
         Printer::from_flags(true, self.verbose).print_json(&MultiTargetOutput {
             action: "on",
@@ -178,6 +193,7 @@ impl OnCommand {
             count: results.len(),
             results,
             not_found,
+            left_out,
         });
 
         Ok(())
@@ -388,10 +404,15 @@ impl OnCommand {
         Ok(())
     }
 
-    /// Find processes by name and their listening ports, applying --in/--by
-    fn lookup_name(&self, name: &str) -> Result<Vec<(Process, Vec<HeldPort>)>> {
-        // A name that matches nothing is an error here, never an empty list
-        let mut processes = resolve_target(name, NameMatch::from_flag(self.cmd))?;
+    /// Find processes by name and their listening ports, applying --in/--by,
+    /// and the processes proc runs under that the name matched and left out
+    #[allow(clippy::type_complexity)]
+    fn lookup_name(&self, name: &str) -> Result<(Vec<(Process, Vec<HeldPort>)>, Vec<Ancestor>)> {
+        // A name that matches nothing is an error here, never an empty list. A
+        // process proc runs under is kept, marked, when its name matches
+        let lookup = Process::lookup_name(name, NameMatch::from_flag(self.cmd), Ancestors::Mark)?;
+        let left_out = lookup.left_out;
+        let mut processes = lookup.processes;
 
         // Apply --in and --by filters if present
         if self.in_dir.is_some() || self.by_name.is_some() {
@@ -409,12 +430,12 @@ impl OnCommand {
         // readings for what's shown, one wait for all of them, while the
         // connections are read
         let held = measure_with_ports(&mut processes, self.peer_limit())?;
-        Ok(processes.into_iter().zip(held).collect())
+        Ok((processes.into_iter().zip(held).collect(), left_out))
     }
 
     /// Show what ports processes with a given name are listening on
     fn show_ports_for_name(&self, name: &str) -> Result<()> {
-        let all_results = self.lookup_name(name)?;
+        let (all_results, left_out) = self.lookup_name(name)?;
 
         if self.json {
             let printer = Printer::from_flags(true, self.verbose);
@@ -430,15 +451,24 @@ impl OnCommand {
                 success: true,
                 count: results.len(),
                 results: &results,
+                left_out: &left_out,
             };
             printer.print_json(&output);
         } else {
+            let printer = Printer::from_flags(false, self.verbose);
+            if let Some(warning) = left_out_warning(&left_out) {
+                printer.warning(&warning);
+            }
             out::recorded(self.print_processes_named(
                 &mut out::stdout(),
                 name,
                 &all_results,
                 &card_options(self.verbose),
             ));
+            let shown: Vec<Process> = all_results.iter().map(|(p, _)| p.clone()).collect();
+            if let Some(note) = includes_note(&shown) {
+                printer.note(&note);
+            }
         }
 
         Ok(())
@@ -619,6 +649,10 @@ struct MultiTargetOutput {
     count: usize,
     results: Vec<TargetResult>,
     not_found: Vec<String>,
+    /// The processes proc runs under that a target matched and that were left
+    /// out; absent when there are none
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    left_out: Vec<Ancestor>,
 }
 
 #[derive(Serialize)]
@@ -627,6 +661,10 @@ struct MultiProcessPortsOutput<'a> {
     success: bool,
     count: usize,
     results: &'a Vec<ProcessPortsJson<'a>>,
+    /// The processes proc runs under that the name matched and that were left
+    /// out; absent when there are none
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    left_out: &'a [Ancestor],
 }
 
 #[cfg(test)]
@@ -672,6 +710,7 @@ mod tests {
             cpu_time_secs: None,
             open_files: None,
             child_count: None,
+            runs_proc: false,
         }
     }
 

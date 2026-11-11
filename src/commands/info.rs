@@ -14,10 +14,10 @@
 
 use super::held::{card_options, measure_with_known_ports_from, write_process, HeldPort};
 use crate::core::port::SocketReading;
-use crate::core::target::resolve_port_in;
+use crate::core::target::{lookup_target, resolve_port_in};
 use crate::core::{
-    flatten_targets, guard_targets, nothing_resolved, parse_target, resolve_target, Guards,
-    NameMatch, Process, Resolved, TargetType,
+    flatten_targets, guard_targets, nothing_resolved, parse_target, Ancestor, Ancestors, Guards,
+    NameLookup, NameMatch, Process, Resolved, TargetType,
 };
 use crate::error::{ExitCode, ProcError, Result};
 use crate::ui::{out, Printer};
@@ -76,20 +76,25 @@ impl InfoCommand {
             .flatten();
         let resolved = resolve_all(&all_targets, |target| {
             match (parse_target(target), &reading) {
-                (TargetType::Port(port), Some(reading)) => resolve_port_in(port, &reading.ports),
-                _ => resolve_target(target, mode),
+                (TargetType::Port(port), Some(reading)) => {
+                    resolve_port_in(port, &reading.ports).map(NameLookup::of)
+                }
+                _ => lookup_target(target, mode, Ancestors::Mark),
             }
         });
         let warning = resolved.warning();
+        let note = resolved.note();
+        let left_out_json = resolved.left_out_ancestors();
         let Resolved {
             processes: mut found,
             not_found,
             unseen,
+            left_out,
             ..
         } = resolved;
         // what nothing matching means: not found, or a port in use by a
         // process proc can't see
-        let nothing = nothing_resolved(self.targets.join(" "), &unseen);
+        let nothing = nothing_resolved(self.targets.join(" "), &unseen, &left_out);
 
         // Apply --in and --by: guards that rule out everything found say so
         let guards = Guards::new(&self.in_dir, &self.by_name, self.start_time);
@@ -125,6 +130,7 @@ impl InfoCommand {
                 not_found_count: not_found.len(),
                 processes: &processes,
                 not_found: &not_found,
+                left_out: &left_out_json,
                 error: not_found_error.as_deref(),
                 exit_code: not_found_error
                     .is_some()
@@ -150,11 +156,14 @@ impl InfoCommand {
             if let Some(warning) = warning {
                 printer.warning(&warning);
             }
+            if let Some(note) = note {
+                printer.note(&note);
+            }
         }
 
         if found.is_empty() {
             let message = match &nothing {
-                ProcError::PortUnseen(_) => nothing.to_string(),
+                ProcError::PortUnseen(_) | ProcError::AncestorsOnly { .. } => nothing.to_string(),
                 _ => format!("No process found matching '{}'", self.targets.join(" ")),
             };
             return Err(ProcError::reported(ExitCode::from(&nothing), message));
@@ -165,44 +174,49 @@ impl InfoCommand {
 }
 
 /// Resolve every target. Returns the processes found, each once however many
-/// targets name it, and the targets that matched nothing.
-fn resolve_all(targets: &[String], resolve: impl Fn(&str) -> Result<Vec<Process>>) -> Resolved {
-    let mut found = Vec::new();
-    let mut not_found = Vec::new();
-    let mut hints = Vec::new();
-    let mut unseen = Vec::new();
+/// targets name it, the targets that matched nothing, and the processes proc
+/// runs under that a name kept (marked) or left out.
+fn resolve_all(targets: &[String], resolve: impl Fn(&str) -> Result<NameLookup>) -> Resolved {
+    let mut resolved = Resolved::default();
     let mut seen_pids = std::collections::HashSet::new();
 
     for target in targets {
         match resolve(target) {
-            Ok(processes) => {
-                if processes.is_empty() {
-                    not_found.push(target.clone());
-                } else {
-                    for proc in processes {
-                        // Deduplicate by PID
-                        if seen_pids.insert(proc.pid) {
-                            found.push(proc);
+            Ok(lookup) => {
+                if lookup.processes.is_empty() {
+                    resolved.not_found.push(target.clone());
+                }
+                let by_name = matches!(parse_target(target), TargetType::Name(_));
+                for proc in lookup.processes {
+                    // Deduplicate by PID
+                    if seen_pids.insert(proc.pid) {
+                        if by_name && proc.runs_proc {
+                            resolved.included.push(Ancestor::from(&proc));
                         }
+                        resolved.processes.push(proc);
                     }
+                }
+                for ancestor in lookup.left_out {
+                    resolved.left_out.push((target.clone(), ancestor));
                 }
             }
             Err(error) => {
-                if let ProcError::PortUnseen(port) = error {
-                    unseen.push((target.clone(), port));
+                match error {
+                    ProcError::PortUnseen(port) => resolved.unseen.push((target.clone(), port)),
+                    ProcError::AncestorsOnly { ref ancestors, .. } => {
+                        for ancestor in ancestors {
+                            resolved.left_out.push((target.clone(), ancestor.clone()));
+                        }
+                    }
+                    _ => {}
                 }
-                not_found.push(target.clone());
-                hints.extend(error.command_line_hint());
+                resolved.not_found.push(target.clone());
+                resolved.hints.extend(error.command_line_hint());
             }
         }
     }
 
-    Resolved {
-        processes: found,
-        not_found,
-        hints,
-        unseen,
-    }
+    resolved
 }
 
 /// A process as `info` lists it: the process, then the ports it listens on
@@ -223,6 +237,10 @@ struct InfoOutput<'a> {
     not_found_count: usize,
     processes: &'a [InfoProcess<'a>],
     not_found: &'a [String],
+    /// The processes proc runs under that a target matched and that were left
+    /// out; absent when there are none
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    left_out: &'a [Ancestor],
     /// With `exit_code` and `reason`, only when no target matched, as in the error of every other command
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<&'a str>,
@@ -260,6 +278,7 @@ mod tests {
             cpu_time_secs: None,
             open_files: None,
             child_count: None,
+            runs_proc: false,
         }
     }
 
@@ -269,7 +288,7 @@ mod tests {
 
     #[test]
     fn a_target_that_resolves_to_nothing_is_not_found() {
-        let resolved = resolve_all(&targets(&["ghost"]), |_| Ok(Vec::new()));
+        let resolved = resolve_all(&targets(&["ghost"]), |_| Ok(NameLookup::default()));
         assert!(resolved.processes.is_empty());
         assert_eq!(resolved.not_found, vec!["ghost"]);
     }
@@ -277,7 +296,7 @@ mod tests {
     #[test]
     fn a_target_that_fails_to_resolve_is_not_found() {
         let resolved = resolve_all(&targets(&["a", "b"]), |t| match t {
-            "a" => Ok(vec![process(1)]),
+            "a" => Ok(NameLookup::of(vec![process(1)])),
             _ => Err(ProcError::ProcessNotFound(t.to_string())),
         });
         assert_eq!(resolved.processes.len(), 1);
@@ -304,14 +323,40 @@ mod tests {
     #[test]
     fn a_process_two_targets_name_is_found_once() {
         let resolved = resolve_all(&targets(&["a", "b", "c"]), |t| match t {
-            "a" => Ok(vec![process(1), process(2)]),
-            "b" => Ok(vec![process(2), process(3)]),
-            _ => Ok(vec![process(1)]),
+            "a" => Ok(NameLookup::of(vec![process(1), process(2)])),
+            "b" => Ok(NameLookup::of(vec![process(2), process(3)])),
+            _ => Ok(NameLookup::of(vec![process(1)])),
         });
         let pids: Vec<u32> = resolved.processes.iter().map(|p| p.pid).collect();
         assert_eq!(pids, vec![1, 2, 3]);
         assert!(resolved.not_found.is_empty());
         assert_eq!(resolved.warning(), None);
+    }
+
+    #[test]
+    fn the_processes_proc_runs_under_are_kept_or_left_out_and_said() {
+        let shell = crate::core::Ancestor {
+            pid: 7,
+            name: "zsh".to_string(),
+        };
+        let mut kept = process(7);
+        kept.runs_proc = true;
+        let resolved = resolve_all(&targets(&["zsh", "sh", "7"]), |t| match t {
+            "zsh" => Ok(NameLookup::of(vec![kept.clone()])),
+            "sh" => Err(ProcError::AncestorsOnly {
+                name: t.to_string(),
+                ancestors: vec![shell.clone()],
+            }),
+            // a PID names its process: kept, but not noted as a name's choice
+            _ => Ok(NameLookup::of(vec![kept.clone()])),
+        });
+        assert_eq!(resolved.included, vec![Ancestor::from(&kept)]);
+        assert_eq!(resolved.left_out, vec![("sh".to_string(), shell.clone())]);
+        assert_eq!(resolved.not_found, vec!["sh"]);
+        assert_eq!(
+            resolved.warning().unwrap(),
+            "Left out: zsh (PID 7), which runs this proc"
+        );
     }
 
     #[test]

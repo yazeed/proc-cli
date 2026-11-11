@@ -740,6 +740,7 @@ fn zombies_in(buf: &[u8], known: &std::collections::HashSet<u32>) -> Vec<Process
                 cpu_time_secs: None,
                 open_files: None,
                 child_count: None,
+                runs_proc: false,
             })
         })
         .collect()
@@ -902,6 +903,145 @@ pub struct Process {
     /// record was made without the process table
     #[serde(skip_serializing_if = "Option::is_none")]
     pub child_count: Option<u32>,
+    /// This process is one proc runs under: its parent, or a parent of that,
+    /// up to 10 levels (the shell or agent that ran proc). In the JSON only
+    /// when true
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub runs_proc: bool,
+}
+
+/// A process proc runs under, as a name lookup reports one it left out
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Ancestor {
+    /// Its PID
+    pub pid: u32,
+    /// Its name, as the process record has it (escaped for display)
+    pub name: String,
+}
+
+impl From<&Process> for Ancestor {
+    fn from(process: &Process) -> Self {
+        Ancestor {
+            pid: process.pid,
+            name: process.name.clone(),
+        }
+    }
+}
+
+/// Processes as a message names them: `zsh (PID 11849), zsh (PID 81340)`
+pub(crate) fn ancestor_list(ancestors: &[Ancestor]) -> String {
+    ancestors
+        .iter()
+        .map(|a| format!("{} (PID {})", a.name, a.pid))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// What a name lookup does with a process proc runs under that matches
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ancestors {
+    /// Keep it, marked `runs_proc`, when its name matches exactly (commands
+    /// that only read); a match in its command line, which holds proc's own
+    /// arguments, is left out
+    Mark,
+    /// Leave it out (commands that act on processes, and `wait`)
+    LeaveOut,
+}
+
+/// The processes a name matched, and the ones proc runs under that it left out
+#[derive(Debug, Clone, Default)]
+pub struct NameLookup {
+    /// The processes found, PID ascending
+    pub processes: Vec<Process>,
+    /// The processes proc runs under that matched and were left out, PID ascending
+    pub left_out: Vec<Ancestor>,
+}
+
+impl NameLookup {
+    /// The processes a PID or port target found, with nothing left out
+    pub(crate) fn of(processes: Vec<Process>) -> Self {
+        NameLookup {
+            processes,
+            left_out: Vec::new(),
+        }
+    }
+}
+
+/// Whether `pattern` matches `process` by its name, executable or argv[0],
+/// leaving the rest of its command line out: one of them exactly, or (with
+/// `--cmd`) a part of the name. A process proc runs under has proc's own
+/// arguments in its command line (`sh -c 'proc by --cmd X'`), so a `--cmd`
+/// hit there alone is no match at all
+pub(crate) fn matches_outside_command_line(
+    process: &Process,
+    pattern: &str,
+    mode: NameMatch,
+) -> bool {
+    let names = process.names();
+    let own = Names {
+        command: None,
+        ..names
+    };
+    classify(pattern, &names, NameMatch::Exact) == Hit::Match
+        || classify(pattern, &own, mode) == Hit::Match
+}
+
+/// The error [`Process::find_by_name`] has always given: a name whose matches
+/// were all processes proc runs under is not found there
+fn as_before(error: ProcError, pattern: &str) -> ProcError {
+    match error {
+        ProcError::AncestorsOnly { .. } => ProcError::name_not_found(pattern, 0),
+        error => error,
+    }
+}
+
+/// Split the matches of a name: a process in `ancestors` (proc runs under it)
+/// stays, marked `runs_proc`, only when `policy` is [`Ancestors::Mark`] and the
+/// name matched exactly; otherwise it is left out. Every other process stays as
+/// it is. Both lists keep the order of `matches`
+pub(crate) fn split_ancestors(
+    matches: Vec<Process>,
+    ancestors: &std::collections::HashSet<u32>,
+    mode: NameMatch,
+    policy: Ancestors,
+) -> NameLookup {
+    let keep = policy == Ancestors::Mark && mode == NameMatch::Exact;
+    let mut lookup = NameLookup::default();
+    for mut process in matches {
+        if !ancestors.contains(&process.pid) {
+            lookup.processes.push(process);
+        } else if keep {
+            process.runs_proc = true;
+            lookup.processes.push(process);
+        } else {
+            lookup.left_out.push(Ancestor::from(&process));
+        }
+    }
+    lookup
+}
+
+/// The PIDs of the processes proc runs under (not proc itself), up to 10
+/// levels, read once per run: they don't change while proc runs
+pub(crate) fn proc_ancestors() -> &'static std::collections::HashSet<u32> {
+    static ANCESTORS: OnceLock<std::collections::HashSet<u32>> = OnceLock::new();
+    ANCESTORS.get_or_init(|| {
+        let me = std::process::id();
+        let mut ancestors = std::collections::HashSet::new();
+        let mut current = Pid::from_u32(me);
+        let mut sys = System::new();
+        for _ in 0..10 {
+            sysinfo_locked(|| {
+                sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[current]), true)
+            });
+            match sys.process(current).and_then(|p| p.parent()) {
+                Some(parent) if parent.as_u32() != me && ancestors.insert(parent.as_u32()) => {
+                    current = parent;
+                }
+                _ => break,
+            }
+        }
+        ancestors
+    })
 }
 
 /// The fields of a [`Process`] that the cut-down JSON objects of `tree`, `why`,
@@ -926,6 +1066,8 @@ pub(crate) struct ProcessDetails {
     pub open_files: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub child_count: Option<u32>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub runs_proc: bool,
 }
 
 impl ProcessDetails {
@@ -940,6 +1082,7 @@ impl ProcessDetails {
             cpu_time_secs: p.cpu_time_secs,
             open_files: p.open_files,
             child_count: p.child_count,
+            runs_proc: p.runs_proc,
         }
     }
 }
@@ -1083,41 +1226,75 @@ impl Process {
     /// Proc itself and its ancestor shells never match. When nothing matches by
     /// name but processes have the text in their command line, the error says
     /// so: it costs nothing, the same pass over the processes counts them.
+    ///
+    /// The processes proc runs under are left out, without saying so; a
+    /// command uses [`Process::lookup_name`], which says which they were.
     pub fn find_by_name(pattern: &str, mode: NameMatch) -> Result<Vec<Process>> {
+        Self::lookup_name(pattern, mode, Ancestors::LeaveOut)
+            .map(|lookup| lookup.processes)
+            .map_err(|error| as_before(error, pattern))
+    }
+
+    /// The processes a name matches, PID ascending, as
+    /// [`find_by_name`](Self::find_by_name) finds them, and what `policy` does
+    /// with a match proc runs under (see [`Ancestors`]). proc itself is never
+    /// a match. With every match left out, the error is
+    /// [`ProcError::AncestorsOnly`], which names them
+    pub fn lookup_name(pattern: &str, mode: NameMatch, policy: Ancestors) -> Result<NameLookup> {
         let sys = refreshed_system();
 
-        // Exclude the entire ancestor chain — their command lines contain proc's
-        // arguments (e.g. "zsh -c proc by node"), causing false positives
+        // proc and the processes it runs under: their command lines hold proc's
+        // own arguments (e.g. "zsh -c proc by node"), so a match in the command
+        // line never counts toward the hint, and `policy` decides the rest
         let ancestor_pids = self_and_ancestors(&sys);
+        let me = Pid::from_u32(std::process::id());
         let mut in_command_line_only = 0;
-        let mut processes: Vec<Process> = sys
+        let mut matches: Vec<Process> = sys
             .processes()
             .iter()
             .filter_map(|(pid, proc)| {
-                // Exclude self, ancestor shells, and Linux threads
-                if ancestor_pids.contains(pid) || is_thread(proc) {
+                // Exclude proc itself and Linux threads
+                if *pid == me || is_thread(proc) {
                     return None;
                 }
                 match classify_sysinfo(pattern, proc, mode) {
+                    // a process proc runs under matched by --cmd only in its
+                    // command line, which holds proc's own arguments: no match
+                    Hit::Match if ancestor_pids.contains(pid) && mode != NameMatch::Exact => {
+                        let process = Process::from_sysinfo(*pid, proc);
+                        matches_outside_command_line(&process, pattern, mode).then_some(process)
+                    }
                     Hit::Match => Some(Process::from_sysinfo(*pid, proc)),
-                    Hit::CommandLineOnly => {
+                    Hit::CommandLineOnly if !ancestor_pids.contains(pid) => {
                         in_command_line_only += 1;
                         None
                     }
-                    Hit::No => None,
+                    Hit::CommandLineOnly | Hit::No => None,
                 }
             })
             .collect();
         // sysinfo keeps its processes in a randomly ordered map: PID ascending
         // makes every list that starts here the same on every run
-        processes.sort_by_key(|p| p.pid);
+        matches.sort_by_key(|p| p.pid);
 
-        if processes.is_empty() {
+        let ancestors: std::collections::HashSet<u32> = ancestor_pids
+            .iter()
+            .map(|pid| pid.as_u32())
+            .filter(|&pid| pid != me.as_u32())
+            .collect();
+        let mut lookup = split_ancestors(matches, &ancestors, mode, policy);
+        if lookup.processes.is_empty() {
+            if !lookup.left_out.is_empty() {
+                return Err(ProcError::AncestorsOnly {
+                    name: pattern.to_string(),
+                    ancestors: lookup.left_out,
+                });
+            }
             return Err(ProcError::name_not_found(pattern, in_command_line_only));
         }
-        fill_family(&mut processes, &sys);
+        fill_family(&mut lookup.processes, &sys);
 
-        Ok(processes)
+        Ok(lookup)
     }
 
     /// Find a specific process by PID
@@ -1714,6 +1891,9 @@ impl Process {
             cpu_time_secs: cpu_time_secs_read(cpu_time_ms(pid, proc), proc.memory()),
             open_files: open_files_read(proc.open_files()),
             child_count: None,
+            // read once per run; never build a record inside `sysinfo_locked`,
+            // whose FreeBSD lock this first read takes
+            runs_proc: proc_ancestors().contains(&pid.as_u32()),
         }
     }
 }
@@ -1831,6 +2011,162 @@ mod tests {
         assert_eq!(kernel_name_if_retitled("a b".into(), none), "a b");
         let empty = || Some(String::new());
         assert_eq!(kernel_name_if_retitled("a b".into(), empty), "a b");
+    }
+
+    /// A process record with only a PID and a name, as a lookup returns it
+    fn named(pid: u32, name: &str) -> Process {
+        Process {
+            pid,
+            name: escape_control(name).into_owned(),
+            exe_path: None,
+            cwd: None,
+            command: None,
+            argv0: None,
+            raw: None,
+            cpu_percent: 0.0,
+            memory_mb: 0.0,
+            status: ProcessStatus::Running,
+            user: None,
+            parent_pid: None,
+            start_time: None,
+            uptime_secs: None,
+            parent_name: None,
+            cpu_time_secs: None,
+            open_files: None,
+            child_count: None,
+            runs_proc: false,
+        }
+    }
+
+    #[test]
+    fn split_keeps_and_marks_an_ancestor_only_for_an_exact_read() {
+        let ancestors: std::collections::HashSet<u32> = [7].into_iter().collect();
+        let zsh = Ancestor {
+            pid: 7,
+            name: "zsh".to_string(),
+        };
+        for (mode, policy, kept) in [
+            (NameMatch::Exact, Ancestors::Mark, true),
+            (NameMatch::Command, Ancestors::Mark, false),
+            (NameMatch::Exact, Ancestors::LeaveOut, false),
+            (NameMatch::Command, Ancestors::LeaveOut, false),
+        ] {
+            let split = split_ancestors(
+                vec![named(7, "zsh"), named(9, "zsh")],
+                &ancestors,
+                mode,
+                policy,
+            );
+            let pids: Vec<u32> = split.processes.iter().map(|p| p.pid).collect();
+            let marked: Vec<bool> = split.processes.iter().map(|p| p.runs_proc).collect();
+            if kept {
+                assert_eq!(pids, vec![7, 9], "{mode:?} {policy:?}");
+                assert_eq!(marked, vec![true, false], "{mode:?} {policy:?}");
+                assert!(split.left_out.is_empty(), "{mode:?} {policy:?}");
+            } else {
+                // the other process stays, unmarked, whatever the policy
+                assert_eq!(pids, vec![9], "{mode:?} {policy:?}");
+                assert_eq!(marked, vec![false], "{mode:?} {policy:?}");
+                assert_eq!(split.left_out, vec![zsh.clone()], "{mode:?} {policy:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn two_ancestors_with_one_name_are_both_left_out_in_pid_order() {
+        let ancestors: std::collections::HashSet<u32> = [81340, 11849].into_iter().collect();
+        let split = split_ancestors(
+            vec![named(11849, "zsh"), named(81340, "zsh")],
+            &ancestors,
+            NameMatch::Exact,
+            Ancestors::LeaveOut,
+        );
+        assert!(split.processes.is_empty());
+        let pids: Vec<u32> = split.left_out.iter().map(|a| a.pid).collect();
+        assert_eq!(pids, vec![11849, 81340]);
+    }
+
+    #[test]
+    fn a_left_out_name_is_the_escaped_one() {
+        let ancestors: std::collections::HashSet<u32> = [3].into_iter().collect();
+        let split = split_ancestors(
+            vec![named(3, "a\x1b[2Jb")],
+            &ancestors,
+            NameMatch::Command,
+            Ancestors::Mark,
+        );
+        assert_eq!(split.left_out[0].name, "a\\x1b[2Jb");
+    }
+
+    #[test]
+    fn find_by_name_still_leaves_ancestors_out() {
+        // this test's own process is an ancestor of nothing proc runs here, but
+        // proc's lookup runs inside it: its own name is proc's own (self), which
+        // a lookup never returns, through the old API as through the new
+        let me = Process::find_by_pid(std::process::id()).unwrap().unwrap();
+        let found = Process::find_by_name(&me.name, NameMatch::Exact).unwrap_or_default();
+        assert!(found.iter().all(|p| p.pid != me.pid), "{found:?}");
+        let looked = Process::lookup_name(&me.name, NameMatch::Exact, Ancestors::Mark);
+        let kept = looked.map(|l| l.processes).unwrap_or_default();
+        assert!(kept.iter().all(|p| p.pid != me.pid), "{kept:?}");
+    }
+
+    #[test]
+    fn find_by_name_answers_as_before_when_only_ancestors_matched() {
+        let only_ancestors = ProcError::AncestorsOnly {
+            name: "zsh".to_string(),
+            ancestors: vec![Ancestor::from(&named(7, "zsh"))],
+        };
+        assert!(matches!(
+            as_before(only_ancestors, "zsh"),
+            ProcError::ProcessNotFound(ref n) if n == "zsh"
+        ));
+        assert!(matches!(
+            as_before(ProcError::PortNotFound(1), "zsh"),
+            ProcError::PortNotFound(1)
+        ));
+    }
+
+    #[test]
+    fn a_command_line_that_holds_procs_arguments_is_not_a_match() {
+        // `sh -c 'proc by --cmd X'`: the shell's command line holds X
+        let mut shell = named(7, "sh");
+        shell.command = Some("sh -c proc by --cmd qqx".to_string());
+        assert!(!matches_outside_command_line(
+            &shell,
+            "qqx",
+            NameMatch::Command
+        ));
+        // its own name still matches, under --cmd as exactly
+        assert!(matches_outside_command_line(
+            &shell,
+            "sh",
+            NameMatch::Command
+        ));
+        assert!(matches_outside_command_line(&shell, "sh", NameMatch::Exact));
+        // and so does the argv[0] it was started under (`exec -a devshell sh`)
+        let mut renamed = named(8, "bash");
+        renamed.argv0 = Some("devshell".to_string());
+        renamed.command = Some("devshell -c proc by --cmd devshell".to_string());
+        assert!(matches_outside_command_line(
+            &renamed,
+            "devshell",
+            NameMatch::Command
+        ));
+    }
+
+    #[test]
+    fn runs_proc_is_in_the_json_only_when_true() {
+        let mut process = named(1, "zsh");
+        let json = serde_json::to_value(&process).unwrap();
+        assert!(json.get("runs_proc").is_none(), "{json}");
+        process.runs_proc = true;
+        let json = serde_json::to_value(&process).unwrap();
+        assert_eq!(json["runs_proc"], true);
+        assert_eq!(
+            serde_json::to_value(ProcessDetails::of(&process)).unwrap()["runs_proc"],
+            true
+        );
     }
 
     #[cfg(unix)]
@@ -2376,6 +2712,7 @@ mod tests {
             cpu_time_secs: None,
             open_files: None,
             child_count: None,
+            runs_proc: false,
         };
 
         // System daemons with cwd "/" and system exe paths
@@ -2506,6 +2843,7 @@ mod tests {
             cpu_time_secs: None,
             open_files: None,
             child_count: None,
+            runs_proc: false,
         };
 
         let result = proc.send_signal(Signal::SIGCONT);
@@ -2816,6 +3154,7 @@ mod tests {
             cpu_time_secs: None,
             open_files: None,
             child_count: None,
+            runs_proc: false,
         }
     }
 

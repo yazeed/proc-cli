@@ -13,8 +13,8 @@
 
 use crate::core::process::ProcessDetails;
 use crate::core::{
-    flatten_targets, guard_targets, nothing_resolved, resolve_targets, Guards, NameMatch, Process,
-    ProcessStatus,
+    flatten_targets, guard_targets, nothing_resolved, resolve_targets_excluding_self, Guards,
+    NameMatch, Process, ProcessStatus,
 };
 use crate::error::{ExitCode, ProcError, Result};
 use crate::out_println;
@@ -85,14 +85,17 @@ impl WaitCommand {
         // Clamp interval to minimum 1 second
         let interval = self.interval.max(1);
 
-        // Parse and resolve targets
+        // Parse and resolve targets. proc never waits on itself, nor on a
+        // process it runs under, which can't exit while proc runs: those are
+        // left out, and named
         let targets = flatten_targets(&self.target);
         let mode = NameMatch::from_flag(self.cmd);
-        let resolved = resolve_targets(&targets, mode);
+        let resolved = resolve_targets_excluding_self(&targets, mode);
 
         if let Some(warning) = resolved.warning() {
             printer.warning(&warning);
         }
+        let left_out = resolved.left_out_ancestors();
         let not_found = resolved.not_found;
         let mut processes = resolved.processes;
 
@@ -101,7 +104,11 @@ impl WaitCommand {
         guard_targets(&mut processes, &self.target, &guards, mode)?;
 
         if processes.is_empty() {
-            return Err(nothing_resolved(self.target.join(" "), &resolved.unseen));
+            return Err(nothing_resolved(
+                self.target.join(" "),
+                &resolved.unseen,
+                &resolved.left_out,
+            ));
         }
 
         // Real CPU readings for the verbose list, the only view that shows CPU;
@@ -224,6 +231,7 @@ impl WaitCommand {
                         target: self.target.join(" "),
                         initial_count,
                         not_found,
+                        left_out,
                         exited,
                         still_running,
                         count: initial_count,
@@ -291,6 +299,7 @@ impl WaitCommand {
                 target: self.target.join(" "),
                 initial_count,
                 not_found,
+                left_out,
                 exited,
                 still_running: vec![],
                 count: initial_count,
@@ -322,6 +331,10 @@ struct WaitOutput {
     initial_count: usize,
     /// The targets that matched nothing
     not_found: Vec<String>,
+    /// The processes proc runs under that a target matched and that were left
+    /// out; absent when there are none
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    left_out: Vec<crate::core::Ancestor>,
     exited: Vec<ExitedProcess>,
     still_running: Vec<RunningProcess>,
     /// The processes waited for, as every other command's `count` (`initial_count`
@@ -409,6 +422,7 @@ mod tests {
             cpu_time_secs: None,
             open_files: None,
             child_count: None,
+            runs_proc: false,
         }
     }
 

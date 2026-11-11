@@ -13,11 +13,13 @@
 //! Commas still work (`proc watch :3000,:8080`) but are deprecated.
 
 use crate::core::process::{
-    classify_sysinfo, fill_family, refreshed_system, self_and_ancestors, sysinfo_locked,
+    classify_sysinfo, fill_family, matches_outside_command_line, refreshed_system,
+    self_and_ancestors, sysinfo_locked,
 };
+use crate::core::target::{includes_note, left_out_warning};
 use crate::core::{
-    flatten_targets, parse_target, resolve_in_dir, sort_processes, Hit, NameMatch, Process,
-    SortKey, TargetType,
+    flatten_targets, parse_target, resolve_in_dir, sort_processes, Ancestor, Hit, NameMatch,
+    Process, SortKey, TargetType,
 };
 use crate::error::Result;
 use crate::ui::output::screen_of;
@@ -134,6 +136,10 @@ struct WatchJsonOutput {
     success: bool,
     count: usize,
     processes: Vec<Process>,
+    /// The processes proc runs under that a name matched and that were left
+    /// out (with --cmd); absent when there are none
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    left_out: Vec<Ancestor>,
 }
 
 /// The PIDs of the processes listening on `port`, none if nothing does
@@ -241,7 +247,8 @@ impl WatchCommand {
     /// has not seen
     fn collect_with(&self, sys: &System, port_holders: impl Fn(u16) -> Vec<u32>) -> Vec<Process> {
         let self_pid = Pid::from_u32(std::process::id());
-        // a name never finds proc's ancestor shells, whose command lines hold
+        // a name finds a process proc runs under when its name matches; with
+        // --cmd it is left out (see `left_out`), since its command line holds
         // proc's own arguments (`sh -c 'proc watch node'`)
         let ancestors = self_and_ancestors(sys);
         let in_dir_filter = &self.in_dir_path;
@@ -296,7 +303,10 @@ impl WatchCommand {
                     }
                     TargetType::Name(name) => {
                         for (pid, proc) in sys.processes() {
-                            if ancestors.contains(pid) || crate::core::is_thread(proc) {
+                            if *pid == self_pid
+                                || (ancestors.contains(pid) && mode != NameMatch::Exact)
+                                || crate::core::is_thread(proc)
+                            {
                                 continue;
                             }
                             if classify_sysinfo(name, proc, mode) == Hit::Match
@@ -379,6 +389,7 @@ impl WatchCommand {
         stdout: &mut impl Write,
         interval: Duration,
     ) -> Result<()> {
+        let left_out = self.left_out(sys);
         loop {
             sysinfo_locked(|| sys.refresh_all());
             let processes = self.collect_processes(sys);
@@ -387,7 +398,7 @@ impl WatchCommand {
             let (width, height) = terminal::size().unwrap_or((120, 40));
 
             // Build frame
-            let frame = self.render_frame(&processes, screen_of(width), height);
+            let frame = self.render_frame_with(&processes, &left_out, screen_of(width), height);
 
             // A write that fails ends the watch. `out` has the policy for what
             // that means: a reader that left changes nothing, and any other
@@ -421,8 +432,28 @@ impl WatchCommand {
         }
     }
 
-    /// Render a frame for the TUI
+    /// Render a frame for the TUI, with nothing left out
+    #[cfg(test)]
     fn render_frame(&self, processes: &[Process], screen: Screen, height: u16) -> String {
+        self.render_frame_with(processes, &[], screen, height)
+    }
+
+    /// Whether a target is a name (not a PID or a port)
+    fn names_a_process(&self) -> bool {
+        flatten_targets(&self.target)
+            .iter()
+            .any(|t| matches!(parse_target(t), TargetType::Name(_)))
+    }
+
+    /// Render a frame for the TUI, saying under the header which processes
+    /// proc runs under were left out
+    fn render_frame_with(
+        &self,
+        processes: &[Process],
+        left_out: &[Ancestor],
+        screen: Screen,
+        height: u16,
+    ) -> String {
         let sort_label = match self.sort {
             WatchSortKey::Cpu => "CPU",
             WatchSortKey::Mem => "Memory",
@@ -448,6 +479,9 @@ impl WatchCommand {
         let mut output = String::new();
         output.push_str(&header);
         output.push('\n');
+        if let Some(warning) = left_out_warning(left_out) {
+            output.push_str(&format!(" ⚠ {warning}\n"));
+        }
         output.push('\n');
 
         if processes.is_empty() {
@@ -475,6 +509,44 @@ impl WatchCommand {
         output
     }
 
+    /// The processes proc runs under that a name target matches and that
+    /// watch leaves out: with --cmd only, since an exact name keeps them. They
+    /// don't change while proc runs, so this is read once
+    fn left_out(&self, sys: &System) -> Vec<Ancestor> {
+        let mode = NameMatch::from_flag(self.cmd);
+        if mode == NameMatch::Exact {
+            return Vec::new();
+        }
+        let self_pid = Pid::from_u32(std::process::id());
+        let names: Vec<String> = flatten_targets(&self.target)
+            .iter()
+            .filter_map(|t| match parse_target(t) {
+                TargetType::Name(name) => Some(name),
+                _ => None,
+            })
+            .collect();
+        let mut left_out: Vec<Ancestor> = self_and_ancestors(sys)
+            .into_iter()
+            .filter(|pid| *pid != self_pid)
+            .filter_map(|pid| sys.process(pid).map(|proc| (pid, proc)))
+            .filter(|(_, proc)| {
+                names
+                    .iter()
+                    .any(|n| classify_sysinfo(n, proc, mode) == Hit::Match)
+            })
+            .map(|(pid, proc)| Process::from_sysinfo(pid, proc))
+            // a hit in its command line alone is proc's own arguments
+            .filter(|p| {
+                names
+                    .iter()
+                    .any(|n| matches_outside_command_line(p, n, mode))
+            })
+            .map(|p| Ancestor::from(&p))
+            .collect();
+        left_out.sort_by_key(|a| a.pid);
+        left_out
+    }
+
     /// JSON loop: NDJSON output, one line per refresh
     fn run_json_loop(&self) -> Result<()> {
         let mut sys = refreshed_system();
@@ -483,6 +555,7 @@ impl WatchCommand {
         // The snapshot above is the baseline for the first CPU readings
         std::thread::sleep(Duration::from_millis(250));
 
+        let left_out = self.left_out(&sys);
         loop {
             sysinfo_locked(|| sys.refresh_all());
             let processes = self.collect_processes(&sys);
@@ -492,6 +565,7 @@ impl WatchCommand {
                 success: true,
                 count: processes.len(),
                 processes,
+                left_out: left_out.clone(),
             };
 
             if !write_json_frame(&mut out::stdout(), &mut out::stderr(), &output) {
@@ -517,7 +591,15 @@ impl WatchCommand {
         let printer = crate::ui::Printer::from_flags(false, self.verbose)
             .wide(self.wide)
             .scoped_to_dir(self.in_dir.is_some());
+        if let Some(warning) = left_out_warning(&self.left_out(&sys)) {
+            printer.warning(&warning);
+        }
         printer.print_processes(&processes);
+        if self.names_a_process() {
+            if let Some(note) = includes_note(&processes) {
+                printer.note(&note);
+            }
+        }
 
         Ok(())
     }
@@ -571,6 +653,7 @@ mod tests {
             cpu_time_secs: None,
             open_files: None,
             child_count: None,
+            runs_proc: false,
         }
     }
 
@@ -706,12 +789,29 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_frame_says_what_a_name_left_out() {
+        let zsh = Ancestor {
+            pid: 7,
+            name: "zsh".to_string(),
+        };
+        let frame = plain(&watch_args().render_frame_with(&[], &[zsh], screen(120), 40));
+        let lines: Vec<&str> = frame.lines().collect();
+        assert_eq!(
+            lines[1], " ⚠ Left out: zsh (PID 7), which runs this proc",
+            "{frame}"
+        );
+        let none = plain(&watch_args().render_frame(&[], screen(120), 40));
+        assert!(!none.contains("Left out"), "{none}");
+    }
+
     fn frame_of(processes: Vec<Process>) -> WatchJsonOutput {
         WatchJsonOutput {
             action: "watch",
             success: true,
             count: processes.len(),
             processes,
+            left_out: Vec::new(),
         }
     }
 
@@ -1013,7 +1113,7 @@ mod tests {
     }
 
     #[test]
-    fn a_name_never_finds_the_processes_that_ran_watch() {
+    fn a_name_finds_the_process_that_ran_watch_only_by_its_exact_name() {
         let sys = refreshed_system();
         let me = Pid::from_u32(std::process::id());
         let parent = sys.process(me).and_then(|p| p.parent()).expect("a parent");
@@ -1024,13 +1124,22 @@ mod tests {
             .to_string_lossy()
             .into_owned();
 
+        // its exact name: listed, marked as running proc
         let mut cmd = watch_args();
-        cmd.target = vec![parent_name];
+        cmd.target = vec![parent_name.clone()];
+        let found = cmd.collect_processes(&sys);
+        let listed = found.iter().find(|p| p.pid == parent.as_u32());
+        assert!(listed.is_some_and(|p| p.runs_proc), "{found:?}");
+        assert!(cmd.left_out(&sys).is_empty());
+
+        // with --cmd, a match that may be proc's own arguments: left out, named
+        cmd.cmd = true;
         let found = cmd.collect_processes(&sys);
         assert!(
             found.iter().all(|p| p.pid != parent.as_u32()),
             "listed the parent: {found:?}"
         );
+        assert!(cmd.left_out(&sys).iter().any(|a| a.pid == parent.as_u32()));
     }
 
     #[test]

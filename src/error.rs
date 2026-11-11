@@ -37,6 +37,17 @@ pub enum ProcError {
         ruled_out_by: Vec<(String, String)>,
     },
 
+    /// Every process a name matched is one proc runs under (its shell, or the
+    /// agent that ran it), which a command that acts on processes, `wait` and
+    /// `--cmd` leave out
+    #[error("{}", ancestors_only(name, ancestors))]
+    AncestorsOnly {
+        /// The name, as typed
+        name: String,
+        /// The processes it matched, each one proc runs under, PID ascending
+        ancestors: Vec<crate::core::Ancestor>,
+    },
+
     /// No process is listening on the specified port
     #[error("No process listening on port {0}\n  Try: proc ports")]
     PortNotFound(u16),
@@ -148,6 +159,22 @@ fn guard_list(guards: &[(String, String)]) -> String {
     named.join(" and ")
 }
 
+/// The message of [`ProcError::AncestorsOnly`]: `sshd (PID 1329) matches 'sshd',
+/// but proc runs under it, so it's left out`. The typed name is escaped, as
+/// the process names already are
+fn ancestors_only(name: &str, ancestors: &[crate::core::Ancestor]) -> String {
+    let (matches, them, they) = if ancestors.len() == 1 {
+        ("matches", "it", "it's")
+    } else {
+        ("match", "them", "they're")
+    };
+    format!(
+        "{} {matches} '{}', but proc runs under {them}, so {they} left out",
+        crate::core::process::ancestor_list(ancestors),
+        crate::core::escape_control(name)
+    )
+}
+
 /// The hint for a name that matched nothing by name but is in some command lines
 pub fn command_line_hint(name: &str, count: usize) -> String {
     let (who, has, its) = if count == 1 {
@@ -180,7 +207,9 @@ impl ProcError {
             | ProcError::PortNotFound(_)
             | ProcError::ProcessGone(_) => Some(REASON_NOT_FOUND),
             ProcError::NameNotFound { .. } => Some(REASON_COMMAND_LINE_ONLY),
-            ProcError::FilteredOut { .. } => Some(REASON_RULED_OUT),
+            ProcError::FilteredOut { .. } | ProcError::AncestorsOnly { .. } => {
+                Some(REASON_RULED_OUT)
+            }
             ProcError::PermissionDenied(_) | ProcError::PortUnseen(_) => {
                 Some(REASON_PERMISSION_DENIED)
             }
@@ -202,6 +231,15 @@ impl ProcError {
             ProcError::FilteredOut { ruled_out_by, .. } => {
                 Some(ruled_out_by.iter().map(|(flag, _)| flag.as_str()).collect())
             }
+            _ => None,
+        }
+    }
+
+    /// The processes proc runs under that matched and were left out, for the
+    /// JSON's `left_out`; `None` for every other error
+    pub fn left_out(&self) -> Option<&[crate::core::Ancestor]> {
+        match self {
+            ProcError::AncestorsOnly { ancestors, .. } => Some(ancestors),
             _ => None,
         }
     }
@@ -281,6 +319,7 @@ impl From<&ProcError> for ExitCode {
             ProcError::ProcessNotFound(_)
             | ProcError::NameNotFound { .. }
             | ProcError::FilteredOut { .. }
+            | ProcError::AncestorsOnly { .. }
             | ProcError::PortNotFound(_)
             | ProcError::ProcessGone(_) => ExitCode::NotFound,
             ProcError::PermissionDenied(_) | ProcError::PortUnseen(_) => ExitCode::PermissionDenied,
@@ -296,6 +335,20 @@ impl From<&ProcError> for ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_error_that_left_processes_out_names_them() {
+        let zsh = crate::core::Ancestor {
+            pid: 7,
+            name: "zsh".to_string(),
+        };
+        let left = ProcError::AncestorsOnly {
+            name: "zsh".to_string(),
+            ancestors: vec![zsh.clone()],
+        };
+        assert_eq!(left.left_out(), Some(&[zsh][..]));
+        assert_eq!(ProcError::ProcessNotFound("x".to_string()).left_out(), None);
+    }
 
     #[test]
     fn not_supported_on_this_os_is_invalid_input() {
@@ -368,6 +421,36 @@ mod tests {
                 "proc can't tell whether port 22 is in use: this system hides other users' sockets (security.bsd.see_other_uids=0)\n  Try: sudo proc <command>",
                 3,
                 Some("permission_denied"),
+            ),
+            (
+                ProcError::AncestorsOnly {
+                    name: "sshd".to_string(),
+                    ancestors: vec![crate::core::Ancestor {
+                        pid: 1329,
+                        name: "sshd".to_string(),
+                    }],
+                },
+                "sshd (PID 1329) matches 'sshd', but proc runs under it, so it's left out",
+                2,
+                Some("ruled_out"),
+            ),
+            (
+                ProcError::AncestorsOnly {
+                    name: "z\x1bsh".to_string(),
+                    ancestors: vec![
+                        crate::core::Ancestor {
+                            pid: 11849,
+                            name: "zsh".to_string(),
+                        },
+                        crate::core::Ancestor {
+                            pid: 81340,
+                            name: "zsh".to_string(),
+                        },
+                    ],
+                },
+                "zsh (PID 11849), zsh (PID 81340) match 'z\\x1bsh', but proc runs under them, so they're left out",
+                2,
+                Some("ruled_out"),
             ),
             (
                 ProcError::PermissionDenied(42),
