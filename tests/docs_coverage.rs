@@ -9,8 +9,8 @@
 //! - the commands page (`docs/commands/index.md`), the README, the agent
 //!   reference (`skills/proc-cli/reference.md`) and docs.rs (`src/lib.rs`)
 //!   name every command
-//! - the agent reference's "Commands and flags" section names every flag and
-//!   every accepted value
+//! - the agent reference's "Commands and flags" section names every flag, with
+//!   its short form on the same line, and every accepted value
 //! - the reference, the agent skill, the commands page, the README and docs.rs
 //!   give every exit code and every `reason`
 //! - the proc version the agent skill asks for is no older than the release
@@ -206,6 +206,30 @@ fn every_flag_is_in_the_reference_and_the_readme() {
             }
             if !has_word(&readme, &long) {
                 misses.push(format!("README.md: {long} ({})", cmd.get_name()));
+            }
+        }
+    }
+    misses.sort();
+    misses.dedup();
+    assert_none_missing(misses);
+}
+
+#[test]
+fn every_short_flag_is_beside_its_long_form_in_the_reference() {
+    let reference = read("skills/proc-cli/reference.md");
+    let flags_section = section(&reference, "## Commands and flags");
+    let mut misses = Vec::new();
+    for cmd in commands() {
+        for (long, short) in flags(&cmd) {
+            let Some(short) = short else { continue };
+            let beside = flags_section
+                .lines()
+                .any(|line| has_word(line, &long) && line.contains(&format!("`{short}`")));
+            if !beside {
+                misses.push(format!(
+                    "reference.md, Commands and flags: {short} on the {long} line ({})",
+                    cmd.get_name()
+                ));
             }
         }
     }

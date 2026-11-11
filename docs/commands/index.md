@@ -75,3 +75,5 @@ With `--json`, every command prints one JSON document with `action` (the command
 | `129`, `130`, `131`, `143` | A signal ended proc (SIGHUP, SIGINT or Ctrl+C, SIGQUIT, SIGTERM) while `watch` had the screen or a prompt was waiting: the terminal is put back first, then proc ends by that signal, so a shell shows 128 plus its number and Ctrl+C stops a script's loop. Nothing was changed by an unanswered prompt |
 
 `"success": false` always comes with a non-zero exit code.
+
+Every JSON shape, the values each flag accepts, what each command prints when nothing matches, and what a release may change are in the [JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md). In short: within 2.x keys are only added, never removed or given another meaning, and `error`, `message` and the human output are text for people, so branch on `reason`, `exit_code` and `count`.

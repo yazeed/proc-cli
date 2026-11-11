@@ -7,6 +7,7 @@ Everything here is for lookup. The safety model, the playbooks and the exit-code
 - [Exit codes](#exit-codes)
 - [Errors and needs_confirmation](#errors-and-needs_confirmation)
 - [Commands and flags](#commands-and-flags)
+- [Compatibility](#compatibility)
 - [Target and filter semantics](#target-and-filter-semantics)
 - [Order of results](#order-of-results)
 - [Process and port objects](#process-and-port-objects)
@@ -30,7 +31,7 @@ Everything here is for lookup. The safety model, the playbooks and the exit-code
 
 A signal the OS refuses, such as `kill` on another user's process, is not exit 3. It is a `failed` entry for that process with `error` text such as `Signal failed: Failed to kill process 123` (SIGKILL) or `Signal failed: EPERM: Operation not permitted` (other signals), and the exit code is 1. If the process is gone or its PID was reused, the entry reads `No process found matching '123'`. Treat any unexpected `failed` entry as a process that is not yours: stop and ask the user.
 
-`"success": false` always comes with a non-zero exit code. Every command prints exactly one JSON document with `--json`, except `watch`, which streams one per refresh.
+`"success": false` always comes with a non-zero exit code. Every command prints exactly one JSON document with `--json`, except `watch`, which streams one per refresh. `--json` exists on the 19 commands only: `--help` and `--version` print text even with `--json`, and `completions` and `manpage` reject it (exit 4, `invalid_input`).
 
 A signal that ends proc (SIGINT, SIGTERM, SIGHUP, SIGQUIT, or Ctrl+C / Ctrl+Break on Windows) while `watch` has the screen or a prompt is waiting for a key is not one of these codes and not an error: proc puts the terminal back (raw mode off, cursor shown, normal screen, echo and line editing on), prints nothing, and ends by that same signal, as a program without a handler would. A shell shows 128 plus its number: 129 SIGHUP, 130 SIGINT and Ctrl+C, 131 SIGQUIT, 143 SIGTERM. A program that ran proc directly sees it ended by signal 1, 2, 3 or 15 instead of an exit code (Python's `returncode` is minus the number). Windows has no signals: there every Ctrl+C or Ctrl+Break exits with 130. A kill still running when the signal came is not undone: the prompt had not been answered, so nothing had been changed.
 
@@ -42,7 +43,7 @@ If the reader of proc's output goes away (`proc ... | head -n1`), proc stops wri
 
 ## Errors and needs_confirmation
 
-On failure with `--json`, stdout carries the five fields below. `action` is the canonical command name even when an alias was used (`proc k` gives `"kill"`), and `reason` says why in one fixed word (see below). Unknown flags and arguments produce the same document with exit 4. Without `--json` the message goes to stderr.
+On failure with `--json`, stdout carries the five fields below. `action` is the canonical command name even when an alias was used (`proc k` gives `"kill"`); for an unknown command it is the word typed (`proc frobnicate --json` gives `"frobnicate"`), and with no command it is `"proc"`. `reason` says why in one fixed word (see below). Unknown flags and arguments produce the same document with exit 4. Without `--json` the message goes to stderr.
 
 ```json
 {
@@ -153,13 +154,56 @@ Filters (a command takes only those its `--help` lists):
 | `--status <s>` (running, sleeping, stopped, zombie, idle, starting, disk-wait), `--min-uptime <secs>` | `list`, `by`, `in`, `for`, `tree` |
 | `--parent <pid>` | `list`, `by`, `in` |
 | `--path <path>` (`-p`) | `list` |
-| `--sort`: cpu, mem (biggest first), pid, name (`ports`: port, pid, name; ascending) | `list`, `by`, `in`, `for`, `watch`, `ports` |
+| `--sort` (`-s`): cpu, mem (biggest first), pid, name (`ports`: port, pid, name; ascending) | `list`, `by`, `in`, `for`, `watch`, `ports` |
 | `--limit <n>` (`-n`; `-l` on `watch`) | `list`, `by`, `in`, `for`, `ports`, `watch` |
 | `--wide` (`-w`) | `list`, `by`, `in`, `for`, `watch`, `stuck`, `orphans` |
-| `--exposed` (0.0.0.0, `::`), `--local` (127.0.0.1, `::1`), `--range <from>-<to>` | `ports` |
-| `--depth <n>`, `--compact`, `--ancestors` | `tree` |
+| `--exposed` (`-e`; 0.0.0.0, `::`), `--local` (`-l`; 127.0.0.1, `::1`), `--range <from>-<to>` (`-r`) | `ports` |
+| `--depth <n>` (`-d`; default 10), `--compact` (`-C`), `--ancestors` (`-a`) | `tree` |
 | `--interval <secs>` (`-n`) | `watch`, `wait` (`wait --quiet` hides the periodic still-running lines) |
 | `--timeout <secs>` (`-t`) | `stop` (default 10), `wait` (0 = forever), `stuck` and `unstick` (default 300) |
+
+Flags of the commands that change processes:
+
+| Flag | Commands |
+|------|----------|
+| `--yes` (`-y`), `--dry-run` | `kill`, `stop`, `freeze`, `thaw`, `free`, `unstick`, and `orphans`/`stuck` with `--kill` |
+| `--kill` (`-k`) | `stuck`, `orphans` |
+| `--signal <name>` (`-S`) | `stop` |
+| `--graceful` (`-g`) | `kill` |
+| `--force` (`-f`) | `unstick` |
+| `--wait <secs>` (default 10) | `free` |
+| `--quiet` (`-q`) | `wait` |
+
+Short flags differ in two places: `-l` is `--limit` on `watch` but `--local` on `ports`, and `-n` is `--limit` everywhere else but `--interval` on `watch` and `wait`. Scripts and agents should use the long forms.
+
+### Values
+
+| Flag | Accepts | Rejected (exit 4, `invalid_input`) |
+|------|---------|-------------------------------------|
+| `--timeout`, `--wait`, `--min-uptime`, `--start-time`, and `--interval` on `wait` | whole seconds, `0` or more | a fraction (`1.5`) or a unit (`1m`): `invalid digit found in string` |
+| `--interval` on `watch` | seconds, fractions allowed, at least `0.1` | `0.05`: `must be at least 0.1 seconds` |
+| `--min-cpu` | percent of one core, fractions allowed (over 100 with several cores) | text |
+| `--min-mem` | megabytes, fractions allowed | text |
+| `--limit`, `--depth`, `--parent` | a whole number (`--parent` is a PID) | a fraction |
+| `--range` | `START-END`, from 1 to 65535 (`9000-8000` is refused with a `did you mean 8000-9000?`) | `0-10`, `70000-80000`, `8000` |
+| `--signal` | `HUP`, `INT`, `QUIT`, `ABRT`, `KILL`, `TERM`, `STOP`, `CONT`, `USR1`, `USR2`, any case, with or without `SIG` | a number (`10`) or another name (`WINCH`) |
+| `--status` | `running`, `sleeping`, `stopped`, `zombie`, `idle`, `starting`, `disk-wait` (`disk_wait` too) | `dead` and `unknown`, which only appear in output |
+| `--sort` | see the table above | another word, with the list of valid ones |
+
+A number with a leading `-` is read as a flag: `--timeout -1` exits 4 with `unexpected argument '-1' found`.
+
+### Flags that change only the human output
+
+`--verbose`, `--wide` and `--compact` change what a person sees, never the JSON, with one exception: `ports -v` adds `exe_path` and `connections` to each port. `wait -v` measures `cpu_percent` for the lines it prints. Every other flag filters or acts, so it changes the JSON too (`tree --depth` cuts the tree at that depth).
+
+## Compatibility
+
+What a release may change in the JSON, so a script knows what to rely on:
+
+- **Within a major version (2.x),** keys are added, never removed or given another meaning, and `reason` words keep their meaning. A key that is replaced stays beside its new name until the next major version, listed under "Names deprecated" below. An exit code changes only to fix a wrong answer, and the CHANGELOG says so in bold (2.4.0: a port another user's process holds became exit 3, where 2 had called it free).
+- **Words may be added** to the sets a value is drawn from (`status`, `reason`, `outcome`, `exposure`). Handle a word you don't know as "other", not as an error.
+- **Key order is not promised.** Errors print their keys in alphabetical order; other documents keep a fixed order, but read keys by name.
+- **Text is for people**: `error`, `message`, `elapsed_human`, each `failed[].error` and `processes[].error`, and the human output. Its wording may change in any release. Branch on `reason`, `exit_code`, `count` and the other fields.
 
 ## Target and filter semantics
 
@@ -228,7 +272,24 @@ The same machine gives the same order on every run, so a list can be compared wi
 
 ### list, by, in, stuck, orphans
 
-`action` is the command name. `{"action": "list", "success": true, "count": 5, "processes": [<Process>, ...]}`. With no results: `{"action": "stuck", "success": true, "count": 0, "message": "No stuck processes found (threshold: 300s)"}`.
+`action` is the command name. `{"action": "list", "success": true, "count": 5, "processes": [<Process>, ...]}`.
+
+### When nothing matches
+
+A name target that matches nothing is an error (exit 2, `not_found` or `command_line_only`) for `by`, `on`, `info`, `why`, `tree` and the commands that change processes. A search that finds nothing is not: it is exit 0 with `count: 0`, in a shape that differs per command:
+
+| Command | Nothing found (exit 0) |
+|---------|------------------------|
+| `list <name>`, `in <dir>` | `{"action", "success": true, "count": 0, "processes": []}` |
+| `stuck` | `{"action": "stuck", "success": true, "count": 0, "message": "No stuck processes found (threshold: 300s)"}`, no `processes`; `--kill` and `--dry-run` give the same |
+| `orphans` | `{"action": "orphans", "success": true, "count": 0, "message": "No orphaned processes found"}`, no `processes`; `--kill` and `--dry-run` give the same |
+| `ports` (a `--range` or a filter with no listener) | `{"action": "ports", "success": true, "count": 0, "ports": [], "unseen_ports": []}` |
+| `tree --in <dir>` | `{"action": "tree", "success": true, "tree": []}` |
+| `unstick` (nothing stuck) | the usual document, with `processes: []` and every count `0` |
+| `free :port` (nobody holds it) | `{"action": "free", "success": true, "count": 0, "message": "All specified ports are already free", "not_found": [":port"]}`, with or without `--dry-run`: no `dry_run` and no `processes` |
+| `watch <name>` | `{"action": "watch", "success": true, "count": 0, "processes": []}` every refresh, forever: bound it yourself |
+
+`message` is text for people: branch on `count`.
 
 ### info
 

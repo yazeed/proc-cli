@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The agent reference says what each flag accepts, what each command prints when nothing matches, and what a release may change.** A script had to find out by trying:
+  - **Values.** `--timeout`, `--wait`, `--min-uptime`, `--start-time` and `wait --interval` take whole seconds (`1.5` and `1m` exit 4), `watch --interval` takes fractions down to `0.1`, and `--range` takes `START-END` from 1 to 65535. A negative number reads as a flag. `--signal` takes ten names and no numbers. `--status` takes `disk-wait` or `disk_wait`, while `dead` and `unknown` only appear in output.
+  - **Short flags.** Every one is beside its long form, the flags of the commands that change processes have their own table, and the reference warns that `-l` and `-n` mean different flags on `watch`, `ports` and `wait`.
+  - **Flags that don't change JSON.** `--verbose`, `--wide` and `--compact` change only the human output, except `ports -v`.
+  - **When nothing matches.** Each command's form, exit 0: `list` and `in` give an empty `processes`, `stuck` and `orphans` a `message` and no `processes`, `ports` empty `ports` and `unseen_ports`, and `free` on a port nobody holds no `dry_run` and no `processes`, even with `--dry-run`.
+  - **A Compatibility section.** Within 2.x keys are only added, never removed or given another meaning, and the sets of words may grow. An exit code changes only to fix a wrong answer, flagged in the CHANGELOG. Key order is not promised, and `error`, `message` and `elapsed_human` are text for people. The skill and the commands page point to it.
+  - **What `--json` doesn't cover.** `--help` and `--version` print text even with `--json`, and `completions` and `manpage` reject it. For an unknown command `action` is the word typed, and with no command it is `proc`.
+
+  The docs test now also checks that every short flag sits on its long flag's line in the reference
+
 - **A test keeps the docs complete.** `tests/docs_coverage.rs` reads every command, flag and accepted value from the CLI definition, and every error reason from its constants, and fails, listing every miss at once, unless each command has its page on the website, each page lists every flag with its short form and every value it accepts, the agent reference names every flag and value, the README every flag, and the agent reference, the agent skill, the commands page, the README and docs.rs give every exit code and every `reason`. It also fails if the agent skill asks for a proc older than a flag it uses. It found the skill's exit table naming neither `permission_denied` nor `system_error`; the table now says what each means and what to do
 
 ### Changed

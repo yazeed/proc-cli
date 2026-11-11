@@ -74,7 +74,7 @@ Give several targets as separate arguments: `proc stop <pid> <pid> :<port> --dry
 
 `on` answers in the shape of its question: a port gives `processes` (every holder), a PID gives `process` and `ports`, and a name or several targets give `results`, one `{process, ports}` per match (with `target` when you gave several). Read the field your query asks for. Every process object, whichever command prints it, has the same keys (`pid`, `name`, `exe_path`, `cwd`, `command`, `status`, `user`, `parent_pid`, `parent_name`, `start_time`, `uptime_secs`, `cpu_percent`, `memory_mb`, `cpu_time_secs`, `open_files`, `child_count`), each left out when the OS gives no value, so read a key by name and treat a missing one as unknown. For another user's process (and you are not root) proc cannot see its sockets: an empty `ports` then means unknown, not that it listens on nothing, and the card has no `Listening:` line. The same process has the same `name` in `ports`, `on` and `list`. Without `--json`, `on`, `info`, `for` (one hit) and `why` print one card for the process (command, directory, path, user, parent, status, resources, start time, children, ports and connections): show that to the user, and parse the JSON.
 
-Other commands and every filter are in [reference.md](reference.md).
+Other commands and every filter are in [reference.md](reference.md), with the values each flag accepts, what each command prints when nothing matches, and what a release may change (Compatibility: within 2.x keys are only added; `error` and `message` are text for people, so branch on `reason`, `exit_code` and `count`).
 
 ## Playbooks
 
