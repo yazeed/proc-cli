@@ -19,7 +19,7 @@ pub use filters::{
     PortSortKey, SortKey, StatusFilter,
 };
 pub use name_match::{classify, matches_name, Hit, NameMatch, Names};
-pub use port::{parse_port, Exposure, PortInfo, Protocol};
+pub use port::{parse_port, Exposure, PortInfo, Protocol, Unseen, UnseenPort};
 #[cfg(unix)]
 pub use process::parse_signal_name;
 pub use process::{escape_control, is_thread, Process, ProcessStatus, RawText};

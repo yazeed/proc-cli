@@ -132,7 +132,7 @@ Both are leads, not verdicts. `stuck` flags any process that has run over 300 se
 | 0 | Done (or the dry run succeeded) | Check `not_found`: every target you passed must appear in `processes` (with `outcome: "succeeded"` in a receipt) or `results`. |
 | 1 | Partly failed, a port stayed busy, or `wait` timed out | Read `processes`: each entry has an `outcome` (`succeeded` or `failed`, with `error` on a failure). Retry only the PIDs whose `outcome` is `failed`. Report anything the OS refused. |
 | 2 | Nothing matched; branch on `reason` | `not_found`: gone; do not widen the target. `command_line_only`: add `--cmd` only after a dry run. `ruled_out`: a guard in `ruled_out_by` ruled out the process on that PID (rule 7). |
-| 3 | Permission denied | Stop and ask. Do not use `sudo` unprompted. For a `:port` target it means another user's process holds the port: it is in use, not free. |
+| 3 | Permission denied | Stop and ask. Do not use `sudo` unprompted. For a `:port` target it means another user's process holds the port, or the system hides other users' sockets and proc can't tell: never treat the port as free. |
 | 4 | Nothing was done; branch on `reason` | `needs_confirmation`: follow rule 6. `invalid_input`: fix the command from `error`. `not_supported`: this OS cannot do it, so do not retry. |
 
 A signal the OS refuses (a process of another user) is reported as a `failed` entry (with its `error`) with exit 1, not as exit 3. Treat it as "this process is not mine": stop and ask.

@@ -56,7 +56,7 @@ proc ports --in .
 
 ## JSON
 
-Each port has its listener (`port`, `protocol`, `pid`, `process_name`, `address`, `exposure`) and its holder's `command`, `user`, `uptime_secs` and `memory_mb`; a key is left out when the OS does not give it (`memory_mb` too when the memory could not be read, and MEM then shows `-`). With `--verbose` it also has `exe_path` and `connections` (`total` and `by_state`). After `ports`, `unseen_ports` lists the ports other users' processes hold, which the list leaves out (`[]` for none); it's absent on Windows and the BSDs, which aren't checked, and with `--by`, `--in`, `--exposed` or `--local`.
+Each port has its listener (`port`, `protocol`, `pid`, `process_name`, `address`, `exposure`) and its holder's `command`, `user`, `uptime_secs` and `memory_mb`; a key is left out when the OS does not give it (`memory_mb` too when the memory could not be read, and MEM then shows `-`). With `--verbose` it also has `exe_path` and `connections` (`total` and `by_state`). After `ports`, `unseen_ports` lists the ports other users' processes hold, which the list leaves out (`[]` for none); it's absent on Windows and the BSDs, which aren't checked, and with `--by`, `--in`, `--exposed` or `--local`. On FreeBSD and NetBSD set to hide other users' sockets, `hidden_by` names the setting (`"security.bsd.see_other_uids=0"`, `"security.curtain=1"`): the list has only proc's own user's ports, and a line after the table says so. It's absent where nothing hides them, and for root.
 
 ```json
 { "port": 3000, "protocol": "tcp", "pid": 1234, "process_name": "node", "address": "127.0.0.1",

@@ -18,7 +18,7 @@ use super::held::{
     ConnectionReader, HeldPort,
 };
 use crate::core::connections::Connections;
-use crate::core::port::{holders_in, visible_holders, SocketReading};
+use crate::core::port::{holders_in, visible_holders, SocketReading, UnseenPort};
 use crate::core::{
     flatten_targets, nothing_resolved, parse_target, resolve_in_dir, resolve_target, ruled_out_by,
     Exposure, Guards, NameMatch, PortInfo, Process, TargetType,
@@ -142,8 +142,8 @@ impl OnCommand {
     fn show_multi_json(&self, targets: &[String]) -> Result<()> {
         let mut results: Vec<TargetResult> = Vec::new();
         let mut not_found: Vec<String> = Vec::new();
-        // the ports in use by a process proc can't see
-        let mut unseen: Vec<(String, u16)> = Vec::new();
+        // the ports whose holder proc can't see
+        let mut unseen: Vec<(String, UnseenPort)> = Vec::new();
 
         for target in targets {
             let found = match parse_target(target) {
@@ -160,7 +160,7 @@ impl OnCommand {
                         ports,
                     }))
                 }
-                Err(ProcError::PortInUseUnseen(port)) => {
+                Err(ProcError::PortUnseen(port)) => {
                     unseen.push((target.clone(), port));
                     not_found.push(target.clone());
                 }
@@ -220,11 +220,7 @@ impl OnCommand {
     fn lookup_port(&self, port: u16, limit: usize, split: bool) -> Result<PortHolders> {
         // The socket tables are read once, for the holders and for the connections
         let reading = SocketReading::read()?;
-        let listeners = visible_holders(
-            port,
-            holders_in(reading.ports, port),
-            PortInfo::in_use_unseen,
-        )?;
+        let listeners = visible_holders(port, holders_in(reading.ports, port), PortInfo::unseen)?;
         if listeners.is_empty() {
             return Err(ProcError::PortNotFound(port));
         }

@@ -154,7 +154,7 @@ impl InfoCommand {
 
         if found.is_empty() {
             let message = match &nothing {
-                ProcError::PortInUseUnseen(_) => nothing.to_string(),
+                ProcError::PortUnseen(_) => nothing.to_string(),
                 _ => format!("No process found matching '{}'", self.targets.join(" ")),
             };
             return Err(ProcError::reported(ExitCode::from(&nothing), message));
@@ -188,7 +188,7 @@ fn resolve_all(targets: &[String], resolve: impl Fn(&str) -> Result<Vec<Process>
                 }
             }
             Err(error) => {
-                if let ProcError::PortInUseUnseen(port) = error {
+                if let ProcError::PortUnseen(port) = error {
                     unseen.push((target.clone(), port));
                 }
                 not_found.push(target.clone());

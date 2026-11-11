@@ -218,8 +218,12 @@ impl PortsCommand {
             None => HashMap::new(),
         };
 
+        let left = LeftOut {
+            unseen: unseen.as_deref(),
+            hidden_by: crate::core::port::others_hidden(),
+        };
         if self.json {
-            self.print_json(&ports, &holders, &connections, unseen.as_deref());
+            self.print_json(&ports, &holders, &connections, left);
         } else {
             let rows: Vec<PortRow> = ports
                 .iter()
@@ -229,12 +233,7 @@ impl PortsCommand {
                 })
                 .collect();
             // A failed write is recorded by `out`, which decides the exit code
-            out::recorded(self.print_human(
-                &mut out::stdout(),
-                &rows,
-                screen_now(),
-                unseen.as_deref(),
-            ));
+            out::recorded(self.print_human(&mut out::stdout(), &rows, screen_now(), left));
         }
 
         Ok(())
@@ -245,7 +244,7 @@ impl PortsCommand {
         out: &mut impl Write,
         rows: &[PortRow],
         screen: Screen,
-        unseen: Option<&[u16]>,
+        left: LeftOut,
     ) -> std::io::Result<()> {
         if rows.is_empty() {
             writeln!(out, "{} No listening ports found", "⚠".yellow().bold())?;
@@ -265,7 +264,13 @@ impl PortsCommand {
             writeln!(out)?;
         }
         // The list leaves out what proc can't see, and says so
-        if let Some(unseen) = unseen.filter(|unseen| !unseen.is_empty()) {
+        if let Some(setting) = left.hidden_by {
+            let message = format!(
+                "This system hides other users' sockets ({setting}), so the list has only your own processes' ports (run with sudo to see them all)"
+            );
+            writeln!(out, "{} {}", "⚠".yellow().bold(), message.yellow())?;
+        }
+        if let Some(unseen) = left.unseen.filter(|unseen| !unseen.is_empty()) {
             let ports: Vec<String> = unseen.iter().map(u16::to_string).collect();
             let message = format!(
                 "{} port{} in use by other users' processes, which proc can't see: {} (run with sudo to see them)",
@@ -283,7 +288,7 @@ impl PortsCommand {
         ports: &[PortInfo],
         holders: &HashMap<u32, Process>,
         connections: &HashMap<(u16, u32), Connections>,
-        unseen: Option<&[u16]>,
+        left: LeftOut,
     ) {
         let printer = Printer::from_flags(true, self.verbose);
 
@@ -304,7 +309,8 @@ impl PortsCommand {
             success: true,
             count: ports.len(),
             ports: enriched,
-            unseen_ports: unseen,
+            unseen_ports: left.unseen,
+            hidden_by: left.hidden_by,
         });
     }
 }
@@ -366,6 +372,23 @@ struct PortsOutput<'a> {
     /// with a filter by process or address
     #[serde(skip_serializing_if = "Option::is_none")]
     unseen_ports: Option<&'a [u16]>,
+    /// The setting through which this system hides other users' sockets
+    /// (`security.bsd.see_other_uids=0`, `security.curtain=1`), so `ports` has
+    /// only proc's own user's ports; absent where nothing hides them or proc is
+    /// root
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hidden_by: Option<&'static str>,
+}
+
+/// What a listing leaves out because proc can't see it
+#[derive(Debug, Clone, Copy, Default)]
+struct LeftOut<'a> {
+    /// The ports other users' processes hold (Linux and macOS); `None` where
+    /// proc doesn't check, or with a filter by process or address
+    unseen: Option<&'a [u16]>,
+    /// The setting through which the system hides other users' sockets, when
+    /// it does (the BSDs)
+    hidden_by: Option<&'static str>,
 }
 
 #[cfg(test)]
@@ -475,8 +498,19 @@ mod tests {
     }
 
     fn printed_with(cmd: &PortsCommand, rows: &[PortRow], unseen: Option<&[u16]>) -> String {
+        printed_leaving(
+            cmd,
+            rows,
+            LeftOut {
+                unseen,
+                hidden_by: None,
+            },
+        )
+    }
+
+    fn printed_leaving(cmd: &PortsCommand, rows: &[PortRow], left: LeftOut) -> String {
         let mut out = Vec::new();
-        cmd.print_human(&mut out, rows, screen(), unseen).unwrap();
+        cmd.print_human(&mut out, rows, screen(), left).unwrap();
         String::from_utf8(out).unwrap()
     }
 
@@ -567,9 +601,19 @@ mod tests {
             port: &port,
             process: Some(&holder),
         }];
-        assert_stops_at_a_failed_write(|w| cmd.print_human(w, &rows, screen(), None));
-        assert_stops_at_a_failed_write(|w| cmd.print_human(w, &[], screen(), None));
-        assert_stops_at_a_failed_write(|w| cmd.print_human(w, &rows, screen(), Some(&[22])));
+        let shown = LeftOut::default();
+        let unseen = LeftOut {
+            unseen: Some(&[22]),
+            hidden_by: None,
+        };
+        let hidden = LeftOut {
+            unseen: None,
+            hidden_by: Some("security.curtain=1"),
+        };
+        assert_stops_at_a_failed_write(|w| cmd.print_human(w, &rows, screen(), shown));
+        assert_stops_at_a_failed_write(|w| cmd.print_human(w, &[], screen(), shown));
+        assert_stops_at_a_failed_write(|w| cmd.print_human(w, &rows, screen(), unseen));
+        assert_stops_at_a_failed_write(|w| cmd.print_human(w, &rows, screen(), hidden));
     }
 
     // A list that leaves ports out says so, after the table
@@ -608,6 +652,46 @@ mod tests {
             let none = printed_with(&cmd, &rows, unseen);
             assert!(!none.contains("other users"), "{none}");
         }
+    }
+
+    // On a BSD that hides other users' sockets the list can't name what it
+    // leaves out, and says why it may be short
+    #[test]
+    fn a_system_that_hides_other_users_sockets_is_said_after_the_list() {
+        let cmd = listing(false);
+        let hidden = LeftOut {
+            unseen: None,
+            hidden_by: Some("security.bsd.see_other_uids=0"),
+        };
+        let empty = printed_leaving(&cmd, &[], hidden);
+        assert!(empty.starts_with("⚠ No listening ports found"), "{empty}");
+        assert!(
+            empty.trim_end().ends_with(
+                "⚠ This system hides other users' sockets (security.bsd.see_other_uids=0), so the list has only your own processes' ports (run with sudo to see them all)"
+            ),
+            "{empty}"
+        );
+        // and in JSON, as the setting
+        let json = serde_json::to_value(PortsOutput {
+            action: "ports",
+            success: true,
+            count: 0,
+            ports: Vec::new(),
+            unseen_ports: None,
+            hidden_by: hidden.hidden_by,
+        })
+        .unwrap();
+        assert_eq!(json["hidden_by"], "security.bsd.see_other_uids=0");
+        let shown = serde_json::to_value(PortsOutput {
+            action: "ports",
+            success: true,
+            count: 0,
+            ports: Vec::new(),
+            unseen_ports: Some(&[]),
+            hidden_by: None,
+        })
+        .unwrap();
+        assert!(shown.get("hidden_by").is_none(), "{shown}");
     }
 
     #[test]

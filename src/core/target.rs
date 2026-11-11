@@ -5,7 +5,7 @@
 //! - `pid` - Process with this PID (numeric)
 //! - `name` - Processes matching this name
 
-use crate::core::port::{parse_port, PortInfo};
+use crate::core::port::{parse_port, PortInfo, UnseenPort};
 use crate::core::{NameMatch, Process};
 use crate::error::{ProcError, Result};
 
@@ -79,7 +79,7 @@ pub(crate) fn resolve_port_in(port: u16, listening: &[PortInfo]) -> Result<Vec<P
         crate::core::port::visible_holders(
             port,
             crate::core::port::holders_in(listening.to_vec(), port),
-            PortInfo::in_use_unseen,
+            PortInfo::unseen,
         )?,
         Process::find_by_pid,
     )
@@ -239,10 +239,11 @@ pub struct Resolved {
     /// For a name that matched nothing, but is in some command lines: what
     /// `--cmd` would find
     pub hints: Vec<String>,
-    /// The targets that are ports in use by a process proc can't see (another
-    /// user's), each with its port. They are in `not_found` too, since they
-    /// resolved to no process, but nobody holding them would be untrue
-    pub unseen: Vec<(String, u16)>,
+    /// The targets that are ports whose holder proc can't see (another
+    /// user's process, or a system that hides other users' sockets), each with
+    /// its port and why. They are in `not_found` too, since they resolved to no
+    /// process, but nobody holding them would be untrue
+    pub unseen: Vec<(String, UnseenPort)>,
 }
 
 impl Resolved {
@@ -264,21 +265,19 @@ impl Resolved {
             lines.push(warning);
         }
         for (_, port) in &self.unseen {
-            lines.push(format!(
-                "Port {port} is in use, but proc can't see which process holds it: it belongs to another user"
-            ));
+            lines.push(port.to_string());
         }
         (!lines.is_empty()).then(|| lines.join("\n"))
     }
 }
 
 /// The error for targets (`typed`, as the user wrote them) that resolved to no
-/// process: a port in use by a process proc can't see when one of them was
+/// process: a port whose holder proc can't see when one of them was
 /// (`unseen`, from [`Resolved`]), since "not found" would be untrue, and
 /// otherwise not found
-pub fn nothing_resolved(typed: String, unseen: &[(String, u16)]) -> ProcError {
+pub fn nothing_resolved(typed: String, unseen: &[(String, UnseenPort)]) -> ProcError {
     match unseen.first() {
-        Some(&(_, port)) => ProcError::PortInUseUnseen(port),
+        Some(&(_, port)) => ProcError::PortUnseen(port),
         None => ProcError::ProcessNotFound(typed),
     }
 }
@@ -317,7 +316,7 @@ fn resolve_targets_impl(targets: &[String], exclude_self: bool, mode: NameMatch)
                 }
             }
             Err(error) => {
-                if let ProcError::PortInUseUnseen(port) = error {
+                if let ProcError::PortUnseen(port) = error {
                     resolved.unseen.push((target.clone(), port));
                 }
                 resolved.not_found.push(target.clone());
@@ -565,9 +564,14 @@ mod tests {
     // on, but saying nobody holds it would be untrue
     #[test]
     fn a_port_held_by_a_process_proc_cannot_see_is_not_called_not_found() {
+        use crate::core::Unseen;
+        let other = UnseenPort {
+            port: 80,
+            why: Unseen::OtherUser,
+        };
         let unseen = Resolved {
             not_found: vec![":80".to_string()],
-            unseen: vec![(":80".to_string(), 80)],
+            unseen: vec![(":80".to_string(), other)],
             ..Resolved::default()
         };
         assert_eq!(
@@ -576,13 +580,13 @@ mod tests {
         );
         assert!(matches!(
             nothing_resolved(":80".to_string(), &unseen.unseen),
-            ProcError::PortInUseUnseen(80)
+            ProcError::PortUnseen(port) if port == other
         ));
 
         // beside a target that matched nothing, each is said for what it is
         let both = Resolved {
             not_found: vec!["ghost".to_string(), ":80".to_string()],
-            unseen: vec![(":80".to_string(), 80)],
+            unseen: vec![(":80".to_string(), other)],
             ..Resolved::default()
         };
         assert_eq!(
@@ -594,6 +598,25 @@ mod tests {
         assert!(matches!(
             nothing_resolved("ghost".to_string(), &[]),
             ProcError::ProcessNotFound(ref typed) if typed == "ghost"
+        ));
+
+        // a system that hides other users' sockets: proc can't tell
+        let hidden = UnseenPort {
+            port: 22,
+            why: Unseen::Hidden("security.curtain=1"),
+        };
+        let resolved = Resolved {
+            not_found: vec![":22".to_string()],
+            unseen: vec![(":22".to_string(), hidden)],
+            ..Resolved::default()
+        };
+        assert_eq!(
+            resolved.warning().unwrap(),
+            "proc can't tell whether port 22 is in use: this system hides other users' sockets (security.curtain=1)"
+        );
+        assert!(matches!(
+            nothing_resolved(":22".to_string(), &resolved.unseen),
+            ProcError::PortUnseen(port) if port == hidden
         ));
     }
 }

@@ -17,6 +17,47 @@ use std::path::{Path, PathBuf};
 #[cfg(not(target_os = "linux"))]
 use std::process::Command;
 
+/// Why proc found no holder of a port that may be in use
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unseen {
+    /// Something listens on the port (the system's table of every socket
+    /// lists it), and its holder is another user's process, whose sockets
+    /// proc can't trace to a process unless it runs as root
+    OtherUser,
+    /// This system hides other users' sockets from everyone but root, through
+    /// the setting named (`security.bsd.see_other_uids=0` on FreeBSD,
+    /// `security.curtain=1` on NetBSD), so proc can't tell whether anything
+    /// listens on the port
+    Hidden(&'static str),
+}
+
+/// A port whose holder proc can't see, and why
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnseenPort {
+    /// The port
+    pub port: u16,
+    /// Why proc can't see its holder
+    pub why: Unseen,
+}
+
+impl std::fmt::Display for UnseenPort {
+    /// What proc knows about the port, in one line
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.why {
+            Unseen::OtherUser => write!(
+                f,
+                "Port {} is in use, but proc can't see which process holds it: it belongs to another user",
+                self.port
+            ),
+            Unseen::Hidden(setting) => write!(
+                f,
+                "proc can't tell whether port {} is in use: this system hides other users' sockets ({setting})",
+                self.port
+            ),
+        }
+    }
+}
+
 /// Network protocol
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -185,19 +226,24 @@ impl PortInfo {
     }
 
     /// [`holders_of`](Self::holders_of), but a port with no holder proc can
-    /// see while something listens on it is an error,
-    /// [`ProcError::PortInUseUnseen`], not an empty list: an empty list says
-    /// nobody holds the port, and proc can't back that
+    /// see while one may be there is an error, [`ProcError::PortUnseen`], not
+    /// an empty list: an empty list says nobody holds the port, and proc can't
+    /// back that
     pub fn holders_seen(port: u16) -> Result<Vec<PortInfo>> {
-        visible_holders(port, Self::holders_of(port)?, Self::in_use_unseen)
+        visible_holders(port, Self::holders_of(port)?, Self::unseen)
     }
 
-    /// Whether something listens on `port` whose holder proc can't see, asked
-    /// once no holder was found: a listening socket proc found no holder for
-    /// is another user's process's (see [`listening_everyone`]). Windows and
-    /// the BSDs aren't checked, and there this is false
-    pub fn in_use_unseen(port: u16) -> bool {
-        listening_everyone().is_some_and(|all| all.contains(&port))
+    /// Why `port` may have a holder proc can't see, asked once no holder was
+    /// found; `None` when nothing does as far as proc can tell. A listening
+    /// socket proc found no holder for is another user's process's (Linux and
+    /// macOS, see [`listening_everyone`]); on a BSD that hides other users'
+    /// sockets (see [`others_hidden`]), proc can't tell. Windows lists every
+    /// socket with its process, so there it is always `None`
+    pub fn unseen(port: u16) -> Option<Unseen> {
+        if listening_everyone().is_some_and(|all| all.contains(&port)) {
+            return Some(Unseen::OtherUser);
+        }
+        others_hidden().map(Unseen::Hidden)
     }
 
     /// The ports something listens on that proc found no holder for, because
@@ -711,18 +757,82 @@ fn name_as_processes(ports: &mut [PortInfo], names: &std::collections::HashMap<u
     }
 }
 
-/// `holders`, the holders of `port` proc found, or
-/// [`ProcError::PortInUseUnseen`] when there are none and `unseen` says
-/// something listens on the port all the same
+/// `holders`, the holders of `port` proc found, or [`ProcError::PortUnseen`]
+/// when there are none and `unseen` says why one may be there all the same
 pub(crate) fn visible_holders(
     port: u16,
     holders: Vec<PortInfo>,
-    unseen: impl FnOnce(u16) -> bool,
+    unseen: impl FnOnce(u16) -> Option<Unseen>,
 ) -> Result<Vec<PortInfo>> {
-    if holders.is_empty() && unseen(port) {
-        return Err(ProcError::PortInUseUnseen(port));
+    if holders.is_empty() {
+        if let Some(why) = unseen(port) {
+            return Err(ProcError::PortUnseen(UnseenPort { port, why }));
+        }
     }
     Ok(holders)
+}
+
+/// The setting through which this system hides other users' sockets from
+/// proc, as `name=value`, when it is on and proc isn't root (root sees every
+/// socket). FreeBSD's `security.bsd.see_other_uids=0` and NetBSD's
+/// `security.curtain=1` hide them from sockstat itself, so proc lists only its
+/// own user's ports. `None` elsewhere
+pub(crate) fn others_hidden() -> Option<&'static str> {
+    #[cfg(target_os = "freebsd")]
+    return hidden_by(
+        sysctl_int(c"security.bsd.see_other_uids"),
+        0,
+        "security.bsd.see_other_uids=0",
+        is_root(),
+    );
+    #[cfg(target_os = "netbsd")]
+    return hidden_by(
+        sysctl_int(c"security.curtain"),
+        1,
+        "security.curtain=1",
+        is_root(),
+    );
+    #[cfg(not(any(target_os = "freebsd", target_os = "netbsd")))]
+    None
+}
+
+/// `setting` when the system's value of it (`value`, `None` if it couldn't be
+/// read) is `hides_at`, the value that hides other users' sockets, and proc
+/// isn't `root`
+#[cfg(any(target_os = "freebsd", target_os = "netbsd", test))]
+fn hidden_by(
+    value: Option<i32>,
+    hides_at: i32,
+    setting: &'static str,
+    root: bool,
+) -> Option<&'static str> {
+    (!root && value == Some(hides_at)).then_some(setting)
+}
+
+/// The BSDs: an integer kernel setting by name; `None` if there is no such setting
+#[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+fn sysctl_int(name: &std::ffi::CStr) -> Option<i32> {
+    let mut value: libc::c_int = 0;
+    let mut len = std::mem::size_of::<libc::c_int>();
+    // SAFETY: `name` is NUL-terminated, and sysctlbyname writes at most `len`
+    // bytes, the size of `value`, into it
+    let read = unsafe {
+        libc::sysctlbyname(
+            name.as_ptr(),
+            (&mut value as *mut libc::c_int).cast(),
+            &mut len,
+            std::ptr::null(),
+            0,
+        )
+    };
+    (read == 0 && len == std::mem::size_of::<libc::c_int>()).then_some(value)
+}
+
+/// The BSDs: whether proc runs as root
+#[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+fn is_root() -> bool {
+    // SAFETY: geteuid has no preconditions and cannot fail
+    unsafe { libc::geteuid() == 0 }
 }
 
 /// Every port with a listening socket on this machine, whoever holds it. Linux's
@@ -1406,16 +1516,70 @@ Active Connections
             address: Some("0.0.0.0".to_string()),
         };
         // a holder proc can see is returned whatever the tables say
-        let seen = visible_holders(80, vec![held], |_| true).unwrap();
+        let seen = visible_holders(80, vec![held], |_| Some(Unseen::OtherUser)).unwrap();
         assert_eq!(seen.len(), 1);
         // no holder, and nothing listens: nobody holds it
-        assert!(visible_holders(80, vec![], |_| false).unwrap().is_empty());
+        assert!(visible_holders(80, vec![], |_| None).unwrap().is_empty());
         // no holder, but something listens: another user's process holds it
-        let unseen = visible_holders(80, vec![], |port| port == 80);
+        let unseen = visible_holders(80, vec![], |port| (port == 80).then_some(Unseen::OtherUser));
+        let other = UnseenPort {
+            port: 80,
+            why: Unseen::OtherUser,
+        };
         assert!(
-            matches!(unseen, Err(ProcError::PortInUseUnseen(80))),
+            matches!(unseen, Err(ProcError::PortUnseen(found)) if found == other),
             "{unseen:?}"
         );
+        // no holder, on a system that hides other users' sockets: can't tell
+        let hidden = visible_holders(22, vec![], |_| Some(Unseen::Hidden("x=0")));
+        let cant_tell = UnseenPort {
+            port: 22,
+            why: Unseen::Hidden("x=0"),
+        };
+        assert!(
+            matches!(hidden, Err(ProcError::PortUnseen(found)) if found == cant_tell),
+            "{hidden:?}"
+        );
+    }
+
+    #[test]
+    fn a_setting_hides_other_users_sockets_only_at_its_value_and_not_from_root() {
+        let setting = "security.bsd.see_other_uids=0";
+        assert_eq!(hidden_by(Some(0), 0, setting, false), Some(setting));
+        // the default, which shows them
+        assert_eq!(hidden_by(Some(1), 0, setting, false), None);
+        // root sees every socket whatever the setting
+        assert_eq!(hidden_by(Some(0), 0, setting, true), None);
+        // a system without the setting
+        assert_eq!(hidden_by(None, 0, setting, false), None);
+        // NetBSD's curtain hides at 1
+        assert_eq!(
+            hidden_by(Some(1), 1, "security.curtain=1", false),
+            Some("security.curtain=1")
+        );
+    }
+
+    #[test]
+    fn an_unseen_port_says_what_proc_knows_about_it() {
+        let other = UnseenPort {
+            port: 80,
+            why: Unseen::OtherUser,
+        };
+        assert_eq!(
+            other.to_string(),
+            "Port 80 is in use, but proc can't see which process holds it: it belongs to another user"
+        );
+        let hidden = UnseenPort {
+            port: 22,
+            why: Unseen::Hidden("security.curtain=1"),
+        };
+        assert_eq!(
+            hidden.to_string(),
+            "proc can't tell whether port 22 is in use: this system hides other users' sockets (security.curtain=1)"
+        );
+        // only the BSDs have such a setting
+        #[cfg(not(any(target_os = "freebsd", target_os = "netbsd")))]
+        assert_eq!(others_hidden(), None);
     }
 
     #[test]
