@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.4.0] - 2026-11-10
+## [2.4.0] - 2026-11-11
 
 ### Added
 
@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The documented `docker run` finds the processes of users other than root.** It was `docker run --rm -it --pid=host --net=host yazeed/proc-cli`, and Docker drops `SYS_PTRACE`, without which root in the container cannot read the sockets and open files of another user's process: `proc on :4799` answered "No process listening on port 4799" while a dev server held it, and `proc for` found no holder. The command now adds `--cap-add SYS_PTRACE --security-opt apparmor=unconfined` (README, install page; Docker Hub shows the README): on a host with AppArmor, as Ubuntu and Debian are, Docker's default profile blocks the reads even with the capability. Measured on GitHub's Ubuntu runner, with the listener as the runner's own user: no flag and the capability alone found no holder, both flags found it. The image's CI check, which runs as that user, found it
 - **`proc for` leaves proc itself out.** Asked about the directory it runs in (`proc for .`), it listed its own process, since its working directory is that directory; every other lookup leaves proc out, and this one does too
 - **The apt repository gets the release's packages.** On the 2.3.0 release it kept listing 2.2.0. A Pages deploy is named after its commit, and Pages keeps the first deploy of a commit: the release commit's push to main deployed the site before the release had its `.deb` files, and the release's own deploy of the same commit, which had them, changed nothing. The push of a release commit (`chore: release v…`) no longer deploys; the release does, once its packages exist. 2.3.0's packages were added by the next push to main
+- **The release's FreeBSD port job installs its tools again.** It moved pkg to the `latest` branch by adding a second repository, `FreeBSD`, beside FreeBSD 15's own `FreeBSD-ports`, both with the same packages. Once a new pkg was out, `pkg install` tried to upgrade pkg from one and found it current in the other, again and again, for an hour, until the job was killed (2.4.0's dry run); the release would have stopped there too. The job now moves `FreeBSD-ports` itself to `latest`. Checked in the same VM: pkg upgrades itself once, and the port builds, installs and runs
+- **Two tests no longer fail on a busy machine.** `coloured_text_is_the_plain_text_plus_escape_codes` compared the table header of two runs of `proc list -v`, but a column is as wide as its widest cell, and for an instant the listener was in "disk wait", which widened STATUS by one (CI, Linux). It now runs the pair until both print the same cells, then the whole text must match, spacing and all. `uptime_is_reported_in_seconds` allowed 2 seconds counted from when proc ended, and under the suite's load one `proc info` took up to 7 seconds (2 failures in 5 runs on macOS); it now checks that proc read the uptime while it ran. Both still fail on the bug each guards against (checked by planting one). Nothing changed in proc
 
 ### Security
 
