@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Every workflow action runs on Node 24.** Six still ran on Node 20, which GitHub is retiring: `actions/download-artifact` 4.3.0 to 8.0.2, `actions/upload-artifact` 4.6.2 to 7.0.2, `actions/setup-node` 4.4.0 to 6.5.0, `docker/build-push-action` 5.4.0 to 7.4.0, `docker/login-action` 3.7.0 to 4.8.0 and `docker/setup-qemu-action` 3.7.0 to 4.4.0. `cachix/install-nix-action` moved to 31.11.4 and `vmactions/freebsd-vm` to 1.6.0 (FreeBSD 15.1's image now has a UFS root, not ZFS). `setup-node` stays on 6.x: 7.0 no longer exports the placeholder `NODE_AUTH_TOKEN` the npm job's trusted publishing was tested with, so Dependabot leaves 7.x alone until a release's dry run passes on it. CI and the release's dry run passed on the branch before it was merged. Nothing changed in proc
+
 ### Fixed
 
 - **Two more tests no longer fail on timing.** `coloured_text_is_the_plain_text_plus_escape_codes` runs `proc list` with and without colour and compares the text. 2.4.0 made it rerun the pair until both printed the same cells, but on Windows CI 10 pairs in a row differed, the last on the listener's uptime (10s against 11s). Digits are now compared as digits, not as values, so a ticking figure matches; a figure that changes its width, or a cell that changes its word, still reruns the pair, and the spacing must still match. It still fails when colour changes the spacing (checked by planting a space in coloured cells). `a_process_records_its_parents_name_and_its_children` compared a `sleep`'s parent name with its shell's name from a later read of the process table. On macOS `sh` is a launcher that turns into `bash`, and under load one read could see the shell as `sh` and the `sleep` that `bash` started (the unit tests failed 4 of 8 runs on a Mac, 0 of 8 after); it now compares the two from the same read. Nothing changed in proc
