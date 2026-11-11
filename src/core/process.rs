@@ -487,6 +487,70 @@ fn netbsd_cpu_time_ms(pid: u32) -> Option<u64> {
         .map(|info| u64::from(info.p_rtime_sec) * 1000 + u64::from(info.p_rtime_usec) / 1000)
 }
 
+/// The name to show for a process sysinfo named after its argv[0]: that name,
+/// unless argv[0] was rewritten into a title (it has a space, or starts with
+/// `-` as a login shell's does), when the kernel's own name for the process
+/// (`kernel_name`, the one `ps -o comm` shows) is the program's. Linux and
+/// macOS take the name from the kernel already
+#[cfg(any(target_os = "freebsd", target_os = "netbsd", test))]
+fn kernel_name_if_retitled(name: String, kernel_name: impl FnOnce() -> Option<String>) -> String {
+    if !(name.contains(char::is_whitespace) || name.starts_with('-')) {
+        return name;
+    }
+    kernel_name()
+        .filter(|kernel| !kernel.is_empty())
+        .unwrap_or(name)
+}
+
+/// The text of a NUL-terminated C string held in a fixed array, such as the
+/// kernel's command name in a process record
+#[cfg(any(target_os = "freebsd", target_os = "netbsd", all(test, unix)))]
+fn c_array_text(chars: &[libc::c_char]) -> String {
+    let bytes: Vec<u8> = chars
+        .iter()
+        .take_while(|&&c| c != 0)
+        .map(|&c| c as u8)
+        .collect();
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+/// The BSDs: the kernel's name for process `pid` (ki_comm on FreeBSD, p_comm
+/// on NetBSD); None if the kernel has no such process
+#[cfg(target_os = "freebsd")]
+fn bsd_comm(pid: u32) -> Option<String> {
+    let size = std::mem::size_of::<libc::kinfo_proc>();
+    let mib = [
+        libc::CTL_KERN,
+        libc::KERN_PROC,
+        libc::KERN_PROC_PID,
+        pid as libc::c_int,
+    ];
+    // SAFETY: kinfo_proc is plain integers, pointers and arrays, so all zeroes
+    // is a valid value
+    let mut info: libc::kinfo_proc = unsafe { std::mem::zeroed() };
+    let mut len = size;
+    // SAFETY: `mib` holds its 4 names, and sysctl writes at most `len` bytes,
+    // the size of `info`, into it
+    let read = unsafe {
+        libc::sysctl(
+            mib.as_ptr(),
+            mib.len() as libc::c_uint,
+            (&mut info as *mut libc::kinfo_proc).cast(),
+            &mut len,
+            std::ptr::null(),
+            0,
+        )
+    };
+    (read == 0 && len == size).then(|| c_array_text(&info.ki_comm))
+}
+
+/// The BSDs: the kernel's name for process `pid` (ki_comm on FreeBSD, p_comm
+/// on NetBSD); None if the kernel has no such process
+#[cfg(target_os = "netbsd")]
+fn bsd_comm(pid: u32) -> Option<String> {
+    netbsd_kinfo(pid).map(|info| c_array_text(&info.p_comm))
+}
+
 /// NetBSD: the kernel's kinfo_proc2 record of process `pid`; None if there is none
 #[cfg(target_os = "netbsd")]
 fn netbsd_kinfo(pid: u32) -> Option<libc::kinfo_proc2> {
@@ -913,11 +977,24 @@ pub struct RawText {
     pub cwd: Option<String>,
 }
 
+/// The name proc gives a process, as the OS gave it (not escaped): sysinfo's,
+/// except on the BSDs, where sysinfo takes it from argv[0] and a daemon can
+/// have rewritten that into a title (sshd's `sshd: /usr/sbin/sshd [listener] 0
+/// of 10-100 startups` read `sshd [listener] 0 of 10-100 startups`); there the
+/// kernel's name stands in (see [`kernel_name_if_retitled`]). Every view and
+/// every name match reads it here, so they agree
+fn os_name(proc: &sysinfo::Process) -> std::borrow::Cow<'_, str> {
+    let name = proc.name().to_string_lossy();
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+    let name = kernel_name_if_retitled(name.into_owned(), || bsd_comm(proc.pid().as_u32())).into();
+    name
+}
+
 /// How a name relates to a process sysinfo listed, under `mode`. Reads the
 /// name, executable and command line straight from sysinfo, so no record is
 /// built for the many processes that don't match.
 pub(crate) fn classify_sysinfo(pattern: &str, proc: &sysinfo::Process, mode: NameMatch) -> Hit {
-    let name = proc.name().to_string_lossy();
+    let name = os_name(proc);
     let exe = proc.exe().map(|exe| exe.to_string_lossy());
     let argv0 = proc.cmd().first().map(|arg| arg.to_string_lossy());
     // the joined command line is only needed to search inside it
@@ -1582,7 +1659,7 @@ impl Process {
                 .collect::<Vec<_>>()
                 .join(" ")
         });
-        let raw_name = proc.name().to_string_lossy();
+        let raw_name = os_name(proc);
         let raw_exe = proc.exe().map(|p| p.to_string_lossy());
         let raw_cwd = proc
             .cwd()
@@ -1688,7 +1765,7 @@ pub(crate) fn fill_family(processes: &mut [Process], sys: &System) {
         process.parent_name = process
             .parent_pid
             .and_then(|parent| sys.process(Pid::from_u32(parent)))
-            .map(|parent| escape_control(&parent.name().to_string_lossy()).into_owned());
+            .map(|parent| escape_control(&os_name(parent)).into_owned());
     }
 }
 
@@ -1731,6 +1808,38 @@ mod tests {
         let record = Process::find_by_pid(me).unwrap().unwrap();
         assert_eq!(names.get(&me), Some(&record.name));
         assert!(!names.contains_key(&4_000_000), "a PID nobody holds");
+    }
+
+    #[test]
+    fn a_name_rewritten_into_a_title_gives_way_to_the_kernels() {
+        let kernel = || Some("sshd".to_string());
+        // a title, and a login shell's `-bash`: the kernel's name
+        assert_eq!(
+            kernel_name_if_retitled("sshd [listener] 0 of 10-100 startups".into(), kernel),
+            "sshd"
+        );
+        let bash = || Some("bash".to_string());
+        assert_eq!(kernel_name_if_retitled("-bash".into(), bash), "bash");
+        // a plain name stays, and the kernel isn't asked
+        let unasked = || -> Option<String> { panic!("asked the kernel") };
+        assert_eq!(
+            kernel_name_if_retitled("python3".into(), unasked),
+            "python3"
+        );
+        // no kernel name to use: the name sysinfo gave
+        let none = || None;
+        assert_eq!(kernel_name_if_retitled("a b".into(), none), "a b");
+        let empty = || Some(String::new());
+        assert_eq!(kernel_name_if_retitled("a b".into(), empty), "a b");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_c_array_reads_up_to_its_nul() {
+        let chars: Vec<libc::c_char> = b"sshd\0junk".iter().map(|&b| b as libc::c_char).collect();
+        assert_eq!(c_array_text(&chars), "sshd");
+        let full: Vec<libc::c_char> = b"sshd".iter().map(|&b| b as libc::c_char).collect();
+        assert_eq!(c_array_text(&full), "sshd");
     }
 
     #[test]

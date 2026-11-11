@@ -1749,3 +1749,39 @@ fn another_users_process_shows_only_what_proc_could_read() {
         }
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn a_process_that_rewrote_its_argv0_is_named_after_its_program() {
+    // sshd and other daemons rewrite argv[0] into a title. On the BSDs sysinfo
+    // names a process after argv[0], and proc showed sshd as `sshd [listener]
+    // 0 of 10-100 startups`; the kernel's name, as on Linux and macOS, is the
+    // program's
+    use std::os::unix::process::CommandExt;
+    let mut child = std::process::Command::new(listener_path())
+        .arg0("listener: a rewritten title")
+        .stdout(Stdio::piped())
+        .stdin(Stdio::null())
+        .spawn()
+        .expect("spawn the listener example");
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let mut line = String::new();
+    let _ = stdout.read_line(&mut line);
+    let pid = child.id();
+    let (info, info_code) = run_json(&["info", &pid.to_string(), "--json"]);
+    // and a name finds it by that name, as `proc by sshd` finds sshd
+    let (by, by_code) = run_json(&["by", "listener", "--json"]);
+    let _ = child.kill();
+    let _ = child.wait();
+    assert!(line.starts_with("PORT "), "{line:?}");
+    assert_eq!(info_code, 0, "{info}");
+    assert_eq!(info["processes"][0]["name"], "listener", "{info}");
+    assert_eq!(by_code, 0, "{by}");
+    let found = by["processes"].as_array().unwrap();
+    assert!(
+        found
+            .iter()
+            .any(|p| p["pid"] == pid && p["name"] == "listener"),
+        "{by}"
+    );
+}
