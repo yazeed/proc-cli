@@ -48,7 +48,7 @@ The table has the same columns as [`proc list`](list): PID, NAME, USER, CPU%, ME
 
 ## When nothing matches
 
-A target that matches nothing gives an empty table, refreshed until you stop it; with `--json`, an empty document every refresh. Bound a script's stream yourself (`| head -n1`, or `timeout`).
+A PID nothing holds is `No process found matching '1234'`, exit 2, and so is a PID `--in` or `--by` rules out (`ruled_out`), as for every other command: a PID that's gone won't come back as the process you meant. A name or a port is different: it is watched until something matches, so you can start `proc watch node` before node and see it appear. Until then the table is empty, and with `--json` each refresh is an empty document, so bound a script's stream yourself (`| head -n1`, or `timeout`). A process that exits while you watch leaves an empty table. [Messages](messages) explains each message.
 
 ## JSON
 

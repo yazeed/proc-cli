@@ -365,6 +365,28 @@ fn watch_lists_the_shell_its_name_matches_and_marks_it() {
 }
 
 #[test]
+fn watch_cmd_beside_another_match_leaves_the_shell_out_of_every_frame() {
+    let dir = tempfile::tempdir().unwrap();
+    let name = unique_name();
+    let other = Namesake::start(&name, dir.path());
+    let ran = from_inside_a_shell(
+        &name,
+        dir.path(),
+        &["watch", &name, "--cmd", "--json", "|", "head", "-n1"],
+    );
+    let frame = json(ran.out.lines().next().unwrap());
+    assert_eq!(frame["left_out"][0]["pid"], ran.shell, "{frame}");
+    let listed: Vec<u64> = frame["processes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["pid"].as_u64().unwrap())
+        .collect();
+    assert!(listed.contains(&u64::from(other.0.id())), "{frame}");
+    assert!(!listed.contains(&u64::from(ran.shell)), "{frame}");
+}
+
+#[test]
 fn a_command_line_search_never_counts_procs_own_arguments() {
     let dir = tempfile::tempdir().unwrap();
     let name = unique_name();

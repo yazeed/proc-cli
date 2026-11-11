@@ -118,6 +118,7 @@ With `--json`, every command prints one JSON document with `action` (the command
 | `list`, `in`, `ports`, `stuck`, `orphans`, `tree` without a target | `0`, with a line such as `⚠ No processes found`: an empty answer is still an answer |
 | `on`, `by`, `for`, `info`, `why`, `tree <target>`, `wait`, and `kill`, `stop`, `freeze`, `thaw`, `unstick` with targets | `2` when every target matched nothing; with some found, the others are handled and `⚠ Not found:` names the rest |
 | `free` | `0`: a port nobody holds is already free |
+| `watch` | `2` for PIDs nothing holds; a name or port is watched until something matches |
 
 [Messages](/commands/messages) explains each warning and error proc prints, and what to do about it.
 

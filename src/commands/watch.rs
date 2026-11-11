@@ -18,8 +18,9 @@ use crate::core::process::{
 };
 use crate::core::target::{includes_note, left_out_warning};
 use crate::core::{
-    flatten_targets, parse_target, resolve_in_dir, sort_processes, Ancestor, Hit, NameMatch,
-    Process, SortKey, TargetType,
+    flatten_targets, guard_targets, nothing_resolved, parse_target, resolve_in_dir,
+    resolve_targets, sort_processes, Ancestor, Guards, Hit, NameMatch, Process, SortKey,
+    TargetType,
 };
 use crate::error::Result;
 use crate::ui::output::screen_of;
@@ -206,6 +207,7 @@ impl WatchCommand {
         // processes still run in is kept, so its leftovers can be watched.
         let in_dir_path = resolve_in_dir(&self.in_dir)?;
         crate::core::require_in_dir_live(&self.in_dir, &in_dir_path)?;
+        self.require_targets_found()?;
         // Every refresh uses the directory as resolved now, so a relative --in
         // never depends on the current directory still existing later
         let resolved = WatchCommand {
@@ -213,6 +215,37 @@ impl WatchCommand {
             ..self.clone()
         };
         resolved.run()
+    }
+
+    /// PID targets are a fixed question: when no PID is held, or `--in` and
+    /// `--by` rule out every process they name, that is the error the other
+    /// commands give (exit 2), not empty frames forever, since a PID nothing
+    /// holds won't come back as the process that was meant. A name or a port
+    /// is a live question, watched until something matches (`proc watch node`
+    /// before node starts). Only the first look decides: a process that exits
+    /// while it is watched leaves an empty frame. `--min-cpu` and `--min-mem`
+    /// never decide, since a process can cross them a frame later.
+    fn require_targets_found(&self) -> Result<()> {
+        let targets = flatten_targets(&self.target);
+        let pids_only = !targets.is_empty()
+            && targets
+                .iter()
+                .all(|t| matches!(parse_target(t), TargetType::Pid(_)));
+        if !pids_only {
+            return Ok(());
+        }
+        let mode = NameMatch::from_flag(self.cmd);
+        let resolved = resolve_targets(&targets, mode);
+        let mut processes = resolved.processes;
+        if processes.is_empty() {
+            return Err(nothing_resolved(
+                self.target.join(" "),
+                &resolved.unseen,
+                &resolved.left_out,
+            ));
+        }
+        let guards = Guards::new(&self.in_dir, &self.by_name, None);
+        guard_targets(&mut processes, &self.target, &guards, mode)
     }
 
     /// `execute` once `--in` is resolved: a JSON stream, the live view, or one snapshot

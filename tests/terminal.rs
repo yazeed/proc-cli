@@ -1259,8 +1259,10 @@ fn watch_draws_the_new_size_after_a_resize() {
 
 #[test]
 fn watch_says_when_nothing_matches() {
+    // a name nothing has yet is watched until one appears
+    let name = format!("pcnobody{}x", std::process::id());
     let run = run_in_pty(
-        &["watch", "99999999"],
+        &["watch", &name],
         &[
             Step::Expect("No matching processes found."),
             Step::Send("q"),
@@ -1268,6 +1270,20 @@ fn watch_says_when_nothing_matches() {
     );
     assert_ok(&run);
     assert!(run.output.contains("0 processes"), "{}", run.output);
+}
+
+#[test]
+fn watch_of_a_pid_nothing_holds_exits_before_taking_the_screen() {
+    let run = run_in_pty(
+        &["watch", "99999999"],
+        &[Step::Expect("No process found matching '99999999'")],
+    );
+    assert_eq!(run.exit_code, 2, "{}", run.output);
+    assert!(
+        !run.output.contains("No matching processes found."),
+        "{}",
+        run.output
+    );
 }
 
 #[test]

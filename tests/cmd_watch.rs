@@ -419,7 +419,9 @@ fn a_name_target_is_the_whole_name_and_cmd_widens_it_to_the_command_line() {
 
     // --by follows the same rule
     let pid = owned.pid().to_string();
-    assert_eq!(first_frame(&[&pid, "--by", part])["count"], 0);
+    let (code, ruled_out) = watch_error(&[&pid, "--by", part]);
+    assert_eq!(code, 2, "{ruled_out}");
+    assert_eq!(ruled_out["reason"], "ruled_out", "{ruled_out}");
     let frame = first_frame(&[&pid, "--by", part, "--cmd"]);
     assert_eq!(pids(&frame), [u64::from(owned.pid())], "{frame}");
 }
@@ -458,21 +460,83 @@ fn several_targets_can_be_separate_arguments() {
     assert_eq!(pids(&frame), want, "{frame}");
 }
 
-#[test]
-fn a_target_nothing_matches_is_an_empty_frame() {
-    let nobody = unique_name();
-    let frame = first_frame(&["99999999"]);
-    assert_eq!(frame["count"], 0, "{frame}");
-    assert_eq!(first_frame(&[&nobody])["count"], 0);
+/// `proc watch <args> --json` that ends by itself: its exit code and the one
+/// JSON document it printed
+fn watch_error(args: &[&str]) -> (i32, Value) {
+    let mut all = vec!["watch"];
+    all.extend_from_slice(args);
+    all.push("--json");
+    let output = proc_cmd().args(&all).timeout(LIMIT).output().unwrap();
+    let text = String::from_utf8(output.stdout).unwrap();
+    let doc: Value =
+        serde_json::from_str(text.trim()).unwrap_or_else(|e| panic!("{all:?}: {e}: {text}"));
+    (output.status.code().unwrap(), doc)
 }
 
 #[test]
-fn a_port_nobody_listens_on_is_an_empty_frame() {
+fn a_pid_nothing_holds_exits_not_found() {
+    // It used to stream empty frames forever, where every other command exits
+    // 2: a PID nothing holds won't come back as the process that was meant
+    for targets in [&["99999999"][..], &["99999999", "99999998"]] {
+        let (code, doc) = watch_error(targets);
+        assert_eq!(code, 2, "{targets:?}: {doc}");
+        assert_eq!(doc["reason"], "not_found", "{doc}");
+        assert_eq!(doc["action"], "watch", "{doc}");
+    }
+    // and without --json: the error on stderr, nothing on stdout
+    let output = proc_cmd()
+        .args(["watch", "99999999"])
+        .timeout(LIMIT)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty(), "{output:?}");
+    let err = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        err.contains("No process found matching '99999999'"),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_name_nothing_has_yet_is_watched_until_one_appears() {
+    // a name is a live question: `proc watch node` before node starts
+    let frame = first_frame(&[&unique_name()]);
+    assert_eq!(frame["count"], 0, "{frame}");
+}
+
+#[test]
+fn a_port_nobody_listens_on_yet_is_watched_until_one_does() {
     let mut owned = Owned::listener();
     let port = owned.port_arg();
     owned.stop();
     let frame = first_frame(&[&port]);
     assert_eq!(frame["count"], 0, "{frame}");
+}
+
+#[test]
+fn a_missing_target_beside_a_found_one_is_watched_without_it() {
+    let owned = Owned::listener();
+    let frame = first_frame(&[&owned.pid().to_string(), "99999999"]);
+    assert_eq!(pids(&frame), [u64::from(owned.pid())], "{frame}");
+}
+
+#[test]
+fn a_target_that_exits_while_watched_leaves_an_empty_frame() {
+    // Only the first look decides: watching something until it ends is the point
+    let mut owned = Owned::listener();
+    let pid = owned.pid().to_string();
+    let stream = Stream::start(&[&pid, "--interval", "0.1"]);
+    assert_eq!(stream.next()["count"], 1);
+    owned.stop();
+    let deadline = Instant::now() + LIMIT;
+    loop {
+        let frame = stream.next();
+        if frame["count"] == 0 {
+            break;
+        }
+        assert!(Instant::now() < deadline, "still listed: {frame}");
+    }
 }
 
 // ---- filters ----
@@ -485,9 +549,11 @@ fn in_keeps_the_processes_started_in_that_directory() {
     assert_eq!(pids(&frame), [u64::from(owned.pid())], "{frame}");
     assert!(!lists(&frame, other.pid()), "{frame}");
 
-    // With a target too, both must hold
-    let both = first_frame(&[&other.pid().to_string(), "-i", &owned.dir()]);
-    assert_eq!(both["count"], 0, "{both}");
+    // With a target too, both must hold: a target --in rules out is an error
+    let (code, both) = watch_error(&[&other.pid().to_string(), "-i", &owned.dir()]);
+    assert_eq!(code, 2, "{both}");
+    assert_eq!(both["reason"], "ruled_out", "{both}");
+    assert_eq!(both["ruled_out_by"], serde_json::json!(["--in"]), "{both}");
 }
 
 #[test]
@@ -497,8 +563,9 @@ fn by_keeps_the_processes_with_that_name() {
     let pids_target = format!("{},{}", owned.pid(), other.pid());
     let frame = first_frame(&["--sort", "pid", &pids_target, "--by", &owned.name]);
     assert_eq!(pids(&frame), [u64::from(owned.pid())], "{frame}");
-    let none = first_frame(&[&owned.pid().to_string(), "-b", &unique_name()]);
-    assert_eq!(none["count"], 0, "{none}");
+    let (code, none) = watch_error(&[&owned.pid().to_string(), "-b", &unique_name()]);
+    assert_eq!(code, 2, "{none}");
+    assert_eq!(none["ruled_out_by"], serde_json::json!(["--by"]), "{none}");
 }
 
 #[test]
@@ -635,14 +702,15 @@ fn a_zombie_has_no_directory_so_in_drops_it() {
         .into_owned();
 
     let seen = first_frame(&[&pid]);
-    let filtered = first_frame(&[&pid, "--in", &dir_arg]);
+    let (code, filtered) = watch_error(&[&pid, "--in", &dir_arg]);
     let _ = zombie.wait();
     assert_eq!(
         seen["processes"][0]["pid"].as_u64().unwrap().to_string(),
         pid
     );
     assert_eq!(seen["processes"][0]["status"], "zombie", "{seen}");
-    assert_eq!(filtered["count"], 0, "{filtered}");
+    assert_eq!(code, 2, "{filtered}");
+    assert_eq!(filtered["reason"], "ruled_out", "{filtered}");
 }
 
 // ---- the one-shot table, without a terminal and without --json ----

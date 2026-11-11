@@ -287,7 +287,7 @@ A name target that matches nothing is an error (exit 2, `not_found` or `command_
 | `tree --in <dir>` | `{"action": "tree", "success": true, "tree": []}` |
 | `unstick` (nothing stuck) | the usual document, with `processes: []` and every count `0` |
 | `free :port` (nobody holds it) | `{"action": "free", "success": true, "count": 0, "message": "All specified ports are already free", "not_found": [":port"]}`, with or without `--dry-run`: no `dry_run` and no `processes` |
-| `watch <name>` | `{"action": "watch", "success": true, "count": 0, "processes": []}` every refresh, forever: bound it yourself |
+| `watch <name>` or `watch :<port>` | `{"action": "watch", "success": true, "count": 0, "processes": []}` every refresh, until a match appears: bound it yourself. `watch <pid>` with no PID held, or with `--in`/`--by` ruling out every PID, is the exit 2 error instead |
 
 `message` is text for people: branch on `count`.
 
@@ -459,7 +459,7 @@ Without a target, `--in`, `--by` and the other filters narrow the view: an empty
 
 ### watch
 
-NDJSON, one object per refresh (`-n` seconds, default 2), until interrupted: `{"action": "watch", "success": true, "count": 2, "processes": [<Process>, ...]}`. Without a terminal and without `--json` it prints one snapshot. Bound a stream with `| head -n 5`; prefer `proc list` for one snapshot.
+NDJSON, one object per refresh (`-n` seconds, default 2), until interrupted: `{"action": "watch", "success": true, "count": 2, "processes": [<Process>, ...]}`. Without a terminal and without `--json` it prints one snapshot. Bound a stream with `| head -n 5`; prefer `proc list` for one snapshot. PID targets are checked once, before the first frame: when no PID is held, or `--in` and `--by` rule out every one, it exits 2 with the error document (`not_found`, or `ruled_out` with `ruled_out_by`) and streams nothing. A name or a port is watched until something matches, so `proc watch node` can start before node does. A process that exits while watched leaves empty frames.
 
 ## Names deprecated in 2.3.0
 
