@@ -111,6 +111,10 @@ A command that only reads listed a process proc runs under. It is in the list; t
 
 `ports` lists only the listeners it can trace to a process. These ports are taken by other users' processes; `sudo proc ports` lists them in full.
 
+#### `Try: sudo proc info 1 to see the rest`
+
+Under a card (`on`, `info`, `why`, `for`): the system showed proc this process only in part. On macOS another user's process, root's `launchd` among them, gives a normal user its name, path and children and little else. `sudo` reads the rest.
+
 #### `⚠ No processes found`
 
 A search found nothing: `list`, or `in` (`⚠ No processes found in /path`). That is an answer, so the exit code is 0, as it is for `✓ No stuck processes found` and `✓ No orphaned processes found`.

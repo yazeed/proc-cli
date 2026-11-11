@@ -60,7 +60,7 @@ $ proc on :53581
 
 ## Details
 
-- **A line is left out when the system doesn't give the value**, never printed empty. Another user's process on macOS can leave only `Process:`, `Path:` and `Children:`: macOS gives a normal user none of the rest, and proc can't see its sockets, so the card has no `Listening:`. `sudo` reads them all.
+- **A line is left out when the system doesn't give the value**, never printed empty. Another user's process on macOS can leave only `Process:`, `Path:` and `Children:`: macOS gives a normal user none of the rest, and proc can't see its sockets, so the card has no `Listening:`. The card then ends with `Try: sudo proc info <pid> to see the rest`.
 - **A port can have several holders.** `127.0.0.1:3000` and `[::1]:3000` are different sockets, so two processes can hold one port number. `proc on :3000` shows a card for each.
 - **Connections** are the TCP connections to a port the process listens on, counted by state, with the process at the other end when it is on this machine. The card lists 5 and says how many more; `-v` lists all. On FreeBSD and NetBSD proc reads no connections, so the card has no `Connections:` line there.
 - **Comma-separated targets** (`:3000,:8080`) still work but are deprecated; write separate arguments.

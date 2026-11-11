@@ -885,9 +885,12 @@ mod tests {
 
     #[test]
     fn a_port_with_several_holders_prints_a_card_each_with_a_blank_line_between() {
+        // a process the system let proc read, so no card ends with the sudo hint
+        let mut second = without_cwd();
+        second.cpu_time_secs = Some(0);
         let holders = [
             (held(bound(1, "127.0.0.1"), None), Some(detailed())),
-            (held(bound(2, "::1"), None), Some(without_cwd())),
+            (held(bound(2, "::1"), None), Some(second)),
         ];
         let out = printed(|w| command(None).print_process_on_port(w, 4000, &holders, &opts()));
         assert_eq!(out.matches("  Process:").count(), 2, "{out}");

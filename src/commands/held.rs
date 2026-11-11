@@ -114,6 +114,12 @@ pub(crate) fn write_process_card(
             .collect()
     });
     write_card(out, process, ports.as_deref(), opts)?;
+    // A process the system showed only in part (another user's, on macOS,
+    // which gives a normal user its name, path and children and little else):
+    // say how to see the rest, as `ports` does for the ports it can't see
+    if cfg!(unix) && !process.read_by_os() {
+        writeln!(out, "  Try: sudo proc info {} to see the rest", process.pid)?;
+    }
     writeln!(out)
 }
 
@@ -484,6 +490,30 @@ mod tests {
             child_count: None,
             runs_proc: false,
         }
+    }
+
+    #[test]
+    fn a_card_the_system_shows_only_in_part_says_how_to_see_the_rest() {
+        let opts = CardOptions {
+            verbose: false,
+            width: 100,
+            now_secs: 0,
+        };
+        let card = |process: &Process| {
+            let mut out = Vec::new();
+            write_process_card(&mut out, process, None, &opts).unwrap();
+            String::from_utf8(out).unwrap()
+        };
+        // macOS gave proc nothing for it: no CPU time, no memory
+        let unread = without_cwd();
+        let text = card(&unread);
+        let hint = "  Try: sudo proc info 1 to see the rest";
+        assert_eq!(text.contains(hint), cfg!(target_os = "macos"), "{text}");
+        // a process the system let proc read gets no hint
+        let mut read = without_cwd();
+        read.cpu_time_secs = Some(0);
+        read.memory_mb = 1.0;
+        assert!(!card(&read).contains("Try:"), "{}", card(&read));
     }
 
     #[test]

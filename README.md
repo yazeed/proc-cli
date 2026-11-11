@@ -196,7 +196,7 @@ A process named twice is handled once, except by the read-only `on` and `why`, w
 
 **`--in`.** `--in` (short `-i`) takes the next word as its directory unless that word starts with `-`; a bare `--in` is the current directory. Put it after the targets (`proc kill 1234 5678 --in .`) or write `--in=DIR`.
 
-**The process card.** `on` (by port, PID or name), `info`, `for` with one hit and `why` print the same card for a process: `Process:`, `Command:`, `Directory:`, `Path:`, `User:`, `Parent:`, `Status:`, `Resources:`, `Started:`, `Children:`, then `Listening:` (every port, with its exposure) and `Connections:` for a process that listens. `proc on 1234` is the card for a PID, `proc on :3000` the card for each holder of a port.
+**The process card.** `on` (by port, PID or name), `info`, `for` with one hit and `why` print the same card for a process: `Process:`, `Command:`, `Directory:`, `Path:`, `User:`, `Parent:`, `Status:`, `Resources:`, `Started:`, `Children:`, then `Listening:` (every port, with its exposure) and `Connections:` for a process that listens. `proc on 1234` is the card for a PID, `proc on :3000` the card for each holder of a port. A process the system shows only in part (another user's, on macOS) gets a last line, `Try: sudo proc info <pid> to see the rest`.
 
 **Tables.** `list`, `by`, `in`, `for` (several hits), `orphans`, `stuck`, `watch` and the list in front of every `--dry-run` or question print one table: `PID NAME USER CPU% MEM UPTIME COMMAND`. A value proc cannot read is `-`. COMMAND takes the width the other columns leave and ends with `…` where it is cut; the list you approve prints it whole. With `--in`, the directory is the second column. `--verbose` keeps the table, adds `PPID STATUS DIR` and cuts nothing.
 

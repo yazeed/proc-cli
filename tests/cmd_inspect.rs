@@ -834,6 +834,25 @@ fn why_json_with_every_target_missing_is_the_first_error() {
 
 // --- info --------------------------------------------------------------------
 
+/// On macOS a normal user sees root's launchd only in part: the card says how
+/// to see the rest, and the JSON, which has no hints, is unchanged
+#[cfg(target_os = "macos")]
+#[test]
+fn a_card_macos_shows_only_in_part_says_to_use_sudo() {
+    let root = unsafe { libc::geteuid() } == 0;
+    for command in ["info", "on", "why"] {
+        let (out, _, code) = run_text(&[command, "1"]);
+        assert_eq!(code, 0, "{command}: {out}");
+        assert_eq!(
+            out.contains("Try: sudo proc info 1 to see the rest"),
+            !root,
+            "{command}: {out}"
+        );
+    }
+    let (json, _) = run_json(&["info", "1", "--json"]);
+    assert!(!json.to_string().contains("sudo"), "{json}");
+}
+
 /// The value of the card line labelled `label`
 fn card_field(out: &str, label: &str) -> String {
     let prefix = format!("  {label:<13}");

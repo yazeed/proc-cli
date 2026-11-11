@@ -51,7 +51,7 @@ $ proc info 39158
 
 ## Details
 
-- **A line is left out when the system doesn't give the value**, never printed empty. For another user's process (`proc info 1` as a user on macOS) the card can be as short as `Process:`, `Path:` and `Children:`, because macOS gives a normal user no command line, directory, user, parent, status, resources or start time for it, and proc can't see that process's sockets. Run it with `sudo` to read them all.
+- **A line is left out when the system doesn't give the value**, never printed empty. For another user's process (`proc info 1` as a user on macOS) the card can be as short as `Process:`, `Path:` and `Children:`, because macOS gives a normal user no command line, directory, user, parent, status, resources or start time for it, and proc can't see that process's sockets. The card then ends with `Try: sudo proc info 1 to see the rest`.
 - **No port table** (for example macOS without `lsof` on the PATH) leaves out `Listening:` and `Connections:`; the rest is as usual.
 - **Several targets** are separate arguments. Comma-separated lists (`:3000,:8080`) still work but are deprecated.
 
