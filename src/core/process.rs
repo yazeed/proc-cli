@@ -76,13 +76,24 @@ impl Drop for QuietStderr {
     }
 }
 
+/// `pids` for a refresh of exactly those processes, each once: sysinfo takes
+/// the second refresh of one PID in a list as the process having ended and
+/// drops it, and a port's holders list a process once per socket (IPv4 and
+/// IPv6), so a holder could go missing
+fn each_once(pids: &[u32]) -> Vec<Pid> {
+    let mut once = pids.to_vec();
+    once.sort_unstable();
+    once.dedup();
+    once.into_iter().map(Pid::from_u32).collect()
+}
+
 /// Each running process's name, by PID, as [`Process`] records it (one refresh
 /// of exactly those PIDs); a PID that is gone is missing from the map. A port
 /// row takes its name from here, so `ports`, `on` and `by` all show one name
 /// per process; the socket table's own name (lsof's, the kernel's, sockstat's
 /// cut-short one) is only for a process that has already gone
 pub(crate) fn names_by_pid(pids: &[u32]) -> std::collections::HashMap<u32, String> {
-    let wanted: Vec<Pid> = pids.iter().map(|&pid| Pid::from_u32(pid)).collect();
+    let wanted = each_once(pids);
     let mut sys = System::new();
     sysinfo_locked(|| sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&wanted), true));
     sys.processes()
@@ -1063,12 +1074,7 @@ impl Process {
     /// number of children are not filled: they need the whole table (see
     /// [`Process::find_all`]).
     pub fn find_by_pids(pids: &[u32]) -> Vec<Process> {
-        // a PID asked for twice would be refreshed twice, and sysinfo takes the
-        // second refresh of one as the process having ended
-        let mut once = pids.to_vec();
-        once.sort_unstable();
-        once.dedup();
-        let wanted: Vec<Pid> = once.into_iter().map(Pid::from_u32).collect();
+        let wanted = each_once(pids);
         let mut sys = System::new();
         sysinfo_locked(|| {
             sys.refresh_processes_specifics(
@@ -1725,6 +1731,17 @@ mod tests {
         let record = Process::find_by_pid(me).unwrap().unwrap();
         assert_eq!(names.get(&me), Some(&record.name));
         assert!(!names.contains_key(&4_000_000), "a PID nobody holds");
+    }
+
+    #[test]
+    fn names_by_pid_names_a_process_asked_for_twice() {
+        // a process listening on IPv4 and IPv6 is one PID per socket, and
+        // sysinfo took the second refresh of one PID as the process having
+        // ended: Windows' `proc ports` named such holders "unknown"
+        let me = std::process::id();
+        let names = names_by_pid(&[me, me]);
+        let record = Process::find_by_pid(me).unwrap().unwrap();
+        assert_eq!(names.get(&me), Some(&record.name));
     }
 
     #[test]

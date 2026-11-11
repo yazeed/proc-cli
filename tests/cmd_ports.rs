@@ -158,6 +158,9 @@ struct Owned {
     /// Keeps the directory alive; `dir` is its path as processes report it
     _tmp: tempfile::TempDir,
     dir: PathBuf,
+    /// The listener's stdout, kept open while it runs: a listener started with
+    /// `--also` prints after `PORT`, and a closed pipe would end it
+    _stdout: BufReader<std::process::ChildStdout>,
 }
 
 impl Owned {
@@ -194,6 +197,7 @@ impl Owned {
                 name: name.to_string(),
                 _tmp: tmp,
                 dir,
+                _stdout: stdout,
             },
             None => {
                 let _ = child.kill();
@@ -1297,4 +1301,20 @@ fn ports_limit_cuts_the_list() {
     let json = ports_by(&filter, &["--limit", "1"]);
     assert_eq!(json["count"], 1, "{json}");
     assert_eq!(json["ports"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn ports_names_a_process_that_holds_several_ports() {
+    // one PID on two rows of the socket table: the name lookup asked for it
+    // twice, and sysinfo dropped a PID refreshed twice, so on Windows, where
+    // netstat gives no name of its own, both rows read "unknown"
+    let pid = std::process::id();
+    let owned = Owned::named_with_args(&format!("pcp{pid}tw"), &["--also", "1"]);
+    let json = ports_by(&owned.name, &[]);
+    let rows = json["ports"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "{json}");
+    for row in rows {
+        assert_eq!(row["pid"], owned.pid(), "{json}");
+        assert_eq!(row["process_name"], owned.shown().as_str(), "{json}");
+    }
 }
