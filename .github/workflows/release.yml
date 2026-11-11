@@ -136,7 +136,7 @@ jobs:
         run: Compress-Archive -Path ${{ matrix.artifact }} -DestinationPath "${{ matrix.artifact }}.zip"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.artifact }}
           path: |
@@ -194,7 +194,7 @@ jobs:
           test "$(find packages -type f | wc -l)" -eq 4
 
       - name: Upload packages
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-packages
           path: packages/*
@@ -258,7 +258,7 @@ jobs:
         run: pipx run twine check dist/*
 
       - name: Upload the wheels
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pypi-wheels
           path: dist/*
@@ -366,7 +366,7 @@ jobs:
         run: tar -czvf proc-${{ matrix.os }}-x86_64.tar.gz proc-${{ matrix.os }}-x86_64
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: proc-${{ matrix.os }}-x86_64
           path: |
@@ -872,7 +872,7 @@ jobs:
           git diff -- pkg/nixpkgs/package.nix
 
       - name: Upload package.nix (for main)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: nixpkgs-package
           path: pkg/nixpkgs/package.nix
@@ -932,7 +932,7 @@ jobs:
             sh pkg/freebsd/update-port.sh "$VERSION" freebsd-out
 
       - name: Upload the patch and the port's files (for main)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: freebsd-port
           path: |
@@ -1014,7 +1014,7 @@ jobs:
           jq -r '.synopsis, .environment' gnats-fields.json
 
       - name: Upload the diff, the report's text and the package's files (for main)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pkgsrc-update
           path: |

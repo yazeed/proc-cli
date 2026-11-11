@@ -142,7 +142,7 @@ jobs:
         run: Copy-Item "target/${{ matrix.target }}/release/proc.exe" -Destination "${{ matrix.artifact }}"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
@@ -200,7 +200,7 @@ jobs:
             sh scripts/bsd-build.sh proc-netbsd-x86_64
 
       - name: Upload the binary
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: proc-${{ matrix.os }}-x86_64
           path: proc-${{ matrix.os }}-x86_64
@@ -247,7 +247,7 @@ jobs:
           test "$(find packages -type f | wc -l)" -eq 4
 
       - name: Upload the packages
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-packages
           path: packages/*
@@ -424,7 +424,7 @@ jobs:
           cargo llvm-cov report --lcov --output-path lcov-${{ matrix.os }}.info --failure-mode all
 
       - name: Upload lcov
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lcov-${{ matrix.os }}
           path: lcov-${{ matrix.os }}.info
