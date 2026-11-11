@@ -36,6 +36,8 @@ scoop install proc
 
 Each release updates the bucket. Update with `scoop update proc`.
 
+npm, pip and cargo work on Windows too: see [any system](#any-system-with-a-language-package-manager) below.
+
 ## Linux
 
 ### Debian, Ubuntu and derivatives
@@ -88,7 +90,7 @@ sudo dnf install ./proc-cli-X.Y.Z-1.x86_64.rpm
 
 ### Arch Linux
 
-**AUR**, packaged by Rafael Dominiquini, not by this project. `proc-cli-bin` installs the release binary, `proc-cli` builds from source:
+**AUR**, packaged by a community maintainer, not by this project. `proc-cli-bin` installs the release binary, `proc-cli` builds from source:
 
 ```bash
 yay -S proc-cli-bin
@@ -147,7 +149,7 @@ cargo binstall proc-cli
 
 Run the same command again to update.
 
-**PyPI**, new in 2.3.0. The wheel holds the release binary, so no Python code runs. Wheels exist for macOS (Apple silicon and Intel), Linux (x86_64 and ARM64, glibc and musl) and Windows (x86_64):
+**PyPI.** The wheel holds the release binary, so no Python code runs. Wheels exist for macOS (Apple silicon and Intel), Linux (x86_64 and ARM64, glibc and musl) and Windows (x86_64):
 
 ```bash
 pip install proc-cli

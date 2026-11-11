@@ -16,7 +16,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps # The docs.rs pages build with no
 ```
 
 - [ ] CI is green on main, including "Coverage gate" (100% lines across Linux, macOS and Windows; see CONTRIBUTING.md "Coverage"), both "Nix" jobs (the flake builds proc and runs its tests in Nix's sandbox, macOS's included, and the nixpkgs package builds), both "Test (freebsd)"/"Test (netbsd)" jobs (the whole suite in a BSD VM, then the release binary built and run there) and the "Package .deb and .rpm" and "Install the packages" jobs (the four packages install, run and remove in Debian, Ubuntu and Fedora). A tag release does not wait for it. Locally: `scripts/coverage-local.sh`
-- [ ] The release workflow's dry run is green: `gh workflow run release.yml --ref main`, then `gh run watch`. It runs every build and package job (the BSD builds and the `.deb`/`.rpm` files run only in this workflow's form here) and assembles the release files with `checksums.txt`, and publishes nothing: the GitHub Release step and the crates.io, npm, PyPI, Homebrew and Scoop jobs run only for a tag. The PyPI wheels are built and installed on every OS in the dry run (`package-pypi`, `test-pypi`); only `publish-pypi` waits for a tag. Its version checks print instead of failing, since a branch build is a `-dev` build; the tag checks them
+- [ ] The release workflow's dry run is green: `gh workflow run release.yml --ref main`, then `gh run watch`. It runs every build and package job (`build-bsd` and `package-linux` among them, the release's own forms of CI's BSD and `.deb`/`.rpm` jobs) and assembles the release files with `checksums.txt`, and publishes nothing: the GitHub Release step and the crates.io, npm, PyPI, Homebrew, Scoop, apt, winget and COPR jobs run only for a tag, and the nixpkgs, FreeBSD and pkgsrc jobs run for the version in Cargo.toml and push or file nothing (step 5). The PyPI wheels are built and installed on every OS in the dry run (`package-pypi`, `test-pypi`); only `publish-pypi` waits for a tag. Its version checks print instead of failing, since a branch build is a `-dev` build; the tag checks them
 - [ ] The dry run's "Check credentials" job passed and printed no warning. It tries every secret under "Required Secrets" and reads when each expires (GitHub reports a token's expiry, so no date is kept anywhere): one that is invalid or expired fails the job, and the tag's release then publishes nothing; one that expires within 30 days is a warning. Renew it now, set it with `gh secret set <NAME>`, and run the dry run again
 - [ ] The credentials outside CI still work. `check-credentials` can't test them, since they never leave the maintainer's Mac, so the release session runs this there:
 
@@ -101,7 +101,7 @@ Update version in ALL of these files:
 - [ ] `docs/_data/release.yml` — `version` field (the website's header, footer, install page and structured data read it)
 - [ ] `Cargo.lock` — rebuild after the bump so its `proc-cli` entry changes, and commit it (`flake.nix` reads its version from `Cargo.toml` and its dependencies from `Cargo.lock`, so it needs no bump of its own)
 
-`pkg/aur/PKGBUILD` is not bumped. Both AUR packages are community packages maintained by Rafael Dominiquini: `proc-cli` (built from source) and `proc-cli-bin` (the release binaries); he moved them from `proc` and `proc-bin`, which are orphaned at 2.1.1, with 2.2.0. The project has no AUR account yet, so the README points Arch users to his packages, and the PKGBUILD stays in the repo for the day the project can co-maintain them (see "After the tag: AUR" below).
+`pkg/aur/PKGBUILD` is not bumped. Both AUR packages are community packages, kept by their own maintainer: `proc-cli` (built from source) and `proc-cli-bin` (the release binaries); they moved from `proc` and `proc-bin`, which are orphaned at 2.1.1, with 2.2.0. The project has no AUR account yet, so the README points Arch users to those packages, and the PKGBUILD stays in the repo for the day the project can co-maintain them (see "After the tag: AUR" below). `pkg/copr/proc-cli.spec` and `pkg/winget/*` are not bumped either: COPR's `sources.sh` sets the spec's version at build time, and winget-releaser writes the manifests into the winget-pkgs pull request.
 
 ## 4. Documentation
 
@@ -152,7 +152,7 @@ The tag must be `v` + Cargo.toml's version: both the release and Docker workflow
 
 ### After the tag: AUR
 
-Nothing to publish: the AUR's `proc-cli` and `proc-cli-bin` are Rafael Dominiquini's. Step 7 checks that they caught up with the release. Once the project has an AUR account and co-maintains them, this step goes back to updating the AUR repositories with a PKGBUILD whose `sha256sums` is the tag tarball's checksum (`curl -fsSL https://github.com/yazeed/proc-cli/archive/vX.Y.Z.tar.gz | shasum -a 256`) and a regenerated `.SRCINFO` (`makepkg --printsrcinfo > .SRCINFO` on Arch).
+Nothing to publish: the AUR's `proc-cli` and `proc-cli-bin` belong to their community maintainer. Step 7 checks that they caught up with the release. Once the project has an AUR account and co-maintains them, this step goes back to updating the AUR repositories with a PKGBUILD whose `sha256sums` is the tag tarball's checksum (`curl -fsSL https://github.com/yazeed/proc-cli/archive/vX.Y.Z.tar.gz | shasum -a 256`) and a regenerated `.SRCINFO` (`makepkg --printsrcinfo > .SRCINFO` on Arch).
 
 ### After the tag: nixpkgs
 
@@ -179,7 +179,7 @@ Once the package is merged, `update-fork.sh` does nothing, and nixpkgs' update b
 pkg/ppa/release.sh X.Y.Z      # builds the source packages in Docker, signs and uploads them
 ```
 
-It builds in an `ubuntu:26.04` container (`pkg/ppa/build-source.sh`), signs with the maintainer's key (gpg asks for its passphrase unless the agent or the macOS keychain has it) and uploads by FTP (`pkg/ppa/upload.sh`). The first release's upload carries the two tarballs; the script then waits for Launchpad to publish them, usually within the hour, and sends the other three. It ends once Launchpad has accepted all four, and fails, naming the version, if one is not accepted within an hour (Launchpad emails why). Launchpad's FTP times out often: uploads retry, and running the command again sends only what has not gone. It stops before building if Docker is not running or the tag has no GitHub release, and a build that stops halfway is never reused. Launchpad can take hours to process an upload: 2.3.0's first one, sent at 11:20 UTC, was accepted at 14:35, with no email and no "Pending" source in the meantime. Don't send it again while you wait: the script's wait covers it, and a second copy of the same version only comes back "Rejected: ... is already accepted in ubuntu/<series> and you cannot upload the same version", which changes nothing. A packaging fix to a released version is `pkg/ppa/release.sh X.Y.Z 2`. A new Ubuntu release joins the list in `build-source.sh`; check its Rust is at least proc's `rust-version`. Step 7 checks the builds.
+It builds in an `ubuntu:26.04` container (`pkg/ppa/build-source.sh`), signs with the maintainer's key (gpg asks for its passphrase unless the agent or the macOS keychain has it) and uploads by FTP (`pkg/ppa/upload.sh`). The first release's upload carries the two tarballs; the script then waits for Launchpad to publish them, usually within the hour and for 3 hours at most (it fails with "still not sent after 3 hours"), and sends the other three. It ends once Launchpad has accepted all four, and fails, naming the version, if one is not accepted within an hour after that (Launchpad emails why). Launchpad's FTP times out often: uploads retry, and running the command again sends only what has not gone. It stops before building if Docker is not running or the tag has no GitHub release, and a build that stops halfway is never reused. Launchpad can take hours to process an upload: 2.3.0's first one, sent at 11:20 UTC, was accepted at 14:35, with no email and no "Pending" source in the meantime. Don't send it again while you wait: the script's wait covers it, and a second copy of the same version only comes back "Rejected: ... is already accepted in ubuntu/<series> and you cannot upload the same version", which changes nothing. A packaging fix to a released version is `pkg/ppa/release.sh X.Y.Z 2`. A new Ubuntu release joins the list in `build-source.sh`; check its Rust is at least proc's `rust-version`. Step 7 checks the builds.
 
 ### After the tag: FreeBSD port
 
@@ -206,6 +206,7 @@ The other way, re-adding the version to pkgsrc-wip for a committer to take, stay
 ## 6. Verify CI
 
 After tag push, monitor GitHub Actions:
+- [ ] "Check credentials" passed: it gates the GitHub Release, so nothing publishes without it
 - [ ] Build succeeds for all platforms, including each build's "Check the binary reports the tag's version" step
 - [ ] Both "Build freebsd/netbsd" jobs pass: each BSD binary is built in its own OS and prints the tag's version there (the GitHub Release needs them)
 - [ ] Docker's "Check the tag matches Cargo.toml" step passes
@@ -248,7 +249,7 @@ docker run --rm -e NIX_CONFIG="experimental-features = nix-command flakes" nixos
 # nixpkgs: the open pull request (or, once merged, the update bot's) builds the new version and passes;
 # after it reaches nixos-unstable, `nix run nixpkgs#proc-cli -- --version` prints proc X.Y.Z
 
-# AUR (Rafael Dominiquini's packages): both should reach the new version within a few days
+# AUR (the community maintainer's packages): both should reach the new version within a few days
 curl -s 'https://aur.archlinux.org/rpc/v5/info?arg[]=proc-cli&arg[]=proc-cli-bin' | jq -r '.results[] | "\(.Name) \(.Version)"'
 
 # FreeBSD port: the bug (300492 until the port is in, then the update bug) has the new patch;
@@ -394,7 +395,7 @@ Grouped by system, as docs/install.md and the README list them. "Updates" says h
 | Debian, Ubuntu | release file | proc-cli | `sudo apt install ./proc-cli_X.Y.Z_amd64.deb` | download each release |
 | Fedora, RHEL and rebuilds, Amazon Linux | COPR | proc-cli | `sudo dnf copr enable yazeed/proc-cli && sudo dnf install proc-cli` | `dnf upgrade`; `update-copr` builds every release |
 | Fedora, RHEL | release file | proc-cli | `sudo dnf install ./proc-cli-X.Y.Z-1.x86_64.rpm` | download each release |
-| Arch | AUR (community, Rafael Dominiquini) | proc-cli, proc-cli-bin | `yay -S proc-cli` (from source), `yay -S proc-cli-bin` (release binary) | when the maintainer publishes it |
+| Arch | AUR (community-maintained) | proc-cli, proc-cli-bin | `yay -S proc-cli` (from source), `yay -S proc-cli-bin` (release binary) | when the maintainer publishes it |
 | FreeBSD | ports (not live yet) | proc-cli | `pkg install proc-cli` | step 5; waits for a committer: bug 300492. Not in install.md or the README until it is in the tree; install.md says it is submitted |
 | FreeBSD, NetBSD | release binaries | proc-freebsd-x86_64, proc-netbsd-x86_64 | `install.sh`, `cargo binstall proc-cli`, `npm install -g proc-cli` | run again |
 | NetBSD | pkgsrc | sysutils/proc-cli | from a pkgsrc tree; `pkgin` once pkgsrc's binary packages include it | the maintainer sends each release as a gnats diff (step 5) |

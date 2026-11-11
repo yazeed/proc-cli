@@ -25,7 +25,7 @@ Everything here is for lookup. The safety model, the playbooks and the exit-code
 | 0 | Success. A dry run that found its targets is also 0. |
 | 1 | The command ran but did not fully succeed: a process failed (listed in `failed`), a port stayed busy, `wait` timed out. Also unexpected system errors. |
 | 2 | Not found: no target matched. |
-| 3 | Permission denied. Raised only when proc itself gets an I/O permission error. It is not what a refused signal produces (see below). |
+| 3 | Permission denied: proc itself got an I/O permission error, or a `:port` target has a holder proc can't see (see `permission_denied` below). It is not what a refused signal produces (see below). |
 | 4 | Invalid input (unknown flag, missing argument, bad signal name, missing directory or file), an action this OS does not support (`freeze`, `thaw`, `orphans` and `stop --signal` on Windows), or `needs_confirmation`. |
 
 A signal the OS refuses, such as `kill` on another user's process, is not exit 3. It is a `failed` entry for that process with `error` text such as `Signal failed: Failed to kill process 123` (SIGKILL) or `Signal failed: EPERM: Operation not permitted` (other signals), and the exit code is 1. If the process is gone or its PID was reused, the entry reads `No process found matching '123'`. Treat any unexpected `failed` entry as a process that is not yours: stop and ask the user.

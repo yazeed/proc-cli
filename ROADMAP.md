@@ -12,13 +12,13 @@ Each candidate lists what it would look like, how it fares against the feature t
 
 The same release removes `proc_cli::ui::process_table_budget` and `ProcessTableBudget`, deprecated since 2.3.0 (the process table no longer uses them).
 
-It also marks `proc_cli::core::Process` `#[non_exhaustive]`, so a later field never breaks code that builds a `Process` with a struct literal again, and the enums `ProcessStatus`, `StatusFilter` and `ProcError` too, so a new status never breaks an exhaustive `match` (2.3.0 adds `idle`, `starting` and `disk_wait`). 2.3.0 adds four public fields to it (`parent_name`, `cpu_time_secs`, `open_files`, `child_count`), which is such a break in a minor release; the maintainer accepted it there because no crate depends on proc-cli (crates.io lists none) and the CHANGELOG says so.
+It also marks `proc_cli::core::Process` `#[non_exhaustive]`, so a later field never breaks code that builds a `Process` with a struct literal again, and the enums `ProcessStatus`, `StatusFilter` and `ProcError` too, so a new status never breaks an exhaustive `match` (2.3.0 adds `idle`, `starting` and `disk_wait`). 2.3.0 adds four public fields to it (`parent_name`, `cpu_time_secs`, `open_files`, `child_count`), which is such a break in a minor release; the maintainer accepted it there because no crate depends on proc-cli (crates.io lists none) and the CHANGELOG says so. 2.4.0 does the same, with one field (`runs_proc`) and two `ProcError` variants (`PortUnseen`, `AncestorsOnly`), for the same reason.
 
 **Open:** what a comma does once removed: an error that shows the separate-argument form, or treating the whole word as one name.
 
 ### Spellings that mean one thing
 
-Decided with the convention for guesses; 2.4.0 prints a notice on each spelling that changes, and this release changes them:
+Decided with the convention for guesses; 2.5.0 prints a notice on each spelling that changes, and this release changes them:
 
 - **`-n` is `--limit` everywhere.** Today it is `--limit` in `list`, `by`, `in`, `for` and `ports` but `--interval` in `watch` and `wait`. The interval keeps `--interval` and gets no new short letter (`-d` is `tree --depth`), and `watch`'s `-l` for its limit goes.
 - **`ports -l` stops being `--local`.** Every row of `ports` is a listening port, so `-l` is then accepted as `ss`'s "listening", with a note.
@@ -73,7 +73,7 @@ These get fixed together, from one convention, not one error message at a time:
 
 This takes in the candidates "Errors that name what you meant", "Signal words, not numbers" and "`proc :3000`" below (and "One meaning for `-n`", now decided for the next major release), and the human clock is how it is measured: time to a correct answer for someone new, before and after.
 
-**Feature test:** obvious, explicit, and one spelling per intent with habits kept (PHILOSOPHY.md, "Easy to Remember"). **Decided (2026-11-03):** the convention ships in 2.4.0, everything that only adds (tips, notes, `kill -9`, `proc :3000`); the changes to existing spellings are in "Spellings that mean one thing" under the next major release. A hint names proc's spelling for each likely reading and reports at most one cheap read-only fact; it never runs a reading, never offers a `--yes` line, and never becomes a JSON key a script could act on.
+**Feature test:** obvious, explicit, and one spelling per intent with habits kept (PHILOSOPHY.md, "Easy to Remember"). **Decided (2026-11-03, moved 2026-11-10):** the convention ships in 2.5.0 (2.4.0 went out first with fixes), everything that only adds (tips, notes, `kill -9`, `proc :3000`); the changes to existing spellings are in "Spellings that mean one thing" under the next major release. A hint names proc's spelling for each likely reading and reports at most one cheap read-only fact; it never runs a reading, never offers a `--yes` line, and never becomes a JSON key a script could act on.
 
 ## Candidates
 
@@ -193,12 +193,12 @@ Not planned: Solaris (no sysinfo support, few users and a closed source base), C
 Each of these puts proc one command away for people who don't use the channels proc has today. nixpkgs is decided (see "Nix as an official install method: the nixpkgs package" above: `nix run nixpkgs#proc-cli` once merged). PyPI shipped in 2.3.0 (see the CHANGELOG). The rest, in this order:
 
 1. **winget**, the package manager that ships with Windows (`winget install yazeed.proc-cli`). The first version is one hand-written pull request, microsoft/winget-pkgs#469298, which has passed winget's validation, install test and antivirus scan; after a moderator merges it, release.yml's "Update winget" job submits each release.
-2. **The BSDs' own package systems and CPUs:** the FreeBSD port (`pkg install proc-cli`, `pkg/freebsd/`) is filed as FreeBSD bug 300492 and waits for a ports committer; the pkgsrc package for NetBSD is in pkgsrc (`sysutils/proc-cli`, `pkg/pkgsrc/`) since 2026-11-04, and each release goes to it as a diff a pkgsrc developer commits. Each goes through that project's review, so proc can't publish it itself. ARM64 binaries for both would build like the x86_64 ones, natively in an ARM64 VM (vmactions takes an `arch`; untried).
+2. **The BSDs' own package systems and CPUs:** the FreeBSD port (`pkg install proc-cli`, `pkg/freebsd/`) is filed as FreeBSD bug 300492 and waits for a ports committer; it goes through FreeBSD's review, so proc can't publish it itself. ARM64 binaries for both would build like the x86_64 ones, natively in an ARM64 VM (vmactions takes an `arch`; untried).
 3. **homebrew-core**, later: `brew install proc` with no tap, and Linuxbrew. A new formula needs 75 stars when someone else submits it, 225 when the repo's owner does (or 30 / 90 forks or watchers), and must build from source with a `livecheck`. The repo had 62 stars when this was written.
 
 **Official Debian, revisited once the repository passes 1,000 stars.** proc's own signed apt repository (https://proc-cli.com/apt) already gives Debian and Ubuntu users every release the day it ships. Being in Debian's archive, so `apt install proc-cli` works with nothing added, costs more than it gives today: Debian builds proc from its own packaged crates, not `Cargo.lock` (five of proc's direct dependencies are at other versions there, so each release would need patches); a Debian Developer has to sponsor it through an intent-to-package bug and the new-package queue (weeks to months); and Debian stable then keeps one version for a year or more. At 1,000 stars, look again: whether someone in Debian's Rust team would sponsor or co-maintain it, and how far Debian's crate versions are from proc's.
 
-**Feature test:** install, not a feature; it makes the common case (getting proc) one command on each platform. **Open:** when winget's moderator and a FreeBSD ports committer take the submissions (pkgsrc took its on 2026-11-04).
+**Feature test:** install, not a feature; it makes the common case (getting proc) one command on each platform. **Open:** when winget's moderator and a FreeBSD ports committer take the submissions.
 
 ## Proposed changes to PHILOSOPHY.md
 

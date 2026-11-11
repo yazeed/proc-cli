@@ -68,11 +68,11 @@ proc free :3000 --yes             # a port target: no question
 | Debian / Ubuntu | [proc's apt repository](https://proc-cli.com/apt/) | `apt upgrade`; every release lands there |
 | Ubuntu (22.04, 24.04, 26.04, 26.10) | `sudo add-apt-repository ppa:yazeedaloyoun/proc-cli && sudo apt install proc-cli` | `apt upgrade` |
 | Fedora / RHEL, AlmaLinux, Rocky / Amazon Linux 2023 | `sudo dnf copr enable yazeed/proc-cli && sudo dnf install proc-cli` | `dnf upgrade`; every release builds there |
-| Arch Linux | `yay -S proc-cli-bin` (release binary) or `yay -S proc-cli` (from source), AUR, community-maintained (Rafael Dominiquini) | when the maintainer publishes it |
+| Arch Linux | `yay -S proc-cli-bin` (release binary) or `yay -S proc-cli` (from source), AUR, community-maintained | when the maintainer publishes it |
 | Any Linux, FreeBSD / NetBSD (x86_64) | `curl -fsSL https://raw.githubusercontent.com/yazeed/proc-cli/main/install.sh \| bash` (`sh` on the BSDs, where `curl` is a package) | run it again |
 | NetBSD (pkgsrc) | `sysutils/proc-cli` | the maintainer sends each release to pkgsrc |
 | npm / bun | `npm install -g proc-cli` | `npm update -g proc-cli` |
-| PyPI (new in 2.3.0) | `pip install proc-cli`, `pipx install proc-cli` or `uv tool install proc-cli` | `pip install --upgrade proc-cli` |
+| PyPI | `pip install proc-cli`, `pipx install proc-cli` or `uv tool install proc-cli` | `pip install --upgrade proc-cli` |
 | Rust | `cargo install proc-cli` (or `cargo binstall proc-cli` for the pre-built binary) | run it again |
 | Nix | `nix profile install github:yazeed/proc-cli` | no |
 | Docker | `docker run --rm -it --pid=host --net=host --cap-add SYS_PTRACE --security-opt apparmor=unconfined yazeed/proc-cli` | `docker pull yazeed/proc-cli` |
@@ -265,8 +265,8 @@ proc on :8080 --json | jq '.process | {pid, cwd, uptime_secs}'
 | `0` | Success |
 | `1` | Error, or not fully successful: a process failed, a port stayed busy, `wait` timed out |
 | `2` | Process or port not found |
-| `3` | Permission denied: proc itself got an I/O permission error. A signal the OS refuses (another user's process) is a `failed` entry and exit 1 |
-| `4` | Invalid input (unknown flag, bad argument, invalid signal), an action this OS doesn't support (`freeze`, `thaw`, `orphans` and `stop --signal` on Windows), or a command that changes processes run without `--yes` where nobody can confirm (`--json`, or no terminal): nothing was changed |
+| `3` | Permission denied: proc itself got an I/O permission error, or a `:port` has a holder proc can't see (another user's process when proc isn't root, or, on FreeBSD and NetBSD, a system that hides other users' sockets), so the port is not known to be free. A signal the OS refuses (another user's process) is a `failed` entry and exit 1 |
+| `4` | Invalid input (unknown flag, bad or empty argument, invalid signal, an `--in` directory that doesn't exist), an action this OS doesn't support (`freeze`, `thaw`, `orphans` and `stop --signal` on Windows), or a command that changes processes run without `--yes` where nobody can confirm (`--json`, or no terminal): nothing was changed |
 | `129`, `130`, `131`, `143` | A signal ended proc (SIGHUP, SIGINT or Ctrl+C, SIGQUIT, SIGTERM) while `watch` had the screen or a prompt was waiting: the terminal is put back first, then proc ends by that signal, so a shell shows 128 plus its number and Ctrl+C stops a script's loop. Nothing was changed by an unanswered prompt |
 
 Full schemas: [`skills/proc-cli/reference.md`](skills/proc-cli/reference.md).

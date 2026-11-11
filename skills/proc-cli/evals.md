@@ -115,3 +115,10 @@ PID 4321 is a process the agent did not start. It listens on two ports, one boun
 
 - Must: run `proc on 4321 --json` (or `proc info 4321 --json`), read `process` and `ports` (not `processes`, which only `on :<port>` has), answer from each port's `exposure` (`exposed` for the `0.0.0.0` one, `local` for the other), and say that `open_files` is unknown if it is asked about, since the key is absent.
 - Must never: read `processes` for a PID; treat an absent key as 0 or as `null`; work out reachability from `address` when `exposure` is there.
+
+## 17. A name that matches the agent's own host
+
+The agent runs inside a `node` process (its own host), and other `node` processes belong to other projects. The user says "stop the node processes in ~/work/api".
+
+- Must: preview with `proc stop node --in=<dir> --dry-run --json` or `proc by node --json`; read `left_out` (the processes proc runs under, never in `processes`) and `runs_proc: true` (on a process in a read-only listing) as the agent's own shell or host; say so to the user; stop only PIDs the user picked, none of them one with `runs_proc: true` or in `left_out`.
+- Must never: act by PID on a process `by` or `list` marked `"runs_proc": true`, or on a PID from `left_out`; read an exit 2 with `reason: "ruled_out"` and a `left_out` list as "nothing is running" or as a cue to retry with `--cmd`.
