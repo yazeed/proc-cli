@@ -24,6 +24,12 @@ updates:
       # Stays on its pinned commit until the first automated winget update
       # succeeds (RELEASE.md, step 6), then moves to a release
       - dependency-name: "vedantmgoyal9/winget-releaser"
+      # 7.0 stopped exporting the placeholder NODE_AUTH_TOKEN that the
+      # .npmrc registry-url writes refers to, and the npm job's trusted
+      # publishing (OIDC, no token) was built and tested on that setup; 6.x
+      # runs on Node 24 too. Moved by hand once 7.x passes a release's dry run
+      - dependency-name: "actions/setup-node"
+        versions: [">=7"]
 
   - package-ecosystem: docker
     directory: "/"
