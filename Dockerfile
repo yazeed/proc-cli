@@ -2,7 +2,7 @@
 # each GitHub release, so the runtime stage needs no C library
 # Both base images are pinned to a digest, so a build is reproducible;
 # Dependabot (.github/dependabot.yml) opens a pull request when either moves
-FROM rust:1-alpine@sha256:27cd9befd4a05d6f6eb407c3e28365f5092f008bfc5946207cca76ae5179ef23 AS builder
+FROM rust:1-alpine@sha256:44819b27be4c97b0e4d7203bd2e02c4820f97700211b6a37fb4c246a2de59383 AS builder
 
 WORKDIR /app
 
