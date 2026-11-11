@@ -913,7 +913,11 @@ jobs:
           fi
 
       # pkg's latest branch: the ports tree's main branch wants its Rust, and
-      # quarterly's is older (2.3.0: 1.99.1 against 1.98.1)
+      # quarterly's is older (2.3.0: 1.99.1 against 1.98.1). FreeBSD 15 names
+      # its package repository FreeBSD-ports, so that is the one moved to
+      # latest. A second repository with the same packages (the 14.x name,
+      # FreeBSD) made pkg's self-upgrade loop until the job was killed, once a
+      # new pkg was out (dry run, 2026-11-11)
       - name: Move the port to the release, build and check it
         uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1.5.9
         with:
@@ -923,7 +927,8 @@ jobs:
           envs: VERSION
           prepare: |
             mkdir -p /usr/local/etc/pkg/repos
-            printf 'FreeBSD: { url: "pkg+https://pkg.FreeBSD.org/${ABI}/latest", mirror_type: "srv" }\n' > /usr/local/etc/pkg/repos/FreeBSD.conf
+            printf 'FreeBSD-ports: { url: "pkg+https://pkg.FreeBSD.org/${ABI}/latest", mirror_type: "srv" }\n' > /usr/local/etc/pkg/repos/FreeBSD.conf
+            pkg -vv | sed -n '/^Repositories:/,$p'
             pkg update -f
             pkg install -y git rust portlint
           run: |
