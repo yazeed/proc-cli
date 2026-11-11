@@ -2866,13 +2866,21 @@ mod tests {
     fn a_process_records_its_parents_name_and_its_children() {
         let mut shell = shell_with_one_child();
         let shell_pid = shell.id();
-        // the shell starts its sleep after the exec: wait for the child to show
+        // the shell starts its sleep after the exec: wait for the child to show.
+        // The sleep's parent name is checked against the shell in the same read:
+        // macOS's sh is a launcher that turns into bash, and one read of the
+        // whole table takes long enough under load to see the shell as sh and
+        // its sleep, started by bash, both (the unit tests on a Mac failed 4 of 8
+        // runs on it, 2026-11-11)
         let child_of_shell = || {
-            Process::find_all().unwrap().into_iter().find(|p| {
+            let all = Process::find_all().unwrap();
+            let sleeper = all.iter().find(|p| {
                 p.parent_pid == Some(shell_pid) && p.pid != shell_pid && p.name == "sleep"
-            })
+            })?;
+            let shell = all.iter().find(|p| p.pid == shell_pid)?;
+            Some((sleeper.clone(), shell.name.clone()))
         };
-        let sleeper = std::iter::repeat_with(|| {
+        let seen = std::iter::repeat_with(|| {
             std::thread::sleep(Duration::from_millis(10));
             child_of_shell()
         })
@@ -2884,13 +2892,10 @@ mod tests {
         let _ = shell.kill();
         let _ = shell.wait();
 
-        let sleeper = sleeper.expect("the shell never started its sleep");
+        let (sleeper, shell_name) = seen.expect("the shell never started its sleep");
         let shell_record = all.iter().find(|p| p.pid == shell_pid).unwrap();
         assert_eq!(shell_record.child_count, Some(1), "{shell_record:?}");
-        assert_eq!(
-            sleeper.parent_name.as_deref(),
-            Some(shell_record.name.as_str())
-        );
+        assert_eq!(sleeper.parent_name.as_deref(), Some(shell_name.as_str()));
         // a leaf has no children, which is a count of 0, not an unknown
         assert_eq!(sleeper.child_count, Some(0), "{sleeper:?}");
         // a lookup by PID reads the whole table too, and fills the same facts

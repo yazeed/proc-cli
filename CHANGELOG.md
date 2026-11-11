@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Two more tests no longer fail on timing.** `coloured_text_is_the_plain_text_plus_escape_codes` runs `proc list` with and without colour and compares the text. 2.4.0 made it rerun the pair until both printed the same cells, but on Windows CI 10 pairs in a row differed, the last on the listener's uptime (10s against 11s). Digits are now compared as digits, not as values, so a ticking figure matches; a figure that changes its width, or a cell that changes its word, still reruns the pair, and the spacing must still match. It still fails when colour changes the spacing (checked by planting a space in coloured cells). `a_process_records_its_parents_name_and_its_children` compared a `sleep`'s parent name with its shell's name from a later read of the process table. On macOS `sh` is a launcher that turns into `bash`, and under load one read could see the shell as `sh` and the `sleep` that `bash` started (the unit tests failed 4 of 8 runs on a Mac, 0 of 8 after); it now compares the two from the same read. Nothing changed in proc
+
 ## [2.4.0] - 2026-11-11
 
 ### Added

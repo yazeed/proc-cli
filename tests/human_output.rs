@@ -262,14 +262,16 @@ fn clicolor_force_colours_a_pipe_and_overrides_no_colour() {
 fn coloured_text_is_the_plain_text_plus_escape_codes() {
     let owned = Owned::listener();
     let dir = owned.raw_dir();
-    // A column is as wide as its widest cell, and two runs can see the listener
-    // differently (its uptime, CPU, memory or status: an instant of "disk wait"
-    // widened STATUS by one, CI 2026-11-11), so the spacing is only comparable
-    // when both runs printed the same cells. Run the pair until they do, then
-    // the text must be the same, spacing and all
-    let cells = |text: &str| -> Vec<Vec<String>> {
-        text.lines()
-            .map(|l| l.split_whitespace().map(str::to_string).collect())
+    // Two runs can see the listener differently: 10 pairs in a row printed
+    // different cells, the last an uptime of 10s against 11s (Windows CI
+    // 2026-11-11), so digits are compared as digits, not as values. A figure
+    // that changes its width (9s to 10s) or a cell that changes its word (an
+    // instant of "disk wait" widened STATUS by one, Linux CI 2026-11-11) moves
+    // the columns, so that pair is run again. The text must then be the same,
+    // spacing and all
+    let shape = |text: &str| -> String {
+        text.chars()
+            .map(|c| if c.is_ascii_digit() { '0' } else { c })
             .collect()
     };
     for args in [vec!["list", "--in", &dir], vec!["list", "--in", &dir, "-v"]] {
@@ -280,14 +282,14 @@ fn coloured_text_is_the_plain_text_plus_escape_codes() {
             let (plain, _, _) = run(plain_cmd(), &args);
             assert!(coloured.contains(ESC), "{coloured:?}");
             let coloured = strip_colours(&coloured);
-            if cells(&coloured) == cells(&plain) || attempts == 10 {
+            if shape(&coloured) == shape(&plain) || attempts == 10 {
                 break (coloured, plain);
             }
         };
         assert_eq!(
-            coloured,
-            plain,
-            "{args:?}, {attempts} attempts\n{}",
+            shape(&coloured),
+            shape(&plain),
+            "{args:?}, {attempts} attempts\ncoloured:\n{coloured}\nplain:\n{plain}\n{}",
             owned.what_proc_saw()
         );
     }
