@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A test keeps the docs complete.** `tests/docs_coverage.rs` reads every command, flag and accepted value from the CLI definition, and every error reason from its constants, and fails, listing every miss at once, unless each command has its page on the website, each page lists every flag with its short form and every value it accepts, the agent reference names every flag and value, the README every flag, and the agent reference, the agent skill, the commands page, the README and docs.rs give every exit code and every `reason`. It also fails if the agent skill asks for a proc older than a flag it uses. It found the skill's exit table naming neither `permission_denied` nor `system_error`; the table now says what each means and what to do
+
 ### Changed
 
 - **The winget submission is 2.4.0, and each release moves it until it is merged.** microsoft/winget-pkgs#469298, the first version of `yazeed.proc-cli`, was opened at 2.2.0 and still waits for a moderator: the release job skipped winget until then, so it stayed at 2.2.0 through 2.3.0 and 2.4.0. It now holds 2.4.0's manifests (the Windows zip's SHA-256 checked against the release's `checksums.txt`), so Windows users get the current release when it is merged, `proc ports` naming every holder (2.3.0) included. From the next release, `update-winget` moves it itself with `pkg/winget/move-pr.sh`: one commit on top of the pull request's branch replacing the three manifests, where only the version, the download, its SHA-256, the release date and the release notes link may change, then the title and description; a dry run prints the change. The manifests go to `pkg/winget/` on `main` with the other package files. Run from the 2.2.0 commit, the script writes the same 2.4.0 manifests that were moved by hand, byte for byte. RELEASE.md's verification now opens every submission still waiting for review (winget, nixpkgs, FreeBSD, pkgsrc) and checks it offers the new version, its description included. Nothing changed in proc

@@ -204,7 +204,7 @@ Line coverage says a line ran, not that its behaviour is pinned. A change that a
 - **A terminal, or none:** confirmation prompts and the `watch` screen through a pseudo-terminal (`terminal.rs`); the same command without a terminal must exit 4, not ask. On Unix proc runs there as a shell's foreground job, through `examples/session`, so its exit doesn't revoke the terminal before the test has read it (FreeBSD and NetBSD drop unread output then)
 - **Ordering and several holders:** stable output order (`order.rs`), a port held over IPv4 and IPv6 at once (`cmd_port_holders.rs`)
 - **Anything that waits:** `timing.rs`, so a timeout or a wait that never returns fails fast
-- **Docs:** examples never pair `--yes` with a name (`doc_examples.rs`)
+- **Docs:** examples never pair `--yes` with a name (`doc_examples.rs`); every command, flag, short flag, accepted value, exit code and `reason` is written where people and programs look, read from the CLI definition and the `REASON_*` constants (`docs_coverage.rs`, which lists every miss at once)
 
 Tests aim proc only at processes they started themselves (a copy of `examples/listener.rs` under its own name in a fresh temp directory, or a shell the test owns), so the suite can run on a machine that is busy with other work.
 
