@@ -182,6 +182,17 @@ impl WhyCommand {
         if !found_any {
             let error =
                 first_error.unwrap_or_else(|| ProcError::ProcessNotFound(self.target.join(" ")));
+            // every target missing: the JSON lists them all, as for the other
+            // commands (a port another user holds, or a name only in command
+            // lines, keeps its own error)
+            let error = if error.reason() == Some(crate::error::REASON_NOT_FOUND) {
+                ProcError::NoneFound {
+                    error: Box::new(error),
+                    not_found: flatten_targets(&self.target),
+                }
+            } else {
+                error
+            };
             if self.json {
                 return Err(error);
             }

@@ -12,6 +12,17 @@ pub enum ProcError {
     #[error("No process found matching '{0}'\n  Try: proc list to list all processes")]
     ProcessNotFound(String),
 
+    /// Every target matched nothing. The message, reason and exit code are
+    /// `error`'s; `not_found` lists the targets as typed (a comma list split),
+    /// which the JSON error carries as `not_found`
+    #[error("{error}")]
+    NoneFound {
+        /// The error for the targets: what proc said before it listed them
+        error: Box<ProcError>,
+        /// Each target, as typed
+        not_found: Vec<String>,
+    },
+
     /// No process has this name, but some have it in their command line, which
     /// `--cmd` would match
     #[error("No process found matching '{name}'\n  {}\n  Try: proc list to list all processes", command_line_hint(.name, *.in_command_line))]
@@ -197,6 +208,16 @@ impl ProcError {
         }
     }
 
+    /// The targets that all matched nothing, for the JSON error's `not_found`;
+    /// `None` for every other error, a target its guards ruled out included
+    /// (it was found)
+    pub fn not_found(&self) -> Option<&[String]> {
+        match self {
+            ProcError::NoneFound { not_found, .. } => Some(not_found),
+            _ => None,
+        }
+    }
+
     /// Why this error happened, as the `reason` of the JSON error: a fixed word
     /// a caller branches on instead of reading the message. Every error has
     /// one except [`ProcError::Reported`], whose command already printed its
@@ -220,6 +241,7 @@ impl ProcError {
             | ProcError::Timeout(_)
             | ProcError::ParseError(_)
             | ProcError::SignalError(_) => Some(REASON_SYSTEM_ERROR),
+            ProcError::NoneFound { error, .. } => error.reason(),
             ProcError::Reported { .. } => None,
         }
     }
@@ -327,6 +349,7 @@ impl From<&ProcError> for ExitCode {
             | ProcError::NotSupported(_)
             | ProcError::ConfirmationRequired { .. } => ExitCode::InvalidInput,
             ProcError::Reported { exit_code, .. } => *exit_code,
+            ProcError::NoneFound { error, .. } => ExitCode::from(error.as_ref()),
             _ => ExitCode::GeneralError,
         }
     }
@@ -348,6 +371,11 @@ mod tests {
         };
         assert_eq!(left.left_out(), Some(&[zsh][..]));
         assert_eq!(ProcError::ProcessNotFound("x".to_string()).left_out(), None);
+        // a target that matched nothing on its own, or a guard's, lists no `not_found`
+        assert_eq!(
+            ProcError::ProcessNotFound("x".to_string()).not_found(),
+            None
+        );
     }
 
     #[test]

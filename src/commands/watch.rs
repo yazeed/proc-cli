@@ -239,7 +239,7 @@ impl WatchCommand {
         let mut processes = resolved.processes;
         if processes.is_empty() {
             return Err(nothing_resolved(
-                self.target.join(" "),
+                &self.target,
                 &resolved.unseen,
                 &resolved.left_out,
             ));

@@ -179,7 +179,7 @@ impl OnCommand {
         }
 
         if results.is_empty() {
-            return Err(nothing_resolved(self.target.join(" "), &unseen, &left_out));
+            return Err(nothing_resolved(&self.target, &unseen, &left_out));
         }
         let left_out = Resolved {
             left_out,

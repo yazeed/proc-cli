@@ -307,6 +307,71 @@ fn a_name_that_matches_nothing_is_listed_as_typed() {
 }
 
 #[test]
+fn the_error_when_every_target_is_missing_lists_them() {
+    // It named them only inside `error`, joined into one string, so a program
+    // had to parse the text to learn which targets were missing
+    let port = unused_port_target();
+    let mut commands: Vec<Vec<&str>> = vec![
+        vec!["kill", "--dry-run"],
+        vec!["stop", "--dry-run"],
+        vec!["wait", "--timeout", "1"],
+        vec!["why"],
+        vec!["on"],
+        vec!["watch"],
+    ];
+    if cfg!(unix) {
+        commands.extend([
+            vec!["freeze", "--dry-run"],
+            vec!["thaw", "--dry-run"],
+            vec!["unstick", "--dry-run"],
+        ]);
+    }
+    for command in commands {
+        let mut args = command.clone();
+        args.extend([MISSING, "99999998", "--json"]);
+        let (json, code) = run_json(&args);
+        assert_eq!(code, 2, "{args:?}: {json}");
+        assert_eq!(json["reason"], "not_found", "{args:?}: {json}");
+        assert_eq!(
+            json["not_found"],
+            json!([MISSING, "99999998"]),
+            "{args:?}: {json}"
+        );
+    }
+    // a port and a name, as typed, and a comma list split as it is everywhere
+    let (json, code) = run_json(&[
+        "kill",
+        &format!("{MISSING},{port}"),
+        "pnf-no-such-process-name",
+        "--dry-run",
+        "--json",
+    ]);
+    assert_eq!(code, 2, "{json}");
+    assert_eq!(
+        json["not_found"],
+        json!([MISSING, port, "pnf-no-such-process-name"]),
+        "{json}"
+    );
+}
+
+#[test]
+fn a_target_its_guards_rule_out_was_found_so_the_error_has_no_not_found() {
+    let own = Owned::start();
+    let pid = own.pid();
+    let (json, code) = run_json(&[
+        "kill",
+        &pid,
+        "--by",
+        "pnf-no-such-process-name",
+        "--dry-run",
+        "--json",
+    ]);
+    assert_eq!(code, 2, "{json}");
+    assert_eq!(json["reason"], "ruled_out", "{json}");
+    assert!(json.get("not_found").is_none(), "{json}");
+}
+
+#[test]
 fn people_are_still_warned_in_the_human_output() {
     let own = Owned::start();
     let pid = own.pid();

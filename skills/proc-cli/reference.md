@@ -51,7 +51,8 @@ On failure with `--json`, stdout carries the five fields below. `action` is the 
   "success": false,
   "error": "No process found matching '99999999'\n  Try: proc list to list all processes",
   "exit_code": 2,
-  "reason": "not_found"
+  "reason": "not_found",
+  "not_found": ["99999999"]
 }
 ```
 
@@ -71,7 +72,7 @@ A command that changes processes (`kill`, `stop`, `freeze`, `thaw`, `free`, `uns
 }
 ```
 
-`processes` is what a retry would touch, with CPU measured. Only this case has a `needs_confirmation` key, and it is always `true`: every other error, exit 4 included, has no such key. To tell the exit-4 cases apart, read `reason` (next section) instead; `needs_confirmation` stays for agents written against 2.0.0. `not_found` is on commands that take targets (`kill`, `stop`, `freeze`, `thaw`, `unstick`, `free`) and is `[]` when every target was found. `orphans` and `stuck` take no targets and have no `not_found`. If every target is missing, the result is the plain exit 2 error with no `not_found` (the `error` text names them). With a terminal and no `--json`, the command asks `[y/N]` instead.
+`processes` is what a retry would touch, with CPU measured. Only this case has a `needs_confirmation` key, and it is always `true`: every other error, exit 4 included, has no such key. To tell the exit-4 cases apart, read `reason` (next section) instead; `needs_confirmation` stays for agents written against 2.0.0. `not_found` is on commands that take targets (`kill`, `stop`, `freeze`, `thaw`, `unstick`, `free`) and is `[]` when every target was found. `orphans` and `stuck` take no targets and have no `not_found`. If every target is missing, the result is the exit 2 error (`reason: "not_found"`) with every target in `not_found`, as typed, a comma list split. A target its guards ruled out was found, so that error (`ruled_out`) has no `not_found`. With a terminal and no `--json`, the command asks `[y/N]` instead.
 
 How to respond is in SKILL.md, rule 6: show `processes` to the user, and re-run with `--yes` only after approval, by the PIDs you showed.
 
@@ -82,7 +83,7 @@ Every error carries `reason`, one fixed word: branch on it, never on the text of
 | Exit | `reason` | Meaning | What to do |
 |------|----------|---------|------------|
 | 1 | `system_error` | proc itself could not do its part, such as reading the process or port table. | Report it; retrying may work. |
-| 2 | `not_found` | No process holds that PID, name or port (any more). `info` keeps its document (`count: 0`) and adds `reason` to it (see info). | It is gone, or never was. |
+| 2 | `not_found` | No process holds that PID, name or port (any more). When every target is missing, `not_found` lists them. `info` keeps its document (`count: 0`) and adds `reason` to it (see info). | It is gone, or never was. |
 | 2 | `command_line_only` | No process has that name, but some have it in their command line. | Add `--cmd` if a command-line match is what you meant. |
 | 2 | `ruled_out` | A process holds the target, but a guard rules it out. `ruled_out_by` lists the guards' flags (`["--start-time"]`, or several: `["--by", "--start-time"]`), and `error` names them with their values. Or every process a name matched is one proc runs under, which the command leaves out: `left_out` lists them (`[{"pid", "name"}]`), and there is no `ruled_out_by`. Branch on these fields; the text is for the user. | `--start-time` among them: your process is gone and a new one has the PID. `--by` or `--in` alone: check the PID with `proc info` before treating it as gone. `left_out`: the name matched your own shell or agent; leave it alone. |
 | 3 | `permission_denied` | proc itself got an I/O permission error, or a `:port` target has a holder proc can't see: another user's process, when proc isn't root (Linux and macOS; `error` says "is in use, but proc can't see which process holds it"), or, on FreeBSD and NetBSD set to hide other users' sockets, possibly one (`error` says "proc can't tell whether port N is in use"). The port is not known to be free. | Ask the user; `sudo` sees the holder. Never treat the port as free. |

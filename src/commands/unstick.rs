@@ -344,7 +344,7 @@ impl UnstickCommand {
         let resolved = resolve_targets_excluding_self(&targets, NameMatch::from_flag(self.cmd));
         if resolved.processes.is_empty() {
             Err(nothing_resolved(
-                typed.join(" "),
+                typed,
                 &resolved.unseen,
                 &resolved.left_out,
             ))

@@ -94,7 +94,7 @@ impl InfoCommand {
         } = resolved;
         // what nothing matching means: not found, or a port in use by a
         // process proc can't see
-        let nothing = nothing_resolved(self.targets.join(" "), &unseen, &left_out);
+        let nothing = nothing_resolved(&self.targets, &unseen, &left_out);
 
         // Apply --in and --by: guards that rule out everything found say so
         let guards = Guards::new(&self.in_dir, &self.by_name, self.start_time);

@@ -98,7 +98,7 @@ impl ThawCommand {
 
         if processes.is_empty() {
             return Err(nothing_resolved(
-                self.target.join(" "),
+                &self.target,
                 &resolved.unseen,
                 &resolved.left_out,
             ));

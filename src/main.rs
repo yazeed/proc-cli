@@ -207,6 +207,7 @@ fn run() -> u8 {
                     None,
                     None,
                     None,
+                    None,
                 );
             } else {
                 err_println!("{}", parts.human());
@@ -304,6 +305,7 @@ fn run() -> u8 {
                 confirmation,
                 ruled_out_by.as_deref(),
                 e.left_out(),
+                e.not_found(),
             );
         } else {
             err_println!("{}", e);
@@ -327,6 +329,8 @@ fn run() -> u8 {
 /// `ruled_out_by` is `Some` only for a target its guards ruled out: the flags
 /// of those guards (`["--start-time"]`). `left_out` is `Some` only when every
 /// match was a process proc runs under: those processes, `{"pid", "name"}`.
+/// `not_found` is `Some` only when every target matched nothing: those
+/// targets, as typed.
 fn print_json_error(
     error: &str,
     exit_code: i32,
@@ -334,6 +338,7 @@ fn print_json_error(
     confirmation: Option<(&[Process], Option<&[String]>)>,
     ruled_out_by: Option<&[&str]>,
     left_out: Option<&[proc_cli::core::Ancestor]>,
+    not_found: Option<&[String]>,
 ) {
     let mut error_json = serde_json::json!({
         "action": action_name(),
@@ -356,6 +361,9 @@ fn print_json_error(
     }
     if let Some(left_out) = left_out {
         error_json["left_out"] = serde_json::json!(left_out);
+    }
+    if let Some(not_found) = not_found {
+        error_json["not_found"] = serde_json::json!(not_found);
     }
     out_println!("{}", serde_json::to_string_pretty(&error_json).unwrap());
 }
@@ -399,6 +407,7 @@ fn invalid_argument(message: &str) -> u8 {
             message,
             exit_code as i32,
             Some(REASON_INVALID_INPUT),
+            None,
             None,
             None,
             None,
