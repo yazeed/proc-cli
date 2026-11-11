@@ -6,9 +6,11 @@
 //! constants, so a new one fails here until the docs name it:
 //! - each command's page on the website (`docs/commands/<cmd>.md`) lists every
 //!   flag of that command with its short form, and every value it accepts
-//! - the commands page (`docs/commands/index.md`), the README, the agent
-//!   reference (`skills/proc-cli/reference.md`) and docs.rs (`src/lib.rs`)
-//!   name every command
+//! - the README, the agent reference (`skills/proc-cli/reference.md`) and
+//!   docs.rs (`src/lib.rs`) name every command
+//! - the website's one grouping of the commands (`docs/_data/commands.yml`,
+//!   which the home page, the commands page and its sidebar read) holds every
+//!   command once, and the README's tables and docs.rs group them the same way
 //! - the agent reference's "Commands and flags" section names every flag, with
 //!   its short form on the same line, and every accepted value
 //! - the reference, the agent skill, the commands page, the README and docs.rs
@@ -111,7 +113,6 @@ fn assert_none_missing(misses: Vec<String>) {
 
 #[test]
 fn every_command_has_its_page_and_is_named_everywhere() {
-    let index = read("docs/commands/index.md");
     let readme = read("README.md");
     let reference = read("skills/proc-cli/reference.md");
     let lib = read("src/lib.rs");
@@ -122,9 +123,6 @@ fn every_command_has_its_page_and_is_named_everywhere() {
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("docs/commands/{name}.md"));
         if !page.exists() {
             misses.push(format!("docs/commands/{name}.md"));
-        }
-        if !index.contains(&format!("[{name}]({name})")) {
-            misses.push(format!("docs/commands/index.md: a row for {name}"));
         }
         for (file, text) in [
             ("README.md", &readme),
@@ -137,6 +135,68 @@ fn every_command_has_its_page_and_is_named_everywhere() {
         }
     }
     assert_none_missing(misses);
+}
+
+/// The groups of `docs/_data/commands.yml`, in order: each title with its
+/// commands' names
+fn website_groups() -> Vec<(String, Vec<String>)> {
+    let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+    for line in read("docs/_data/commands.yml").lines() {
+        if let Some(title) = line.strip_prefix("- title: ") {
+            groups.push((title.trim().to_string(), Vec::new()));
+        } else if let Some(name) = line.trim_start().strip_prefix("- name: ") {
+            let (_, names) = groups.last_mut().expect("a command before any group");
+            // `"on" # quoted: ...`: the value, without quotes or a comment
+            let name = name.split(" #").next().unwrap().trim().trim_matches('"');
+            names.push(name.to_string());
+        }
+    }
+    groups
+}
+
+#[test]
+fn the_commands_are_grouped_the_same_everywhere() {
+    let groups = website_groups();
+    let mut listed: Vec<String> = groups.iter().flat_map(|(_, n)| n.clone()).collect();
+    listed.sort();
+    let mut all: Vec<String> = commands()
+        .iter()
+        .map(|c| c.get_name().to_string())
+        .collect();
+    all.sort();
+    assert_eq!(
+        listed, all,
+        "docs/_data/commands.yml lists every command once"
+    );
+
+    let readme = read("README.md");
+    let lib = read("src/lib.rs");
+    let cell = Regex::new(r"(?m)^\| `([a-z]+)").unwrap();
+    let named = Regex::new(r"`([a-z]+)`").unwrap();
+    for (title, names) in &groups {
+        let table = section(&readme, &format!("### {title}"));
+        let in_readme: Vec<String> = cell
+            .captures_iter(table)
+            .map(|c| c[1].to_string())
+            .collect();
+        let mut sorted_readme = in_readme.clone();
+        sorted_readme.sort();
+        let mut sorted_names = names.clone();
+        sorted_names.sort();
+        assert_eq!(sorted_readme, sorted_names, "README's {title} table");
+
+        let line = lib
+            .lines()
+            .find(|l| l.starts_with(&format!("//! **{title}**")))
+            .unwrap_or_else(|| panic!("src/lib.rs has a **{title}** line"));
+        let mut in_lib: Vec<String> = named
+            .captures_iter(line)
+            .map(|c| c[1].to_string())
+            .filter(|n| names.contains(n))
+            .collect();
+        in_lib.sort();
+        assert_eq!(in_lib, sorted_names, "src/lib.rs's {title} line");
+    }
 }
 
 #[test]

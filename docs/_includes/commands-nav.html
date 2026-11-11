@@ -1,15 +1,20 @@
-{% assign groups = "Discovery:on why for by in list info ports tree orphans stuck|Action:kill stop free freeze thaw unstick|Monitoring:watch wait" | split: "|" %}
 <nav class="docs-nav" aria-label="Commands">
   <a class="docs-nav-all" href="{{ '/commands' | relative_url }}"{% if page.url == "/commands" %} aria-current="page"{% endif %}>All commands</a>
-  {% for group in groups %}
-  {% assign parts = group | split: ":" %}
-  <p class="docs-nav-group">{{ parts[0] }}</p>
+  {% for group in site.data.commands %}
+  <p class="docs-nav-group">{{ group.title }}</p>
   <ul>
-    {% assign cmds = parts[1] | split: " " %}
-    {% for cmd in cmds %}
-    {% capture cmd_url %}/commands/{{ cmd }}{% endcapture %}
-    <li><a href="{{ cmd_url | relative_url }}"{% if page.url == cmd_url %} aria-current="page"{% endif %}><span class="docs-nav-proc">proc</span> {{ cmd }}</a></li>
+    {% for cmd in group.commands %}
+    {% capture cmd_url %}/commands/{{ cmd.name }}{% endcapture %}
+    <li><a href="{{ cmd_url | relative_url }}"{% if page.url == cmd_url %} aria-current="page"{% endif %}><span class="docs-nav-proc">proc</span> {{ cmd.name }}</a></li>
     {% endfor %}
   </ul>
   {% endfor %}
+  <p class="docs-nav-group">Reference</p>
+  <ul class="docs-nav-ref">
+    <li><a href="{{ '/commands#filters' | relative_url }}">Filters and options</a></li>
+    <li><a href="{{ '/commands#exit-codes' | relative_url }}">Scripting and exit codes</a></li>
+    <li><a href="{{ '/commands/messages' | relative_url }}"{% if page.url == "/commands/messages" %} aria-current="page"{% endif %}>Messages</a></li>
+    <li><a href="{{ '/commands#platforms' | relative_url }}">Platforms</a></li>
+    <li><a href="{{ '/commands#setup' | relative_url }}">Completions and man page</a></li>
+  </ul>
 </nav>

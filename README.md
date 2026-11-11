@@ -24,7 +24,7 @@ A dev server won't start because port 3000 is taken. proc finds the old tmux ses
 [![Open Collective](https://img.shields.io/opencollective/all/proc-cli?label=backers)](https://opencollective.com/proc-cli)
 [![Website](https://img.shields.io/website?url=https%3A%2F%2Fproc-cli.com%2F&label=website)](https://proc-cli.com/)
 
-**Docs:** [commands](https://proc-cli.com/commands) · [install](https://proc-cli.com/install) · [FAQ](https://proc-cli.com/faq) · [agent skill](https://proc-cli.com/skill) · [changelog](https://github.com/yazeed/proc-cli/blob/main/CHANGELOG.md)
+**Docs:** [commands](https://proc-cli.com/commands) · [messages](https://proc-cli.com/commands/messages) · [install](https://proc-cli.com/install) · [FAQ](https://proc-cli.com/faq) · [agent skill](https://proc-cli.com/skill) · [changelog](https://github.com/yazeed/proc-cli/blob/main/CHANGELOG.md)
 
 ## One command instead of a pipeline
 

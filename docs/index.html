@@ -71,43 +71,20 @@ description: "Semantic CLI tool for process management. Target by port, PID, nam
     <h2 id="verbs-title">Nineteen commands, three jobs</h2>
     <p class="section-lede">Every command takes the same targets, and almost all take <code>--in</code> to stay inside one project, <code>--json</code> for scripts, and <code>--dry-run</code> before anything changes.</p>
     <div class="verbs">
-      <div class="v-observe">
-        <h3>Find out</h3>
-        <p>Read-only. Nothing is touched.</p>
-        <ul>
-          <li><a href="{{ '/commands/on' | relative_url }}"><code>on :3000</code><span>what's on a port</span></a></li>
-          <li><a href="{{ '/commands/why' | relative_url }}"><code>why :3000</code><span>what started it</span></a></li>
-          <li><a href="{{ '/commands/in' | relative_url }}"><code>in .</code><span>started in this folder</span></a></li>
-          <li><a href="{{ '/commands/by' | relative_url }}"><code>by node</code><span>by name</span></a></li>
-          <li><a href="{{ '/commands/for' | relative_url }}"><code>for ./server</code><span>running a program</span></a></li>
-          <li><a href="{{ '/commands/info' | relative_url }}"><code>info 1234</code><span>everything about one</span></a></li>
-          <li><a href="{{ '/commands/ports' | relative_url }}"><code>ports</code><span>all listening ports</span></a></li>
-          <li><a href="{{ '/commands/tree' | relative_url }}"><code>tree</code><span>parents and children</span></a></li>
+      {% for group in site.data.commands %}
+      {% assign rows = group.commands.size | plus: 1 | divided_by: 2 %}
+      {% assign second = rows | plus: 1 %}
+      <div class="{{ group.class }}{% if group.wide %} v-wide{% endif %}">
+        <h3>{{ group.title }}</h3>
+        <p>{{ group.blurb }}</p>
+        <ul{% if group.wide %} style="--rows: {{ rows }}"{% endif %}>
+          {% for cmd in group.commands %}
+          {% capture cmd_url %}/commands/{{ cmd.name }}{% endcapture %}
+          <li{% if forloop.index == second %} class="col-top"{% endif %}><a href="{{ cmd_url | relative_url }}"><code>{{ cmd.try }}</code><span>{{ cmd.short }}</span></a></li>
+          {% endfor %}
         </ul>
       </div>
-      <div class="v-act">
-        <h3>Change it</h3>
-        <p>Asks first, or previews with <code>--dry-run</code>.</p>
-        <ul>
-          <li><a href="{{ '/commands/stop' | relative_url }}"><code>stop node</code><span>ask it to exit</span></a></li>
-          <li><a href="{{ '/commands/kill' | relative_url }}"><code>kill :3000</code><span>end it now</span></a></li>
-          <li><a href="{{ '/commands/free' | relative_url }}"><code>free :3000</code><span>and check it's free</span></a></li>
-          <li><a href="{{ '/commands/freeze' | relative_url }}"><code>freeze node</code><span>pause</span></a></li>
-          <li><a href="{{ '/commands/thaw' | relative_url }}"><code>thaw node</code><span>resume</span></a></li>
-          <li><a href="{{ '/commands/unstick' | relative_url }}"><code>unstick</code><span>recover a stuck process</span></a></li>
-        </ul>
-      </div>
-      <div class="v-wait">
-        <h3>Keep watching</h3>
-        <p>Live views and waiting.</p>
-        <ul>
-          <li><a href="{{ '/commands/watch' | relative_url }}"><code>watch node</code><span>live table</span></a></li>
-          <li><a href="{{ '/commands/wait' | relative_url }}"><code>wait :3000</code><span>until it exits</span></a></li>
-          <li><a href="{{ '/commands/list' | relative_url }}"><code>list --sort cpu</code><span>what's busy</span></a></li>
-          <li><a href="{{ '/commands/stuck' | relative_url }}"><code>stuck</code><span>busy and long-running</span></a></li>
-          <li><a href="{{ '/commands/orphans' | relative_url }}"><code>orphans</code><span>parent has exited</span></a></li>
-        </ul>
-      </div>
+      {% endfor %}
     </div>
     <p class="more"><a href="{{ '/commands' | relative_url }}">All commands and options</a></p>
   </section>

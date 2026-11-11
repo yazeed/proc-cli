@@ -139,6 +139,16 @@
   a: |
     `proc stop` asks a process to exit (`SIGTERM`) and only forces it after a timeout, so it can clean up. `proc kill` ends it immediately (`SIGKILL`). `proc free` takes a port, stops whatever holds it, and then checks the port is free. All three ask before acting unless you pass `--yes`, and all take `--dry-run`.
 
+- q: Why did proc exit 4, or ask me to pass --yes?
+  id: exit-4-yes
+  a: |
+    A command that changes processes (`kill`, `stop`, `freeze`, `thaw`, `free`, `unstick`, and `stuck` or `orphans` with `--kill`) asks before it acts. In a script, with stdin redirected, or with `--json`, there is nobody to ask, so it changes nothing and exits 4. Preview what it would touch with `--dry-run`, then run it again with `--yes`. Exit 4 also means a mistyped flag or value, or something this system can't do (`freeze` on Windows); the message says which. [Messages](/commands/messages) explains each one.
+
+- q: What do proc's exit codes mean?
+  id: exit-codes
+  a: |
+    `0` worked, `1` partly failed (a process refused, a port stayed busy, `wait` timed out), `2` nothing matched, `3` permission denied (or a port another user holds), and `4` nothing was done because the command was wrong, unsupported here, or needed `--yes`. A search that finds nothing, such as `proc list node` with no `node` running, is `0`: an empty answer is still an answer. The full table is under [Scripting and exit codes](/commands#exit-codes).
+
 - q: How do I install proc, and does it update itself?
   id: install-update
   a: |

@@ -1,0 +1,111 @@
+# The one grouping of proc's commands. The home page, the commands page and
+# its sidebar read it; the README's three tables and docs.rs's command list
+# follow it, and tests/docs_coverage.rs fails if any of them, or this file,
+# misses a command or puts it in another group.
+#   try:     the example the home page shows
+#   short:   a few words beside it
+#   summary: one line for the commands page
+#   wide:    on the home page, the group spans two columns, its list in two
+- title: Find out
+  class: v-observe
+  wide: true
+  blurb: "Read-only: nothing is touched. <code>stuck</code> and <code>orphans</code> change processes only with <code>--kill</code>."
+  commands:
+    - name: "on" # quoted: YAML reads a bare on as true
+      aliases: [":"]
+      try: "on :3000"
+      short: what's on a port
+      summary: "What's on a port, or which ports a process uses"
+    - name: why
+      try: "why :3000"
+      short: what started it
+      summary: "Trace what started a process (why is this port busy?)"
+    - name: for
+      aliases: [f]
+      try: "for ./server"
+      short: running a program
+      summary: "Processes running a program or holding a file open"
+    - name: by
+      aliases: [b]
+      try: "by node"
+      short: by name
+      summary: "Processes with this name"
+    - name: in
+      try: "in ."
+      short: started in this folder
+      summary: "Processes running in a directory or a folder below it"
+    - name: list
+      aliases: [l, ps]
+      try: "list --sort cpu"
+      short: what's busy
+      summary: "All processes, or the ones named"
+    - name: info
+      aliases: [i, inspect]
+      try: "info 1234"
+      short: everything about one
+      summary: "Everything about one process"
+    - name: ports
+      aliases: [p]
+      try: "ports"
+      short: all listening ports
+      summary: "All listening TCP ports, and who can reach each"
+    - name: tree
+      aliases: [t]
+      try: "tree"
+      short: parents and children
+      summary: "Parents and children"
+    - name: stuck
+      aliases: [x]
+      try: "stuck"
+      short: busy and long-running
+      summary: "Processes that look hung: busy or blocked for 2 seconds, running longer than <code>--timeout</code> (default 300 s)"
+    - name: orphans
+      aliases: [o]
+      try: "orphans --in ."
+      short: parent has exited
+      summary: "Processes whose parent has exited (on macOS also every app launchd started, so narrow it with <code>--in</code>; not on Windows)"
+- title: Change it
+  class: v-act
+  blurb: "Asks first, or previews with <code>--dry-run</code>."
+  commands:
+    - name: stop
+      aliases: [s]
+      try: "stop node"
+      short: ask it to exit
+      summary: "Ask it to exit (SIGTERM, or <code>--signal</code>), force-kill after <code>--timeout</code> (default 10 s)"
+    - name: kill
+      aliases: [k]
+      try: "kill :3000"
+      short: end it now
+      summary: "End it now (SIGKILL; <code>--graceful</code> sends SIGTERM)"
+    - name: free
+      try: "free :3000"
+      short: and check it's free
+      summary: "Stop what holds a port (SIGTERM, SIGKILL after up to 5 s) and check the port is free"
+    - name: freeze
+      try: "freeze node"
+      short: pause
+      summary: "Pause it (SIGSTOP; not on Windows)"
+    - name: thaw
+      try: "thaw node"
+      short: resume
+      summary: "Resume it (SIGCONT; not on Windows)"
+    - name: unstick
+      aliases: [u]
+      try: "unstick"
+      short: recover a stuck process
+      summary: "Recover stuck processes (SIGCONT, then SIGINT, which ends most programs); <code>--force</code> adds SIGTERM, then SIGKILL"
+- title: Keep watching
+  class: v-wait
+  wide: true
+  blurb: "A live view, or a wait until something exits."
+  commands:
+    - name: watch
+      aliases: [w, top]
+      try: "watch node"
+      short: live table
+      summary: "Live process table (<code>--json</code> streams one document per refresh)"
+    - name: wait
+      try: "wait :3000"
+      short: until it exits
+      summary: "Block until the process or processes exit"

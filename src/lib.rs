@@ -77,13 +77,13 @@
 //!
 //! ## Commands
 //!
-//! **Discovery**: `on`, `for`, `by`, `in`, `list`, `info`, `ports`, `tree`, `stuck`, `why`, `orphans`
+//! **Find out** (read-only): `on`, `why`, `for`, `by`, `in`, `list`, `info`, `ports`, `tree`, `stuck`, `orphans`
 //!
-//! **Lifecycle**: `kill`, `stop`, `unstick`, `freeze`, `thaw`, `free`
+//! **Change it** (asks first, or previews with `--dry-run`): `stop`, `kill`, `free`, `freeze`, `thaw`, `unstick`
 //!
-//! **Monitoring**: `watch` (interactive TUI, or NDJSON with `--json`), `wait` (blocking, pipe-friendly)
+//! **Keep watching**: `watch` (interactive TUI, or NDJSON with `--json`), `wait` (blocking, pipe-friendly)
 //!
-//! **Tooling**: `completions`, `manpage`
+//! **Setup**: `completions`, `manpage`
 //!
 //! ## Exit Codes
 //!

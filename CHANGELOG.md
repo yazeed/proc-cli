@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The website shows everything proc can do, and says what its messages mean.** It had a page per command, but no view across them:
+  - **The commands page** (proc-cli.com/commands) now has the README's filters and options tables, each filter with its short form, the values it accepts and the commands that take it. It also has a platforms table, the "asks before it changes anything" rules, which commands exit 0 and which exit 2 when nothing matches, and how to install completions and the man page.
+  - **A new Messages page** (/commands/messages) takes each warning and error proc prints, grouped by exit code, and says what it means and what to do.
+  - **The sidebar** on every command page has a Reference group linking to these sections, so exit codes are no longer at the bottom of one page.
+  - **The FAQ** answers what the exit codes mean and why proc exits 4 or asks for `--yes`.
+  - **One grouping everywhere.** The commands were grouped three different ways: the README, the home page and the sidebar each had their own. They now come from one file, `docs/_data/commands.yml`, in the README's three groups (Find out, Change it, Keep watching), and docs.rs follows it. `list`, `stuck` and `orphans` move out of the home page's "Keep watching", which was wrong for them.
+  - **On the home page,** "Find out" spans two columns beside "Change it", so their rows line up.
+  - **The site has a sitemap, a `robots.txt` and its own 404 page,** in place of GitHub's.
+  - **The docs test checks the grouping:** every command is in the data file once, and the README and docs.rs group them the same way
+
 - **The agent reference says what each flag accepts, what each command prints when nothing matches, and what a release may change.** A script had to find out by trying:
   - **Values.** `--timeout`, `--wait`, `--min-uptime`, `--start-time` and `wait --interval` take whole seconds (`1.5` and `1m` exit 4), `watch --interval` takes fractions down to `0.1`, and `--range` takes `START-END` from 1 to 65535. A negative number reads as a flag. `--signal` takes ten names and no numbers. `--status` takes `disk-wait` or `disk_wait`, while `dead` and `unknown` only appear in output.
   - **Short flags.** Every one is beside its long form, the flags of the commands that change processes have their own table, and the reference warns that `-l` and `-n` mean different flags on `watch`, `ports` and `wait`.

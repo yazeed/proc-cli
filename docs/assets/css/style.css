@@ -279,6 +279,7 @@ code, kbd, pre { font-family: var(--font-mono); }
 }
 
 .docs-nav-proc { color: var(--muted); font-weight: 400; }
+.docs-nav-ref a { font-family: var(--font-text); font-size: 0.92rem; }
 
 /* changelog: version on the left, release date on the right */
 .page-changelog .docs-nav li a {
@@ -499,6 +500,9 @@ pre:hover + .copy-button,
 }
 
 .prose tr:last-child td { border-bottom: 0; }
+
+/* aliases and short flags stay on one line */
+.page-commands .prose td:nth-child(2) { white-space: nowrap; }
 
 @media (max-width: 640px) {
   .prose table { display: block; overflow-x: auto; }
@@ -855,6 +859,21 @@ pre:hover + .copy-button,
 .verbs .v-act h3::before { background: var(--running); }
 .verbs .v-wait h3::before { background: var(--stopped); }
 
+/* Find out holds most commands, so it spans two columns with its list in two,
+   beside Change it (the same six rows); Keep watching takes the same two
+   columns below it */
+.verbs .v-wide { grid-column: span 2; }
+.verbs .v-wide ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(var(--rows), auto);
+  grid-auto-flow: column;
+  column-gap: 2.5rem;
+}
+.verbs .v-wide li { border-top: 0; border-bottom: 1px solid var(--rule); }
+.verbs .v-wide li:first-child,
+.verbs .v-wide li.col-top { border-top: 1px solid var(--rule); }
+
 .more { margin-top: 1.5rem; }
 
 /* agents */
@@ -901,6 +920,12 @@ pre:hover + .copy-button,
   .page-docs { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .page-aside { display: none; }
   .verbs, .agents { grid-template-columns: minmax(0, 1fr); gap: 2rem; }
+  .verbs .v-wide { grid-column: auto; }
+}
+
+@media (max-width: 560px) {
+  .verbs .v-wide ul { display: block; }
+  .verbs .v-wide li.col-top { border-top: 0; }
 }
 
 @media (max-width: 720px) {

@@ -1,52 +1,21 @@
 ---
 layout: page
 title: commands
-description: "Complete reference for all proc commands."
+description: "Every proc command, the filters and options they share, what each exit code means, and how to set up completions and the man page."
 permalink: /commands
 ---
 
-## Discovery
+{% for group in site.data.commands %}
+## {{ group.title }}
 
-| Command | Aliases | Description |
-|---------|---------|-------------|
-| [on](on) | `:` | Port/process lookup (bidirectional) |
-| [why](why) | | Trace why a port is busy or show process ancestry |
-| [for](for) | `f` | Find processes by file path |
-| [by](by) | `b` | Filter processes by name |
-| [in](in) | | Processes running in a directory or a folder below it |
-| [list](list) | `l`, `ps` | List processes |
-| [info](info) | `i`, `inspect` | Show detailed process information |
-| [ports](ports) | `p` | List all listening ports |
-| [tree](tree) | `t` | Show process tree |
-| [watch](watch) | `w`, `top` | Real-time process monitoring |
-| [stuck](stuck) | `x` | Find stuck/hung processes |
-| [orphans](orphans) | `o` | Find orphaned processes |
+{{ group.blurb }}
 
-## Lifecycle
-
-| Command | Aliases | Description |
-|---------|---------|-------------|
-| [kill](kill) | `k` | Force kill processes (SIGKILL) |
-| [stop](stop) | `s` | Graceful stop with --signal support (SIGTERM, then SIGKILL) |
-| [freeze](freeze) | | Pause processes (SIGSTOP) |
-| [thaw](thaw) | | Resume frozen processes (SIGCONT) |
-| [free](free) | | Free a port: SIGTERM, SIGKILL after up to 5 seconds, then check the port is free |
-| [wait](wait) | | Block until process(es) exit |
-| [unstick](unstick) | `u` | Recover stuck processes (SIGCONT, then SIGINT, which ends most programs); `--force` ends what stays stuck |
-
-## Common options
-
-Most commands support these flags (check individual command pages for details):
-
-| Flag | Short | Description |
-|------|-------|-------------|
-| `--json` | `-j` | Output as JSON |
-| `--verbose` | `-v` | Print every value whole. In a process table it adds PPID, STATUS and DIR and cuts nothing |
-| `--in [<dir>]` | `-i` | Only processes running in this directory or a folder below it (bare `--in` is the current directory) |
-| `--by <name>` | `-b` | Filter by process name |
-| `--help` | `-h` | Show help |
-
-## Target syntax
+| Command | Aliases | What it does |
+|---------|---------|--------------|
+{% for cmd in group.commands %}| [{{ cmd.name }}]({{ cmd.name }}) | {% for alias in cmd.aliases %}`{{ alias }}`{% unless forloop.last %}, {% endunless %}{% endfor %} | {{ cmd.summary }} |
+{% endfor %}
+{% endfor %}
+## Targets
 
 Targets work the same way everywhere:
 
@@ -61,7 +30,73 @@ Commands that take targets accept several, as separate arguments, and the kinds 
 
 A name matches the whole process name, ignoring case, the way `killall` and `pkill` read it. `--by` follows the same rule. Add `--cmd` to match any part of the name or the full command line instead, like `pkill -f`.
 
-## Scripting
+## It asks before it changes anything
+
+- **Looking is free.** `on`, `for`, `by`, `in`, `list`, `info`, `ports`, `tree`, `why`, `stuck` and `orphans` only read.
+- **Changing asks first.** `kill`, `stop`, `freeze`, `thaw`, `free`, `unstick`, `orphans --kill` and `stuck --kill` show what they will touch and wait for a yes. `--dry-run` shows the list and does nothing else; `--yes` skips the question.
+- **`--json` is not a yes.** A script or agent that runs a changing command with `--json` and no `--yes` gets exit 4, nothing changed, and the list of processes it would have touched. The same goes for running without a terminal.
+- **A name is a search, not an approval.** Preview a name with `--dry-run`, and use `--yes` only with a `:port` or a PID you have seen.
+
+## Filters
+
+Not every filter is on every command; each command's page lists its own. `--in`, `--by` and `--cmd` work on nearly all of them, including the ones that change processes.
+
+| Filter | Short | What it keeps | Commands |
+|--------|-------|---------------|----------|
+| `--in [<dir>]` | `-i` | Processes running in this directory or a folder below it (bare `--in` is the current directory) | nearly every command |
+| `--by <name>` | `-b` | Processes with this name (the whole name, like a name target) | nearly every command |
+| `--cmd` | | Match names and `--by` as a part of the name or the full command line, like `pkill -f` | every command that takes a name or `--by` |
+| `--start-time <secs>` | | Only the process that started then (its `start_time` from the JSON), so a PID a new process has taken matches nothing. One PID target | `kill`, `stop`, `freeze`, `thaw`, `wait`, `info`, `unstick` |
+| `--path <path>` | `-p` | Processes running this executable | `list` |
+| `--min-cpu <percent>` | | Using more than this much of one core (fractions allowed) | `by`, `in`, `for`, `list`, `tree`, `watch` |
+| `--min-mem <MB>` | | Using more than this many megabytes | `by`, `in`, `for`, `list`, `tree`, `watch` |
+| `--min-uptime <secs>` | | Running longer than this many whole seconds | `by`, `in`, `for`, `list`, `tree` |
+| `--status <status>` | | `running`, `sleeping`, `stopped`, `zombie`, `idle` (Linux), `starting` (macOS, FreeBSD, NetBSD), `disk-wait` (Linux; `disk_wait` also works) | `by`, `in`, `for`, `list`, `tree` |
+| `--parent <pid>` | | Children of this process | `by`, `in`, `list` |
+| `--exposed` / `--local` | `-e` / `-l` | Ports open to the network / to this machine only | `ports` |
+| `--range <start-end>` | `-r` | Ports in a range, such as `3000-9000` (1 to 65535) | `ports` |
+| `--sort <key>` | `-s` | `cpu`, `mem` (biggest first); `pid`, `name` (ascending). `ports`: `port`, `pid`, `name`. Ties come by PID | `list`, `by`, `in`, `for`, `watch`, `ports` |
+| `--limit <n>` | `-n` (`-l` on `watch`) | At most this many results | `list`, `by`, `in`, `for`, `ports`, `watch` |
+| `--ancestors` | `-a` | The chain of parents up to the root, instead of the children | `tree` |
+| `--depth <n>` | `-d` | How deep the tree goes (default 10) | `tree` |
+| `--compact` | `-C` | PIDs only | `tree` |
+| `--timeout <secs>` | `-t` | Only processes running longer than this (default 300) | `stuck`, `unstick` |
+
+Seconds are whole seconds everywhere except `watch --interval`: `--min-uptime 7200`, not `2h` or `1.5`.
+
+## Options
+
+| Option | Short | What it does | Commands |
+|--------|-------|--------------|----------|
+| `--json` | `-j` | One JSON document instead of the table or card | all 19 |
+| `--verbose` | `-v` | Every value whole. A process table adds PPID, STATUS and DIR and cuts nothing; `ports` adds USER, MEM and PATH | all 19 |
+| `--wide` | `-w` | The directory and the command line whole, instead of fitting the terminal | `list`, `by`, `in`, `for`, `stuck`, `orphans`, `watch` |
+| `--dry-run` | | Show what would change, change nothing | the commands that change processes |
+| `--yes` | `-y` | Don't ask; needed with `--json` or without a terminal | the commands that change processes |
+| `--kill` | `-k` | Kill the processes found | `stuck`, `orphans` |
+| `--signal <name>` | `-S` | First signal: `HUP`, `INT`, `QUIT`, `ABRT`, `KILL`, `TERM`, `STOP`, `CONT`, `USR1` or `USR2`, any case, with or without `SIG` (no numbers) | `stop` |
+| `--timeout <secs>` | `-t` | `stop`: seconds before force-killing (default 10). `wait`: seconds before giving up (default 0, no limit) | `stop`, `wait` |
+| `--graceful` | `-g` | Send SIGTERM instead of SIGKILL | `kill` |
+| `--force` | `-f` | End the processes that stay stuck (SIGTERM, then SIGKILL) | `unstick` |
+| `--wait <secs>` | | Seconds to wait for the port to be free (default 10) | `free` |
+| `--interval <secs>` | `-n` | Seconds between status lines (`wait`, whole seconds, default 5) or refreshes (`watch`, at least 0.1, default 2) | `wait`, `watch` |
+| `--quiet` | `-q` | No periodic still-running lines | `wait` |
+| `--help` | `-h` | Help for proc or for one command | all |
+
+## Platforms
+
+| Platform | Architectures | Not available |
+|----------|---------------|---------------|
+| macOS | Apple Silicon, Intel | |
+| Linux | x86_64, ARM64 (static binaries, any distribution) | |
+| Windows | x86_64 | `freeze`, `thaw`, `orphans` and `stop --signal`, which exit 4: Windows has no signals and doesn't re-parent processes |
+| FreeBSD, NetBSD | x86_64 (other CPUs: `cargo install proc-cli`) | `in` a deleted directory exits 4: the kernel forgets the path |
+
+On macOS `orphans` also lists every app launchd started, so narrow it with `--in`. Another user's process shows only what the system gives a normal user (on macOS its name, path and children); `sudo` reads the rest.
+
+## Scripting and exit codes {#exit-codes}
+
+<span id="scripting"></span>
 
 With `--json`, every command prints one JSON document with `action` (the command name) and `success`. `proc watch --json` streams one per refresh. Errors, including invalid flags, are JSON too, and every error says why in `"reason"`, one fixed word: `"system_error"` (exit 1); `"not_found"`, `"command_line_only"` or `"ruled_out"` (with `"ruled_out_by"`, the guards that ruled the process out, or `"left_out"`, the processes proc runs under that were all a name matched) for exit 2; `"permission_denied"` (exit 3); and for exit 4, which means nothing was done, `"invalid_input"` (a wrong flag, value or argument), `"needs_confirmation"` or `"not_supported"` (this OS cannot do it). A command that changes processes run with `--json` but without `--yes` exits 4 and adds `"needs_confirmation": true` and `"processes"` (the ones it would have changed); with `--yes`, the receipt lists the same processes as `"processes"`, in the same order, each with an `"outcome"` (`"succeeded"` or `"failed"`, and `"error"` when it failed), and a `"count"`. `why`, `info`, `kill`, `stop`, `freeze`, `thaw`, `unstick`, `free`, `wait`, and `on` given several targets, also put `"not_found"` in their JSON, an array of the targets that matched nothing (empty when all were found); the found ones are still handled, and when every target is missing the command exits 2 (`free` exits 0: a port nobody holds is already free).
 
@@ -76,4 +111,28 @@ With `--json`, every command prints one JSON document with `action` (the command
 
 `"success": false` always comes with a non-zero exit code.
 
+### When nothing matches
+
+| Command | Exit code |
+|---------|-----------|
+| `list`, `in`, `ports`, `stuck`, `orphans`, `tree` without a target | `0`, with a line such as `⚠ No processes found`: an empty answer is still an answer |
+| `on`, `by`, `info`, `why`, `tree <target>`, `wait`, and `kill`, `stop`, `freeze`, `thaw`, `unstick` with targets | `2` when every target matched nothing; with some found, the others are handled and `⚠ Not found:` names the rest |
+| `free` | `0`: a port nobody holds is already free |
+
+[Messages](/commands/messages) explains each warning and error proc prints, and what to do about it.
+
 Every JSON shape, the values each flag accepts, what each command prints when nothing matches, and what a release may change are in the [JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md). In short: within 2.x keys are only added, never removed or given another meaning, and `error`, `message` and the human output are text for people, so branch on `reason`, `exit_code` and `count`.
+
+## Completions and man page {#setup}
+
+The Nix package and the `.deb` and `.rpm` files install both. With any other install method, add them yourself:
+
+```bash
+proc completions bash > /etc/bash_completion.d/proc
+proc completions zsh > ~/.zsh/completions/_proc
+proc completions fish > ~/.config/fish/completions/proc.fish
+proc completions elvish        # also: powershell
+proc manpage | sudo tee /usr/local/share/man/man1/proc.1 > /dev/null
+```
+
+`completions` and `manpage` print text, never JSON.
