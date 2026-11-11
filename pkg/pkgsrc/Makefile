@@ -1,6 +1,6 @@
 # $NetBSD$
 
-DISTNAME=	proc-cli-2.3.0
+DISTNAME=	proc-cli-2.4.0
 CATEGORIES=	sysutils
 MASTER_SITES=	${MASTER_SITE_GITHUB:=yazeed/}
 GITHUB_TAG=	v${PKGVERSION_NOREV}
