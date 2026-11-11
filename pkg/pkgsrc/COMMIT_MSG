@@ -1,8 +1,8 @@
-sysutils/proc-cli: update to 2.3.0
+sysutils/proc-cli: update to 2.4.0
 
-Changes since 2.2.0:
-- on, info, for and why show the same card for a process
-- process tables show the user, uptime and command
-- ports says if each port is reachable from the network
-- values proc cannot read show as "-", not 0
-- JSON adds parent name, child count, CPU time, open files
+Changes since 2.3.0:
+- daemons like sshd are named after their program, not their title
+- with security.curtain=1, a port proc can't see is never called free
+- a name that matches the shell proc runs in is said, not skipped
+- ports says when other users' ports are hidden from it
+- for leaves proc itself out

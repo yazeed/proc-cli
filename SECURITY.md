@@ -4,10 +4,10 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 2.3.x   | :white_check_mark: |
-| < 2.3   | :x:                |
+| 2.4.x   | :white_check_mark: |
+| < 2.4   | :x:                |
 
-1.x and 2.0.x to 2.2.x are no longer supported. Upgrade to 2.3.x; see the [CHANGELOG](CHANGELOG.md) for what changed.
+1.x and 2.0.x to 2.2.x are no longer supported. Upgrade to 2.4.x; see the [CHANGELOG](CHANGELOG.md) for what changed.
 
 ## Reporting a Vulnerability
 
@@ -50,7 +50,7 @@ Include the following information:
 
 proc is designed with security in mind:
 
-1. **No Network Access**: proc only accesses local system information. It does not make network requests or phone home. (The npm package downloads the proc binary the first time you run it and verifies its checksum; the binary itself never does.)
+1. **No Network Access**: proc only accesses local system information. It does not make network requests or phone home. (The npm package downloads the proc binary the first time you run it, and `install.sh` downloads it once, and both check it against the release's checksum; the binary itself never makes a request.)
 
 2. **No Data Collection**: proc does not collect, store, or transmit any user data or telemetry.
 
