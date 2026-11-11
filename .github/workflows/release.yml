@@ -760,17 +760,60 @@ jobs:
           git diff --staged --quiet || git commit -m "proc ${{ github.ref_name }}"
           git push
 
+  # Pages keeps the first deploy of a commit and ignores the next, and nearly
+  # every push to main deploys (each change regenerates docs/changelog.md), so
+  # the tagged commit was deployed before the release had its .deb files: 2.4.0
+  # deployed it again here, and /apt stayed at 2.3.0. main's newest commit is
+  # the one commit-package-files pushed, which nothing has deployed (a push
+  # with this workflow's token starts no workflow), so pages.yml deploys that
   update-apt:
     name: Update the apt repository
-    needs: create-release
-    if: github.event_name == 'push'
+    needs: [create-release, commit-package-files]
+    if: ${{ !cancelled() && github.event_name == 'push' && needs.create-release.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
+      actions: write
       contents: read
-      pages: write
-      id-token: write
-    uses: ./.github/workflows/pages.yml
-    secrets:
-      APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+    steps:
+      - name: Deploy main's newest commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$head" = "$GITHUB_SHA" ]; then
+            echo "::error::main's newest commit is the tagged one, which Pages deployed before ${GITHUB_REF_NAME}'s packages existed (commit-package-files pushed nothing). After the next push to main, run: gh workflow run pages.yml --ref main"
+            exit 1
+          fi
+          gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main
+          run=
+          for _ in $(seq 30); do
+            sleep 10
+            run=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow pages.yml \
+              --event workflow_dispatch --commit "$head" --limit 1 \
+              --json databaseId --jq '.[0].databaseId // empty')
+            [ -n "$run" ] && break
+          done
+          [ -n "$run" ] || { echo "::error::no Pages run started for $head in 5 minutes"; exit 1; }
+          gh run watch "$run" --repo "$GITHUB_REPOSITORY" --exit-status --interval 15
+
+      # Pages serves with a 10-minute cache that a query string does not get
+      # past, so the check reads until the cached copy has expired
+      - name: Check that /apt lists the release
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          for arch in amd64 arm64; do
+            url=https://proc-cli.com/apt/dists/stable/main/binary-$arch/Packages
+            for _ in $(seq 30); do
+              if curl -fsS "$url" | grep -qx "Version: $version"; then
+                echo "$url lists $version"
+                continue 2
+              fi
+              sleep 30
+            done
+            echo "::error::$url does not list $version after 15 minutes"
+            exit 1
+          done
 
   update-winget:
     name: Update winget
