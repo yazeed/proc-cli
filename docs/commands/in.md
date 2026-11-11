@@ -1,22 +1,24 @@
 ---
 layout: page
 title: proc in
-description: "Find the processes running in a directory or a folder below it."
+description: "The processes running in a directory or a folder below it."
 permalink: /commands/in
 ---
 
-Find processes running in a directory or in a folder below it: `proc in ~/projects` also lists a server started in `~/projects/my-app/api`.
+`proc in ~/projects` also lists a server started in `~/projects/my-app/api`. It only reads.
 
 ```bash
-proc in .                  # processes in current directory
-proc in ~/projects/myapp   # processes in a specific path
-proc in . --by node        # processes named node in cwd
-proc in . --by node --cmd  # ... or with node anywhere in their command line
+proc in .                                 # everything running in this project
+proc in ~/projects/my-app                 # ... in another one
+proc in . --by node                       # the node processes in it
+proc in . --by node --cmd                 # ... or with node anywhere in their command line
+proc in ~/projects/my-app --min-cpu 10    # the busy ones
+proc in . --json                          # the same list for a script
 ```
 
-The directory can be one that was deleted, such as a removed git worktree: processes still running there are listed. A path that doesn't exist and has nothing running in it is treated as a typo and exits 4. An existing directory is resolved first (symlinks followed), so `/tmp/x` on macOS finds processes the OS reports in `/private/tmp/x`, and the output shows the resolved path.
+## Output
 
-The table is the one `proc list` prints, with the directory as its second column: `PID DIR NAME USER CPU% MEM UPTIME COMMAND`. `--verbose` adds PPID and STATUS and cuts nothing.
+The process table [`proc list`](list) prints, with the directory as its second column: `PID DIR NAME USER CPU% MEM UPTIME COMMAND`. `--verbose` adds PPID and STATUS and cuts nothing.
 
 ## Options
 
@@ -27,7 +29,7 @@ The table is the one `proc list` prints, with the directory as its second column
 | `--min-cpu <n>` | | Minimum CPU % |
 | `--min-mem <n>` | | Minimum memory (MB) |
 | `--status <s>` | | Filter by status: running, sleeping, stopped, zombie, idle (Linux), starting (macOS, FreeBSD, NetBSD), disk-wait (Linux; `disk_wait` also works) |
-| `--min-uptime <s>` | | Minimum uptime in seconds |
+| `--min-uptime <s>` | | Minimum uptime in whole seconds |
 | `--parent <pid>` | | Only children of this parent PID |
 | `--sort <key>` | `-s` | Sort by: cpu, mem (biggest first); pid, name (ascending). Ties come by PID (default: cpu) |
 | `--limit <n>` | `-n` | Limit results |
@@ -35,22 +37,26 @@ The table is the one `proc list` prints, with the directory as its second column
 | `--verbose` | `-v` | Add PPID and STATUS to the table, and cut nothing (DIR is always there) |
 | `--wide` | `-w` | Print the directory and the command line whole instead of fitting the terminal |
 
-## Examples
+## Details
 
-```bash
-# everything running in current project
-proc in .
+- **A deleted directory works**, such as a removed git worktree: the processes still running there are listed, so they can be cleaned up. FreeBSD and NetBSD forget a deleted directory's path, so there it exits 4.
+- **Symlinks are followed:** `/tmp/x` on macOS finds the processes the system reports in `/private/tmp/x`, and the output shows the resolved path.
 
-# only python processes in this directory
-proc in . --by python
+## When nothing matches
 
-# high-CPU processes in a project
-proc in ~/projects/my-app --min-cpu 10
+`⚠ No processes found in /path`, exit 0. A path that doesn't exist and has nothing running in it is treated as a typo: `Invalid input: Directory not found`, exit 4. [Messages](messages) explains each one.
 
-# JSON output for scripting
-proc in . --json
+## JSON
+
+```text
+{
+  "action": "in", "success": true, "count": 2,
+  "processes": [<Process>, ...]
+}
 ```
+
+Each process has its `cwd`. Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#list-by-in-stuck-orphans).
 
 ## See also
 
-[by](by) to start from a name, [list](list) for all processes.
+[by](by) to start from a name, [list](list) for all processes, [kill](kill) `--in .` to stop only this project's processes.

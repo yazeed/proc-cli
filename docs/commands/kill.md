@@ -1,25 +1,24 @@
 ---
 layout: page
 title: proc kill
-description: "Force kill processes."
+description: "End processes now, with SIGKILL."
 permalink: /commands/kill
 ---
 
-Send SIGKILL to processes. Asks for confirmation unless `--yes`. Alias: `k`.
-
-The question comes with the list of what it would kill, on the terminal: the same table as `proc list`, with the whole command line. If stdout is a file or a pipe, the list goes to stderr beside the question; if it cannot be shown at all, nothing is asked and nothing is killed (exit 4, `needs_confirmation`). A signal or `Ctrl+C` at the question ends proc with the terminal put back (130 for `Ctrl+C`).
+SIGKILL can't be caught, so the process gets no chance to clean up. It asks first, showing what it would kill. Alias: `k`.
 
 ```bash
-proc kill :3000            # kill every process on port 3000
-proc kill node             # kill the processes named node
-proc kill :3000 :8080 node # kill multiple targets
+proc kill :3000              # everything on port 3000, after asking
+proc kill node --dry-run     # what would it kill?
+proc kill node --in .        # only the node processes in this project
+proc kill 1234 5678 :8080    # two PIDs and whatever holds port 8080
+proc kill :3000 --yes        # a port you've seen: no question
+proc kill node --graceful    # SIGTERM instead (or use proc stop)
 ```
 
-Several targets are separate arguments. Comma-separated lists (`:3000,:8080`) still work but are deprecated.
+## Output
 
-A name is the whole process name, ignoring case, the way `killall` and `pkill` read it: `proc kill node` stops the processes named `node` and leaves `Claude Helper` alone. Add `--cmd` to match any part of the name or the full command line instead (like `pkill -f`): `proc kill serve --cmd`. A path is not a name: `proc kill ./server` finds nothing, so use `--cmd`, or [`proc for <file>`](for) for an executable. proc doesn't expand wildcards; an unquoted `node*` is expanded by your shell into file names; use `--cmd` for partial matches.
-
-With `--json` and `--yes`, the result lists `processes`: every process it killed, in the order of the list you were asked to approve, each as a whole process object with its `outcome` (`succeeded` or `failed`, and `error` when it failed), and `count`, how many. `succeeded` and `failed` hold the same processes split in two, and stay.
+The list of what it would kill, then `Kill 2 processes? [y/N]`. After a yes, `✓ Killed 2 processes` with a `→ node [PID 1234]` line for each, or `✗ Failed to kill …` with the reason for each process the system refused.
 
 ## Options
 
@@ -35,28 +34,35 @@ With `--json` and `--yes`, the result lists `processes`: every process it killed
 | `--json` | `-j` | Output as JSON |
 | `--verbose` | `-v` | Add PPID, STATUS and DIR to the table of processes it lists, and cut nothing |
 
-## Examples
+## Details
 
-```bash
-# preview before killing
-proc kill node --dry-run
+- **It asks first.** The question comes with the list of what it would touch: the same table as `proc list`, with the whole command line, on the terminal (on stderr when stdout is a file or a pipe). If the list can't be shown, nothing is asked and nothing changes (exit 4, `needs_confirmation`). `Ctrl+C` at the question ends proc with the terminal put back (exit 130).
+- **A name is the whole process name**, ignoring case: `node` leaves `Claude Helper` alone. `--cmd` matches any part of the name or the command line, like `pkill -f`; preview it with `--dry-run`. A path is not a name: use [`proc for <file>`](for).
+- **Several targets** are separate arguments. Comma-separated lists (`:3000,:8080`) still work but are deprecated.
+- **For a polite stop**, [`proc stop`](stop) sends SIGTERM and forces it only after a timeout.
+- **Child processes are not signalled**: a server's workers may keep running, and keep its port. [`proc free`](free) checks the port afterwards.
 
-# kill without confirmation
-proc kill :3000 --yes
+## When nothing matches
 
-# graceful shutdown (SIGTERM)
-proc kill node --graceful
+`No process found matching '…'` (or `No process listening on port …`), exit 2, and nothing is touched. With several targets, the ones found are handled and `⚠ Not found:` names the rest. A name that matches only the shell or agent running proc is left out and named (`⚠ Left out: zsh (PID 81340), which runs this proc`); when that was every match, it is exit 2. [Messages](messages) explains each one.
 
-# only kill node in current project
-proc kill node --in .
+## JSON
 
-# kill multiple targets at once
-proc kill :3000 :8080 node
+```text
+{
+  "action": "kill", "success": true, "dry_run": true, "count": 1,
+  "not_found": [], "processes": [<Process>, ...]
+}
 
-# kill two PIDs and whatever is on port 8080
-proc kill 1234 5678 :8080
+{
+  "action": "kill", "success": true, "count": 1,
+  "processes": [<Process>, ...], "succeeded": [...], "failed": [...],
+  "succeeded_count": 1, "failed_count": 0, "not_found": []
+}
 ```
+
+The first is `--dry-run`, the second the receipt with `--yes`: `processes` lists every process it killed, in the order of the list you were asked to approve, each as a whole process object with its `outcome` (`succeeded` or `failed`, and `error` when it failed). `succeeded` and `failed` hold the same processes split in two. Without `--yes`, `--json` is not a yes: exit 4, `reason: "needs_confirmation"`, with the `processes` it would have killed. Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#kill-stop-freeze-thaw-orphans---kill-stuck---kill).
 
 ## See also
 
-[stop](stop) for graceful shutdown with timeout, [unstick](unstick) for stuck processes.
+[stop](stop) for a polite stop with a timeout, [free](free) to free a port and check it, [unstick](unstick) for stuck processes.

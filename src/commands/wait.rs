@@ -30,11 +30,11 @@ pub struct WaitCommand {
     #[arg(required = true, num_args = 1.., value_parser = crate::core::validate_target_arg)]
     target: Vec<String>,
 
-    /// Seconds between status lines (exits are noticed within a quarter second)
+    /// Whole seconds between status lines (exits are noticed within a quarter second)
     #[arg(long, short = 'n', default_value = "5")]
     interval: u64,
 
-    /// Timeout in seconds (0 = no timeout)
+    /// Timeout in whole seconds (0 = no timeout)
     #[arg(long, short = 't', default_value = "0")]
     timeout: u64,
 
@@ -42,7 +42,7 @@ pub struct WaitCommand {
     #[arg(long, short = 'j')]
     json: bool,
 
-    /// Show verbose output
+    /// Add each process's CPU and memory to the list of what it waits for
     #[arg(long, short = 'v')]
     verbose: bool,
 

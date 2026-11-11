@@ -54,7 +54,7 @@ pub struct ListCommand {
     #[arg(long, value_enum, ignore_case = true)]
     pub status: Option<StatusFilter>,
 
-    /// Only show processes running longer than this (seconds)
+    /// Only show processes running longer than this (whole seconds)
     #[arg(long)]
     pub min_uptime: Option<u64>,
 

@@ -1,21 +1,23 @@
 ---
 layout: page
 title: proc stuck
-description: "Find stuck/hung processes."
+description: "Processes that look hung."
 permalink: /commands/stuck
 ---
 
-Find processes that appear stuck or hung. Alias: `x`.
+Busy or blocked for two seconds, and running longer than `--timeout` (5 minutes by default). It only reads, unless you add `--kill`. Alias: `x`.
 
 ```bash
-proc stuck                 # find all stuck processes
-proc stuck --kill          # find and kill them
-proc stuck --by node       # only stuck processes named node
+proc stuck                         # what looks stuck?
+proc stuck --timeout 60            # ... counting anything older than a minute
+proc stuck --by node --in .        # only this project's node processes
+proc stuck --kill --dry-run        # what --kill would end
+proc stuck --kill                  # end them, after showing the list and asking
 ```
 
-A process counts as stuck when it has been running longer than `--timeout` and, in two readings a second apart, is either using more than half a CPU core or blocked in uninterruptible sleep (waiting on the kernel, usually for I/O, where it can't even be interrupted). One busy moment isn't enough. A long build at full CPU looks the same as a loop that never ends, so check the list before using `--kill`.
+## Output
 
-With `--kill --json --yes`, the result lists `processes`: every process it killed, in the order of the list you were asked to approve, each as a whole process object with its `outcome` (`succeeded` or `failed`, and `error` when it failed), and `count`. `succeeded` and `failed` hold the same processes split in two, and stay.
+`⚠ Found 2 potentially stuck processes`, then the process table [`proc list`](list) prints.
 
 ## Options
 
@@ -32,25 +34,27 @@ With `--kill --json --yes`, the result lists `processes`: every process it kille
 | `--verbose` | `-v` | Add PPID, STATUS and DIR to the table, and cut nothing |
 | `--wide` | `-w` | Print the directory and the command line whole instead of fitting the terminal |
 
-## Examples
+## Details
 
-```bash
-# find stuck processes (5-minute threshold)
-proc stuck
+- **What counts as stuck:** running longer than `--timeout`, and in two readings a second apart either using more than half a CPU core or blocked in uninterruptible sleep (waiting on the kernel, usually for I/O, where it can't even be interrupted). One busy moment isn't enough.
+- **It finds candidates, not proof.** A long build or a busy server at full CPU looks the same as a loop that never ends, so check the list before `--kill`, or try [`unstick`](unstick) first.
+- It takes about two seconds, for the two readings.
 
-# lower threshold to 60 seconds
-proc stuck --timeout 60
+## When nothing matches
 
-# find and kill stuck processes
-proc stuck --kill --yes
+`✓ No stuck processes found (threshold: 300s)`, exit 0.
 
-# preview what would be killed
-proc stuck --kill --dry-run
+## JSON
 
-# only stuck node processes in current project
-proc stuck --by node --in .
+```text
+{
+  "action": "stuck", "success": true, "count": 2,
+  "processes": [<Process>, ...]
+}
 ```
+
+Nothing found is `{"action": "stuck", "success": true, "count": 0, "message": "No stuck processes found (threshold: 300s)"}`, with no `processes`. With `--kill --yes` it is a receipt, as for [`kill`](kill): `processes` each with its `outcome`, in the order you approved. Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#list-by-in-stuck-orphans).
 
 ## See also
 
-[unstick](unstick) for recovery attempts before killing, [kill](kill) for direct termination.
+[unstick](unstick) to try recovering them first, [kill](kill) to end one you have checked.

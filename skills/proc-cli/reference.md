@@ -276,7 +276,7 @@ The same machine gives the same order on every run, so a list can be compared wi
 
 ### When nothing matches
 
-A name target that matches nothing is an error (exit 2, `not_found` or `command_line_only`) for `by`, `on`, `info`, `why`, `tree` and the commands that change processes. A search that finds nothing is not: it is exit 0 with `count: 0`, in a shape that differs per command:
+A name target that matches nothing is an error (exit 2, `not_found` or `command_line_only`) for `by`, `on`, `info`, `why`, `tree` and the commands that change processes, as is a file nothing holds for `for`. A search that finds nothing is not: it is exit 0 with `count: 0`, in a shape that differs per command:
 
 | Command | Nothing found (exit 0) |
 |---------|------------------------|

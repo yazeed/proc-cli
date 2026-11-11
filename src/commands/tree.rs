@@ -35,7 +35,7 @@ pub struct TreeCommand {
     #[arg(long, short)]
     ancestors: bool,
 
-    /// Show verbose output
+    /// Accepted, as on every command; the tree looks the same with it
     #[arg(long, short = 'v')]
     verbose: bool,
 
@@ -63,7 +63,7 @@ pub struct TreeCommand {
     #[arg(long, value_enum, ignore_case = true)]
     status: Option<StatusFilter>,
 
-    /// Only show processes running longer than this (seconds)
+    /// Only show processes running longer than this (whole seconds)
     #[arg(long)]
     min_uptime: Option<u64>,
 

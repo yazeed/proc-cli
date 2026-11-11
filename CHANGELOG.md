@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every command page has the same order, its JSON shape, and what happens when nothing matches.** The pages put changelog notes, internal timings and deprecation lists before the first example, and only `ports` showed its JSON.
+  - **One order on all 19 pages:** what it does, examples (the two example lists merged into one), output, options, details, when nothing matches, JSON, see also.
+  - **Each JSON section** shows the command's real top-level shape, taken from running it, with a link to the full schema in the agent reference. Deprecated keys are named there and nowhere else.
+  - **Sample output.** `why` shows a real three-level chain, and the commands that change processes say what they print after a yes.
+  - **Corrections.** `for` on a file nothing holds exits 2, not 0, and the commands page and the agent reference now list it with the commands that do. `stop`'s page lists the ten signal names `--signal` takes, and says numbers aren't accepted.
+  - **What `-v` does.** On `tree` it changes nothing, and the page and `--help` now say so instead of "Show extra details". On `wait` it adds each process's CPU and memory.
+  - **Whole seconds.** `--help` says "whole seconds" for `--min-uptime`, `--timeout`, `--wait` and `wait --interval`, which reject `1.5` and `1m`
+
 - **The website shows everything proc can do, and says what its messages mean.** It had a page per command, but no view across them:
   - **The commands page** (proc-cli.com/commands) now has the README's filters and options tables, each filter with its short form, the values it accepts and the commands that take it. It also has a platforms table, the "asks before it changes anything" rules, which commands exit 0 and which exit 2 when nothing matches, and how to install completions and the man page.
   - **A new Messages page** (/commands/messages) takes each warning and error proc prints, grouped by exit code, and says what it means and what to do.

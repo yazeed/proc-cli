@@ -1,17 +1,22 @@
 ---
 layout: page
 title: proc ports
-description: "List all listening ports."
+description: "Every listening TCP port, and who can reach it."
 permalink: /commands/ports
 ---
 
-Show all listening ports on the system. Alias: `p`.
+Each row names the process holding the port. It only reads. Alias: `p`.
 
 ```bash
-proc ports                 # all listening ports
-proc ports --by node       # ports used by processes named node
-proc ports --exposed       # network-exposed only
+proc ports                      # every listening port
+proc ports --by node            # the ports the node processes hold
+proc ports --exposed            # only the ones open to the network
+proc ports --range 8000-9000    # ports 8000 to 9000
+proc ports --in .               # ports held by processes in this project
+proc ports --sort name          # by the holder's name
 ```
+
+## Output
 
 ```text
  PORT   PROTO  ADDRESS    EXPOSURE  PID    NAME      UPTIME  COMMAND
@@ -19,9 +24,7 @@ proc ports --exposed       # network-exposed only
  60916  TCP    0.0.0.0    exposed   26582  demo-web     33s  ./demo-web --serve --port-hint 3000
 ```
 
-Each row says what the listener is. EXPOSURE is `local` (bound to loopback only) or `exposed` (all interfaces, another address, or none known). NAME, UPTIME and COMMAND are the holder's, as in every other table. COMMAND takes the width the other columns leave and ends with `…` where it is cut. A value proc cannot read shows as `-`: a process that ended after its port was listed keeps its port cells and the name its socket gave, and `-` in the rest.
-
-Ports held by other users' processes are left out when proc isn't root, since it can't see those processes' sockets, and on Linux and macOS a line after the table names them: `⚠ 2 ports in use by other users' processes, which proc can't see: 22, 80 (run with sudo to see them)`. It's left out with `--by`, `--in`, `--exposed` or `--local`, since proc can't tell whether a holder it can't see would match; `--range` applies to it.
+Each row says what the listener is. EXPOSURE is `local` (bound to loopback only) or `exposed` (all interfaces, another address, or none known). NAME, UPTIME and COMMAND are the holder's, as in every other table, and COMMAND ends with `…` where it is cut. A value proc can't read shows as `-`.
 
 ## Options
 
@@ -32,37 +35,44 @@ Ports held by other users' processes are left out when proc isn't root, since it
 | `--in [<dir>]` | `-i` | Filter by directory |
 | `--exposed` | `-e` | Only network-exposed ports (0.0.0.0, ::) |
 | `--local` | `-l` | Only localhost ports (127.0.0.1, ::1) |
-| `--range <start-end>` | `-r` | Filter by port range (e.g., 3000-9000) |
+| `--range <start-end>` | `-r` | Filter by port range (e.g., 3000-9000; ports go from 1 to 65535) |
 | `--sort <key>` | `-s` | Sort by: port, pid, name; all ascending, ties by port, then PID (default: port) |
 | `--limit <n>` | `-n` | Limit results |
 | `--json` | `-j` | Output as JSON |
-| `--verbose` | `-v` | Add USER, MEM and PATH (the executable) and cut nothing; JSON adds the connection counts |
+| `--verbose` | `-v` | Add USER, MEM and PATH (the executable) and cut nothing; JSON adds `exe_path` and the connection counts |
 
-## Examples
+## Details
 
-```bash
-# all ports, sorted by process name
-proc ports --sort name
+- **Other users' ports.** When proc isn't root it can't see other users' processes' sockets, so their ports are left out, and on Linux and macOS a line after the table names them: `⚠ 2 ports in use by other users' processes, which proc can't see: 22, 80 (run with sudo to see them)`. The line is left out with `--by`, `--in`, `--exposed` or `--local`, since proc can't tell whether a holder it can't see would match; `--range` applies to it.
+- **FreeBSD and NetBSD** set to hide other users' sockets show only your own ports, and a line after the table says so.
+- **Only TCP listeners** appear; a UDP socket isn't listed.
 
-# ports in the 8000-9000 range
-proc ports --range 8000-9000
+## When nothing matches
 
-# only externally accessible ports
-proc ports --exposed
-
-# ports from processes in current project
-proc ports --in .
-```
+`⚠ No listening ports found`, exit 0. [Messages](messages) explains each message.
 
 ## JSON
 
-Each port has its listener (`port`, `protocol`, `pid`, `process_name`, `address`, `exposure`) and its holder's `command`, `user`, `uptime_secs` and `memory_mb`; a key is left out when the OS does not give it (`memory_mb` too when the memory could not be read, and MEM then shows `-`). With `--verbose` it also has `exe_path` and `connections` (`total` and `by_state`). After `ports`, `unseen_ports` lists the ports other users' processes hold, which the list leaves out (`[]` for none); it's absent on Windows and the BSDs, which aren't checked, and with `--by`, `--in`, `--exposed` or `--local`. On FreeBSD and NetBSD set to hide other users' sockets, `hidden_by` names the setting (`"security.bsd.see_other_uids=0"`, `"security.curtain=1"`): the list has only proc's own user's ports, and a line after the table says so. It's absent where nothing hides them, and for root.
-
-```json
-{ "port": 3000, "protocol": "tcp", "pid": 1234, "process_name": "node", "address": "127.0.0.1",
-  "exposure": "local", "command": "node server.js", "user": "dev", "uptime_secs": 34, "memory_mb": 41.5 }
+```text
+{
+  "action": "ports", "success": true, "count": 1,
+  "ports": [<Port>, ...], "unseen_ports": []
+}
 ```
+
+Each port:
+
+```text
+{
+  "port": 3000, "protocol": "tcp", "pid": 1234,
+  "process_name": "node", "address": "127.0.0.1",
+  "exposure": "local", "command": "node server.js", "user": "dev",
+  "uptime_secs": 34, "memory_mb": 41.5
+}
+```
+
+Each port has its listener and its holder's `command`, `user`, `uptime_secs` and `memory_mb`, a key left out when the system doesn't give it. `--verbose` adds `exe_path` and `connections` (`total` and `by_state`). `unseen_ports` lists the ports other users' processes hold (`[]` for none); it is absent on Windows and the BSDs, which aren't checked, and with `--by`, `--in`, `--exposed` or `--local`. On FreeBSD and NetBSD set to hide other users' sockets, `hidden_by` names the setting (`"security.bsd.see_other_uids=0"`, `"security.curtain=1"`). Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#ports).
 
 ## See also
 
-[on](on) for looking up a specific port.
+[on](on) for one port, [free](free) to free one.

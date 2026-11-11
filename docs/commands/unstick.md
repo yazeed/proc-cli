@@ -5,20 +5,19 @@ description: "Recover stuck processes with SIGCONT and SIGINT; --force ends the 
 permalink: /commands/unstick
 ---
 
-Try to recover stuck processes, and with `--force` end the ones that stay stuck. Alias: `u`.
-
-**It can end a process without `--force`.** It sends SIGCONT (wakes a paused process) and watches for a second; a process still busy then gets SIGINT, the signal Ctrl+C sends, which ends most programs. A process that is gone afterwards counts as `terminated`. With `--force`, one still stuck 3 seconds later gets SIGTERM, and SIGKILL 5 seconds after that. On Windows there is no gentle step: without `--force` nothing is sent, and with it the process is ended.
+With no target it finds the stuck processes first, as [`proc stuck`](stuck) does. It asks first. Alias: `u`.
 
 ```bash
-proc unstick               # recover all stuck processes
-proc unstick node          # recover stuck node processes
-proc unstick 1234 :3000    # recover several targets
-proc unstick --force       # terminate if recovery fails
+proc unstick --dry-run       # what would it try, on which processes?
+proc unstick                 # try to recover every stuck process, after asking
+proc unstick 1234            # try to recover PID 1234
+proc unstick node --force    # recover the stuck node processes, or end them
+proc unstick 1234 :3000      # several targets
 ```
 
-Several targets are separate arguments. Comma-separated lists (`1234,:3000`) still work but are deprecated.
+## Output
 
-With `--json`, each process in `processes` is a whole process object (its `outcome` is beside the usual fields), as `list` prints it. `count` is how many were found, and `recovered_count`, `not_stuck_count`, `still_stuck_count`, `terminated_count` and `failed_count` count the outcomes. The bare numbers `found`, `recovered`, `not_stuck`, `still_stuck`, `terminated` and `failed` are deprecated, use the `_count` names (and `count` for `found`); removed in 3.0.
+The list of what it would try, then the question. After a yes, a line per process: `recovered`, `not stuck`, `still stuck`, `terminated` or `failed`.
 
 ## Options
 
@@ -33,24 +32,34 @@ With `--json`, each process in `processes` is a whole process object (its `outco
 | `--start-time <secs>` | | Act only if the PID still belongs to the process that started then (its `start_time` from the JSON, to the second). One PID target (not with the search for stuck processes). A PID a new process holds exits 2 |
 | `--cmd` | | Match name targets and `--by` as a substring of the process name or full command line (like `pkill -f`) |
 | `--json` | `-j` | Output as JSON |
-| `--verbose` | `-v` | Show extra details |
+| `--verbose` | `-v` | Accepted, as on every command; the list looks the same with it |
 
-## Examples
+## Details
 
-```bash
-# try to recover all stuck processes
-proc unstick
+- **It can end a process without `--force`.** It sends SIGCONT (wakes a paused process) and watches for a second; a process still busy then gets SIGINT, the signal Ctrl+C sends, which ends most programs. A process that is gone afterwards counts as `terminated`.
+- **With `--force`**, one still stuck 3 seconds later gets SIGTERM, and SIGKILL 5 seconds after that.
+- **On Windows** there is no gentle step: without `--force` nothing is sent, and with it the process is ended.
+- **A target that isn't stuck** is left alone and reported as `not stuck`.
+- **Several targets** are separate arguments. Comma-separated lists (`1234,:3000`) still work but are deprecated.
 
-# recover specific process
-proc unstick 1234
+## When nothing matches
 
-# force kill if recovery fails
-proc unstick node --force
+With no target and nothing stuck, `✓ No stuck processes found`, exit 0. A target that matches nothing is `No process found matching '…'`, exit 2. [Messages](messages) explains each one.
 
-# preview actions without executing
-proc unstick --dry-run
+## JSON
+
+```text
+{
+  "action": "unstick", "success": true, "dry_run": false,
+  "force": false, "count": 1, "not_found": [],
+  "processes": [<Process with "outcome">, ...], "recovered_count": 0,
+  "not_stuck_count": 1, "still_stuck_count": 0,
+  "terminated_count": 0, "failed_count": 0
+}
 ```
+
+`outcome` is `recovered`, `terminated`, `still_stuck`, `not_stuck`, `would_attempt` (with `--dry-run`) or `failed: <reason>`; check `failed_count`, since a failure's `outcome` starts with `failed:`. The bare numbers `found`, `recovered`, `not_stuck`, `still_stuck`, `terminated` and `failed` are deprecated (use the `_count` names, and `count` for `found`) and go in 3.0. Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#unstick).
 
 ## See also
 
-[stuck](stuck) for finding stuck processes, [stop](stop) for graceful shutdown.
+[stuck](stuck) to find stuck processes, [stop](stop) to end one politely.

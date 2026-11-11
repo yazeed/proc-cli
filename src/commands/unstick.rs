@@ -45,7 +45,7 @@ pub struct UnstickCommand {
     #[arg(num_args = 0.., value_parser = crate::core::validate_target_arg)]
     target: Vec<String>,
 
-    /// Without a target: only stuck processes running longer than this many seconds
+    /// Without a target: only stuck processes running longer than this many whole seconds
     #[arg(long, short, default_value = "300")]
     timeout: u64,
 

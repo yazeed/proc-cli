@@ -1,23 +1,24 @@
 ---
 layout: page
 title: proc list
-description: "List processes with filters and sorting."
+description: "All processes, or the ones named."
 permalink: /commands/list
 ---
 
-List all processes, with optional filters. Aliases: `l`, `ps`.
+With filters for name, directory, CPU, memory, uptime, status and parent. It only reads. Aliases: `l`, `ps`.
 
 ```bash
-proc list                      # all processes
-proc list node                 # only the processes named node
-proc list node --cmd           # ... or with node anywhere in their command line
-proc list node python          # several names
-proc list --sort cpu --limit 10  # top 10 by CPU
+proc list                                 # all processes
+proc list node python                     # the processes named node or python
+proc list node --cmd                      # ... or with node anywhere in their command line
+proc list --sort cpu --limit 10           # the 10 busiest
+proc list --in . --min-mem 100            # processes in this project using over 100 MB
+proc list --status running --sort mem     # running processes, biggest first
 ```
 
-Several names are separate arguments. Comma-separated lists (`node,python`) still work but are deprecated.
+## Output
 
-```
+```text
 ✓ Found 2 processes
 
  PID    NAME     USER  CPU%     MEM  UPTIME  COMMAND
@@ -25,11 +26,9 @@ Several names are separate arguments. Comma-separated lists (`node,python`) stil
  38120  zsh      dev    0.0   4.1MB  2h 14m  -zsh
 ```
 
-Every process table in proc (`list`, `by`, `in`, `for` with several hits, `orphans`, `stuck`, `watch`, and the list in front of a `--dry-run` or a question) has these columns: PID, NAME, USER, CPU%, MEM, UPTIME and COMMAND. UPTIME is there at any terminal width. A value proc cannot read shows as `-`. With `--in`, the directory is the second column (`PID DIR NAME ...`). `--verbose` keeps the table and adds PPID, STATUS and the directory (DIR) to it, and cuts nothing; `--json` has all of it, and for each process also `parent_name`, `child_count`, `cpu_time_secs` and `open_files` (a key is left out where the OS does not give the value), and `"runs_proc": true` on a process proc runs under (its shell, or the agent that ran it), absent on every other.
+Every process table in proc (`list`, `by`, `in`, `for` with several hits, `orphans`, `stuck`, `watch`, and the list in front of a `--dry-run` or a question) has these columns: PID, NAME, USER, CPU%, MEM, UPTIME and COMMAND. A value proc can't read shows as `-`. With `--in`, the directory is the second column (`PID DIR NAME ...`).
 
-One process is always one line. COMMAND takes the width the other columns leave and ends with `…` where it is cut. Every other column keeps its width, except the directory under `--in`, which is cut in the middle (`/Users/…/my-app/.next/standalone`) before it takes more than a third of the line. `--verbose` and `--wide` print everything whole, even when the line is longer than the terminal. The list in front of a `--dry-run` or a question prints the command line whole, since that is what you approve.
-
-The status is `running`, `sleeping`, `stopped`, `zombie`, `dead` or `unknown`, and three more where the OS tells them apart: `idle` (Linux: an idle kernel thread), `starting` (macOS, FreeBSD and NetBSD: a process still being created by `fork`) and `disk wait` (Linux: uninterruptible sleep on the disk, shown as `disk_wait` in JSON and spelled `disk-wait` or `disk_wait` for `--status`). Before 2.3.0 these three were all `unknown`.
+One process is always one line. COMMAND takes the width the other columns leave and ends with `…` where it is cut. The directory under `--in` is cut in the middle (`/Users/…/my-app/.next/standalone`) before it takes more than a third of the line. The list in front of a `--dry-run` or a question prints the command line whole, since that is what you approve.
 
 ## Options
 
@@ -41,7 +40,7 @@ The status is `running`, `sleeping`, `stopped`, `zombie`, `dead` or `unknown`, a
 | `--min-cpu <n>` | | Minimum CPU % |
 | `--min-mem <n>` | | Minimum memory (MB) |
 | `--status <s>` | | Filter by status: running, sleeping, stopped, zombie, idle (Linux), starting (macOS, FreeBSD, NetBSD), disk-wait (Linux; `disk_wait` also works) |
-| `--min-uptime <s>` | | Minimum uptime in seconds |
+| `--min-uptime <s>` | | Minimum uptime in whole seconds |
 | `--parent <pid>` | | Only children of this parent PID |
 | `--sort <key>` | `-s` | Sort by: cpu, mem (biggest first); pid, name (ascending). Ties come by PID (default: cpu) |
 | `--limit <n>` | `-n` | Limit results |
@@ -49,22 +48,26 @@ The status is `running`, `sleeping`, `stopped`, `zombie`, `dead` or `unknown`, a
 | `--verbose` | `-v` | Add PPID, STATUS and DIR to the table, and cut nothing |
 | `--wide` | `-w` | Print the directory and the command line whole instead of fitting the terminal |
 
-## Examples
+## Details
 
-```bash
-# top 10 processes by CPU
-proc list --sort cpu --limit 10
+- **Status** is `running`, `sleeping`, `stopped`, `zombie`, `dead` or `unknown`, and three more where the system tells them apart: `idle` (Linux: an idle kernel thread), `starting` (macOS, FreeBSD and NetBSD: a process still being created by `fork`) and `disk wait` (Linux: uninterruptible sleep on the disk). JSON writes it `disk_wait`, and `--status` takes `disk-wait` or `disk_wait`. `dead` and `unknown` only appear in output.
+- **Several names** are separate arguments. Comma-separated lists (`node,python`) still work but are deprecated.
 
-# node and python processes
-proc list node python
+## When nothing matches
 
-# high-memory processes in current project
-proc list --in . --min-mem 100
+`⚠ No processes found`, exit 0: an empty list is still an answer. [Messages](messages) explains each message.
 
-# running processes sorted by memory
-proc list --status running --sort mem
+## JSON
+
+```text
+{
+  "action": "list", "success": true, "count": 2,
+  "processes": [<Process>, ...]
+}
 ```
+
+Each process has all the table shows and more: `parent_name`, `child_count`, `cpu_time_secs` and `open_files` (a key is left out where the system doesn't give the value), and `"runs_proc": true` on a process proc runs under (its shell, or the agent that ran it). Nothing found is `count: 0` and `processes: []`. Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#process-and-port-objects).
 
 ## See also
 
-[by](by) and [in](in) for targeted filtering, [watch](watch) for real-time monitoring.
+[by](by) and [in](in) to start from a name or a directory, [watch](watch) for a live table.

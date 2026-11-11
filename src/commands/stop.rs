@@ -43,7 +43,7 @@ pub struct StopCommand {
     #[arg(long, short = 'v')]
     verbose: bool,
 
-    /// Timeout in seconds to wait before force kill
+    /// Whole seconds to wait before force kill
     #[arg(long, short, default_value = "10")]
     timeout: u64,
 

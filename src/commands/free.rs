@@ -41,7 +41,7 @@ pub struct FreeCommand {
     #[arg(long, short = 'v')]
     pub verbose: bool,
 
-    /// Max seconds to wait for port to become free
+    /// Max whole seconds to wait for port to become free
     #[arg(long, default_value = "10")]
     pub wait: u64,
 }

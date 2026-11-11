@@ -20,7 +20,7 @@ use std::time::Duration;
 /// Find stuck/hung processes
 #[derive(Args, Debug)]
 pub struct StuckCommand {
-    /// Only processes running longer than this many seconds (stuck: over 50% CPU or blocked, for 2 seconds)
+    /// Only processes running longer than this many whole seconds (stuck: over 50% CPU or blocked, for 2 seconds)
     #[arg(long, short = 't', default_value = "300")]
     pub timeout: u64,
 

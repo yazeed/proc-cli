@@ -1,25 +1,27 @@
 ---
 layout: page
 title: proc watch
-description: "Real-time process monitoring."
+description: "A live process table."
 permalink: /commands/watch
 ---
 
-Live-updating process table. Aliases: `w`, `top`.
+Refreshed every 2 seconds, or a stream of JSON for a script. It only reads. Aliases: `w`, `top`.
 
 ```bash
-proc watch                 # watch all processes
-proc top                   # same thing
-proc watch node            # watch node processes
-proc watch :3000           # watch process on port
-proc watch :3000 :8080 node  # watch several targets together
+proc watch                                # every process
+proc watch node --in .                    # the node processes in this project
+proc watch :3000 :8080 node               # several targets together
+proc watch --sort mem --limit 10 -n 1     # the 10 biggest, refreshed every second
+proc watch node --json | jq '.processes[].name'   # a stream for a script
 ```
 
-Several targets are separate arguments. Comma-separated lists (`:3000,:8080`) still work but are deprecated.
+## Output
 
-Press `q`, `Esc`, or `Ctrl+C` to exit. The terminal is always restored cleanly: also when a signal ends watch (`kill`, closing the window) or when it panics. proc then ends by that same signal, so a shell shows 130 for `Ctrl+C`/SIGINT, 143 for SIGTERM, 129 for SIGHUP and 131 for SIGQUIT (130 for any Ctrl+C, Ctrl+Break or closing console on Windows).
+The table has the same columns as [`proc list`](list): PID, NAME, USER, CPU%, MEM, UPTIME and COMMAND, with the directory second under `--in`. COMMAND is cut to the width of the terminal, which watch reads again on every refresh. Press `q`, `Esc` or `Ctrl+C` to stop.
 
-The table has the same columns as `proc list`: PID, NAME, USER, CPU%, MEM, UPTIME and COMMAND, with the directory second under `--in`. `--verbose` adds PPID, STATUS and DIR and cuts nothing. COMMAND is cut to the width of the terminal, which watch reads again on every refresh. With `--verbose` a row can be longer than the terminal and wrap in the live view; the row cap counts processes, not screen lines.
+- **In a terminal**, watch takes the screen and refreshes in place, adapting to its size.
+- **Piped, or without a terminal for keys,** it prints one snapshot and exits (`proc watch node | head -20`). If only stdin is missing, a `note:` on stderr says so.
+- **With `--json`** it prints one JSON document per refresh, one per line. When the reader leaves (`proc watch --json | head -n1`), watch stops at once on Linux, macOS and the BSDs, and at the next refresh on Windows.
 
 ## Options
 
@@ -37,30 +39,28 @@ The table has the same columns as `proc list`: PID, NAME, USER, CPU%, MEM, UPTIM
 | `--verbose` | `-v` | Add PPID, STATUS and DIR to the table, and cut nothing |
 | `--wide` | `-w` | Print the directory and the command line whole instead of fitting the terminal |
 
-## Modes
+## Details
 
-**Terminal (default)**: Alternate screen with auto-refresh. Adapts to terminal size.
+- **The terminal is always put back**, also when a signal ends watch (`kill`, closing the window) or when it panics. proc then ends by that same signal, so a shell shows 130 for `Ctrl+C`, 143 for SIGTERM, 129 for SIGHUP and 131 for SIGQUIT (130 for any Ctrl+C, Ctrl+Break or closed console on Windows).
+- **`--limit` is `-l` here**, because `-n` is `--interval`.
+- **With `--verbose`** a row can be longer than the terminal and wrap; the row limit counts processes, not screen lines.
+- **Several targets** are separate arguments. Comma-separated lists (`:3000,:8080`) still work but are deprecated.
 
-**JSON** (`--json`): Newline-delimited JSON, one object per refresh cycle. Pipe to `jq` or other tools. When the reader leaves (`proc watch --json | head -n1`), watch stops at once on Linux, macOS and the BSDs, and at the next refresh on Windows.
+## When nothing matches
 
-**No terminal**: When stdout is not a terminal (piped), or stdin is not (nothing to press `q` on), prints a single snapshot and exits. If only stdin is missing, a `note:` on stderr says so.
+A target that matches nothing gives an empty table, refreshed until you stop it; with `--json`, an empty document every refresh. Bound a script's stream yourself (`| head -n1`, or `timeout`).
 
-## Examples
+## JSON
 
-```bash
-# watch top 10 by memory, refresh every second
-proc watch --sort mem --limit 10 -n 1
-
-# watch node processes in current project
-proc watch node --in .
-
-# stream to jq
-proc watch node --json | jq '.processes[].name'
-
-# single snapshot when piped
-proc watch node | head -20
+```text
+{
+  "action": "watch", "success": true, "count": 2,
+  "processes": [<Process>, ...]
+}
 ```
+
+One per refresh, each on its own line. Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#watch).
 
 ## See also
 
-[list](list) for a one-time snapshot, [by](by) for filtered listing.
+[list](list) for one snapshot, [wait](wait) to block until a process exits.

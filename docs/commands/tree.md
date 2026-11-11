@@ -1,20 +1,24 @@
 ---
 layout: page
 title: proc tree
-description: "Show process tree."
+description: "Parents and children."
 permalink: /commands/tree
 ---
 
-Display process hierarchy. Alias: `t`.
+The tree under a process, or with `--ancestors` the chain of parents above it. It only reads. Alias: `t`.
 
 ```bash
-proc tree                  # full process tree
-proc tree node             # tree rooted at node
-proc tree :3000            # tree from port 3000's process
-proc tree 1234 --ancestors # path up to root
+proc tree                       # every process, as a tree
+proc tree node                  # the tree under each process named node
+proc tree :3000                 # the tree under the process on port 3000
+proc tree :3000 --ancestors     # the chain of parents above it, up to the root
+proc tree node --depth 2        # two levels deep
+proc tree node --compact        # PIDs only
 ```
 
-Each line shows the process's status, name, PID, CPU, memory and uptime (`up 3m 12s`); `--json` includes `uptime_secs`. Each process in the JSON is a whole process object, the same one `list` and `on` print: every node of the tree, and every entry of the `--ancestors` chain, has `cwd`, `command`, `exe_path`, `user`, `parent_pid`, `start_time`, `parent_name`, `cpu_time_secs`, `open_files` and `child_count`, left out where the OS does not give the value, and `"runs_proc": true` on a process proc runs under.
+## Output
+
+Each line shows the process's status, name, PID, CPU, memory and uptime (`up 3m 12s`).
 
 ## Options
 
@@ -26,31 +30,40 @@ Each line shows the process's status, name, PID, CPU, memory and uptime (`up 3m 
 | `--min-cpu <n>` | | Minimum CPU % |
 | `--min-mem <n>` | | Minimum memory (MB) |
 | `--status <s>` | | Filter by status: running, sleeping, stopped, zombie, idle (Linux), starting (macOS, FreeBSD, NetBSD), disk-wait (Linux; `disk_wait` also works) |
-| `--min-uptime <s>` | | Minimum uptime in seconds |
+| `--min-uptime <s>` | | Minimum uptime in whole seconds |
 | `--in [<dir>]` | `-i` | Filter by directory. Takes the next word as its directory unless it starts with `-` (bare `--in` is the current directory, `--in=DIR` is explicit). With no target, shows the processes in that directory, each with its subtree |
 | `--by <name>` | `-b` | Filter by process name (the whole name, ignoring case). With no target, shows the processes with that name, each with its subtree |
 | `--cmd` | | Match name targets and `--by` as a substring of the process name or full command line (like `pkill -f`) |
 | `--json` | `-j` | Output as JSON |
-| `--verbose` | `-v` | Show extra details |
+| `--verbose` | `-v` | Accepted, as on every command; the tree looks the same with it |
 
-With no target, the filters narrow the view, as in `list`: when nothing passes them, `tree` says so and exits 0. A target is a question, so a target that matches nothing, or that `--in` or `--by` rule out, exits 2, as in `by` and `info`. A process that passes the filters and is already drawn inside another one's tree is not drawn again as a root of its own.
+## Details
 
-## Examples
+- **With no target, the filters narrow the view**, as in `list`. A process that passes them and is already drawn inside another one's tree is not drawn again as a root of its own.
+- **`--compact`** changes only what you see; the JSON is the same. `--depth` cuts the JSON too.
 
-```bash
-# show node's process tree
-proc tree node
+## When nothing matches
 
-# ancestry of process on port 3000
-proc tree :3000 --ancestors
+With no target, `⚠ No processes match the specified filters`, exit 0. A target is a question, so a target that matches nothing, or that `--in` or `--by` rule out, is exit 2, as in `by` and `info`. `--ancestors` needs a target (exit 4 without one). [Messages](messages) explains each one.
 
-# shallow tree (2 levels deep)
-proc tree node --depth 2
+## JSON
 
-# compact view (PIDs only)
-proc tree node --compact
+```text
+{"action": "tree", "success": true, "tree": [<Process with "children": [...]>, ...]}
+
+{
+  "action": "tree", "success": true,
+  "ancestry": [
+    {
+      "target_pid": 1234, "target_name": "node", "depth": 2,
+      "chain": [<Process>, ...]
+    }
+  ]
+}
 ```
+
+The second is `--ancestors`, with `chain` from the top ancestor down to the target. Every node and every chain entry is a whole process object, the same one `list` and `on` print, with `"runs_proc": true` on a process proc runs under. Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#tree).
 
 ## See also
 
-[list](list) for flat process listing, [info](info) for detailed single-process view.
+[why](why) for what started a process, with its card, [list](list) for a flat table.
