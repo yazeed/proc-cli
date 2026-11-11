@@ -11,7 +11,8 @@ on:
   workflow_dispatch:
 
 # The workflow's own token can only read. A job that writes says so in its own
-# permissions (create-release, the publish jobs, update-apt); the jobs that
+# permissions (create-release, the publish jobs, update-apt,
+# commit-package-files); the jobs that
 # push to other repositories or file elsewhere use their own tokens
 # (HOMEBREW_TAP_TOKEN, SCOOP_BUCKET_TOKEN, WINGET_TOKEN, NIXPKGS_FORK_TOKEN,
 # FREEBSD_BUGZILLA_API_KEY)
@@ -846,8 +847,9 @@ jobs:
   # hashes and builds proc with its tests in the sandbox; update-fork.sh amends
   # the "proc-cli: init" commit to that package.nix, force-pushes it with a
   # lease and retitles the pull request. A dry run does both for the version in
-  # Cargo.toml (the last release) and pushes nothing. Once nixpkgs has
-  # proc-cli, its update bot opens each update and this job leaves it alone
+  # Cargo.toml, from a tarball of its checkout (that version has no download
+  # before its tag), and pushes nothing. Once nixpkgs has proc-cli, its update
+  # bot opens each update and this job leaves it alone
   update-nixpkgs:
     name: Update nixpkgs
     needs: create-release
@@ -866,6 +868,8 @@ jobs:
             version=${GITHUB_REF_NAME#v}
           else
             version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+            git archive --format=tar.gz --prefix="proc-cli-$version/" -o "$RUNNER_TEMP/source.tar.gz" HEAD
+            export PROC_SOURCE="$RUNNER_TEMP/source.tar.gz"
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           sh pkg/nixpkgs/update.sh "$version"
@@ -895,7 +899,8 @@ jobs:
   # stage-qa, portlint, proc --version) and writes the patch; file-patch.sh
   # attaches it to bug 300492 while the port is new, or opens an update bug
   # once it is committed, as the maintainer with maintainer-approval +. A dry
-  # run does the same for the version in Cargo.toml and files nothing
+  # run does the same for the version in Cargo.toml, from a tarball of its
+  # checkout (as update-nixpkgs), and files nothing
   update-freebsd:
     name: Update the FreeBSD port
     needs: create-release
@@ -904,12 +909,17 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The tarball sits in the workspace, which is copied into the VM
       - name: Version
         run: |
           if [ "$GITHUB_EVENT_NAME" = push ]; then
             echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+            echo "PROC_SOURCE=" >> "$GITHUB_ENV"
           else
-            echo "VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)" >> "$GITHUB_ENV"
+            version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+            git archive --format=tar.gz --prefix="proc-cli-$version/" -o proc-source.tar.gz HEAD
+            echo "VERSION=$version" >> "$GITHUB_ENV"
+            echo "PROC_SOURCE=$GITHUB_WORKSPACE/proc-source.tar.gz" >> "$GITHUB_ENV"
           fi
 
       # pkg's latest branch: the ports tree's main branch wants its Rust, and
@@ -924,7 +934,7 @@ jobs:
           release: "15.1"
           cpu: 4
           mem: 8192
-          envs: VERSION
+          envs: VERSION PROC_SOURCE
           prepare: |
             mkdir -p /usr/local/etc/pkg/repos
             printf 'FreeBSD-ports: { url: "pkg+https://pkg.FreeBSD.org/${ABI}/latest", mirror_type: "srv" }\n' > /usr/local/etc/pkg/repos/FreeBSD.conf
@@ -961,7 +971,8 @@ jobs:
   # from, and writes the diff and the text for the gnats problem report, with
   # the form's fields in gnats-fields.json. The report is filed by hand (the
   # form has a check for people), from the run's pkgsrc-update artifact. A dry
-  # run does the same for the version in Cargo.toml
+  # run does the same for the version in Cargo.toml, from a tarball of its
+  # checkout (as update-nixpkgs)
   update-pkgsrc:
     name: Update pkgsrc
     needs: create-release
@@ -976,8 +987,12 @@ jobs:
         run: |
           if [ "$GITHUB_EVENT_NAME" = push ]; then
             echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+            echo "PROC_SOURCE=" >> "$GITHUB_ENV"
           else
-            echo "VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)" >> "$GITHUB_ENV"
+            version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+            git archive --format=tar.gz --prefix="proc-cli-$version/" -o proc-source.tar.gz HEAD
+            echo "VERSION=$version" >> "$GITHUB_ENV"
+            echo "PROC_SOURCE=$GITHUB_WORKSPACE/proc-source.tar.gz" >> "$GITHUB_ENV"
           fi
           location=$(curl -sSI https://cdn.netbsd.org/pub/pkgsrc/packages/NetBSD/x86_64/11.0 |
             sed -n 's/^location: *//Ip' | tr -d '\r')
@@ -993,7 +1008,7 @@ jobs:
           release: "11.0"
           cpu: 4
           mem: 8192
-          envs: VERSION QUARTER
+          envs: VERSION QUARTER PROC_SOURCE
           # A mirror can cut a download short (CI, 2026-11-04), so a failed
           # pkg_add is tried twice more. digest is what make makesum checksums
           # with: without it, makesum writes a distinfo with no checksums
@@ -1028,3 +1043,95 @@ jobs:
             pkgsrc-out/gnats-fields.json
             pkg/pkgsrc/
           if-no-files-found: error
+
+  # The files the package jobs wrote go to main in one commit, so main holds
+  # what was submitted for the release: pkg/nixpkgs/package.nix and the FreeBSD
+  # port's and pkgsrc package's files. A job's files are taken only when that
+  # job passed. They can't be in the release commit: their checksums are of
+  # the tag's download, which holds that commit's ID. A dry run shows what it
+  # would commit (with checksums of its tarball of the checkout) and commits
+  # nothing
+  commit-package-files:
+    name: Commit the package files
+    needs: [update-nixpkgs, update-freebsd, update-pkgsrc]
+    if: ${{ !cancelled() && contains(needs.*.result, 'success') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+
+      - name: Download package.nix
+        if: needs.update-nixpkgs.result == 'success'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: nixpkgs-package
+          path: ${{ runner.temp }}/nixpkgs
+
+      - name: Download the FreeBSD port's files
+        if: needs.update-freebsd.result == 'success'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: freebsd-port
+          path: ${{ runner.temp }}/freebsd
+
+      - name: Download the pkgsrc package's files
+        if: needs.update-pkgsrc.result == 'success'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: pkgsrc-update
+          path: ${{ runner.temp }}/pkgsrc
+
+      # Only the files each job writes: the artifacts also hold the scripts,
+      # which main keeps as they are
+      - name: Commit them to main (a dry run shows the change)
+        env:
+          NIXPKGS: ${{ needs.update-nixpkgs.result }}
+          FREEBSD: ${{ needs.update-freebsd.result }}
+          PKGSRC: ${{ needs.update-pkgsrc.result }}
+        run: |
+          if [ "$NIXPKGS" = success ]; then
+            cp "$RUNNER_TEMP/nixpkgs/package.nix" pkg/nixpkgs/
+          else
+            echo "::warning::update-nixpkgs ended $NIXPKGS: pkg/nixpkgs/ is left as it is"
+          fi
+          if [ "$FREEBSD" = success ]; then
+            for f in Makefile Makefile.crates distinfo pkg-descr; do
+              cp "$RUNNER_TEMP/freebsd/pkg/freebsd/$f" pkg/freebsd/
+            done
+          else
+            echo "::warning::update-freebsd ended $FREEBSD: pkg/freebsd/ is left as it is"
+          fi
+          if [ "$PKGSRC" = success ]; then
+            for f in DESCR Makefile PLIST cargo-depends.mk distinfo; do
+              cp "$RUNNER_TEMP/pkgsrc/pkg/pkgsrc/$f" pkg/pkgsrc/
+            done
+          else
+            echo "::warning::update-pkgsrc ended $PKGSRC: pkg/pkgsrc/ is left as it is"
+          fi
+          git diff --stat
+          if [ "$GITHUB_EVENT_NAME" != push ]; then
+            git diff
+            echo "A dry run commits nothing: a tag's run commits the files above to main"
+            exit 0
+          fi
+          if git diff --quiet; then
+            echo "The package files on main are already the release's"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --quiet --all -m "chore: package files for ${GITHUB_REF_NAME}" \
+            -m "The nixpkgs, FreeBSD and pkgsrc files the release's jobs wrote for ${GITHUB_REF_NAME} (run ${GITHUB_RUN_ID})."
+          # main can move while the release runs
+          for _ in 1 2 3; do
+            if git push --quiet origin HEAD:main; then
+              git log --oneline -1
+              exit 0
+            fi
+            git pull --quiet --rebase origin main
+          done
+          echo "::error::could not push the package files to main; they are in this run's artifacts"
+          exit 1

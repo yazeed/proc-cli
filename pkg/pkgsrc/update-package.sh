@@ -13,7 +13,10 @@
 # and environment. Runs as root on NetBSD with the rust, pkglint and digest packages
 # installed; the release's update-pkgsrc job runs it in a vmactions VM.
 # PKGSRCDIR names an existing tree of that branch (default /usr/pkgsrc,
-# downloaded if missing).
+# downloaded if missing). Before the tag, VERSION has no download:
+# PROC_SOURCE then names a tarball of the checkout with proc-cli-VERSION/ at
+# its top (git archive --prefix=proc-cli-VERSION/, as the release's dry run
+# makes it), and the package takes it as its distfile.
 set -eu
 
 version=${1:?usage: update-package.sh VERSION QUARTER OUT_DIR}
@@ -81,6 +84,13 @@ mv "$out/Makefile" "$pkg/Makefile"
 cd "$pkg"
 # A work directory left from another build would be reused
 make clean
+# The name GitHub's download of the tag has in distinfo; a wrong one here
+# would make makesum fetch it, and fail, since the tag doesn't exist yet
+if [ -n "${PROC_SOURCE:-}" ]; then
+    distdir=$(make show-var VARNAME=DISTDIR)
+    mkdir -p "$distdir"
+    cp "$PROC_SOURCE" "$distdir/proc-cli-$version.tar.gz"
+fi
 make makesum
 # print-cargo-depends reads Cargo.lock from the extracted source. It writes a
 # bare "# $NetBSD$" first line: trunk's is kept

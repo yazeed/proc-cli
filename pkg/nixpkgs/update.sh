@@ -7,13 +7,19 @@
 # Needs nix with nix-command and flakes. The release's update-nixpkgs job runs
 # it; locally, run it in the nixos/nix image (RELEASE.md, "After the tag:
 # nixpkgs").
+# Before the tag, VERSION has no download. PROC_SOURCE then names a tarball of
+# the checkout with proc-cli-VERSION/ at its top (git archive
+# --prefix=proc-cli-VERSION/, as the release's dry run makes it): its files
+# are what GitHub's download of the tag will hold, so they give the source
+# hash, and they go into the store as the path fetchFromGitHub would fetch.
 set -eu
 
 version=${1:?usage: update.sh VERSION}
 here=$(cd "$(dirname "$0")" && pwd)
 package="$here/package.nix"
 log=$(mktemp)
-trap 'rm -f "$log"' EXIT
+unpacked=$(mktemp -d)
+trap 'rm -f "$log"; chmod -R u+w "$unpacked"; rm -r "$unpacked"' EXIT
 
 fail() { echo "update.sh: $*" >&2; exit 1; }
 
@@ -47,7 +53,16 @@ set_line '  version = ' "  version = \"$version\";"
 set_line '    hash = ' '    hash = lib.fakeHash;'
 set_line '  cargoHash = ' '  cargoHash = lib.fakeHash;'
 
-src_hash=$(hash_from_build)
+if [ -n "${PROC_SOURCE:-}" ]; then
+    tar -xzf "$PROC_SOURCE" -C "$unpacked"
+    [ -d "$unpacked/proc-cli-$version" ] || fail "$PROC_SOURCE has no proc-cli-$version/ at its top"
+    src_hash=$(nix hash path --type sha256 --sri "$unpacked/proc-cli-$version")
+    # fetchFromGitHub's result is named "source" and hashed as a NAR, so this
+    # is its store path, and the build finds it there instead of fetching
+    nix store add --name source --mode nar "$unpacked/proc-cli-$version" > /dev/null
+else
+    src_hash=$(hash_from_build)
+fi
 echo "source hash: $src_hash"
 set_line '    hash = ' "    hash = \"$src_hash\";"
 

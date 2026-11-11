@@ -9,7 +9,10 @@
 # FreeBSD with git, portlint and the rust package from pkg's latest branch,
 # which matches the lang/rust of the ports tree's main branch. The release's
 # update-freebsd job runs it in a vmactions VM; PORTS names an existing tree
-# (default /usr/ports, cloned if missing).
+# (default /usr/ports, cloned if missing). Before the tag, VERSION has no
+# download: PROC_SOURCE then names a tarball of the checkout with
+# proc-cli-VERSION/ at its top (git archive --prefix=proc-cli-VERSION/, as the
+# release's dry run makes it), and the port takes it as its distfile.
 set -eu
 
 version=${1:?usage: update-port.sh VERSION OUT_DIR}
@@ -42,6 +45,13 @@ fi
 sed -i '' "s/^DISTVERSION=.*/DISTVERSION=	$version/" "$port/Makefile"
 
 cd "$port"
+# The name GitHub's download of the tag has in distinfo; a wrong one here
+# would make makesum fetch it, and fail, since the tag doesn't exist yet
+if [ -n "${PROC_SOURCE:-}" ]; then
+    distdir=$(make -V DISTDIR)
+    mkdir -p "$distdir"
+    cp "$PROC_SOURCE" "$distdir/yazeed-proc-cli-v${version}_GH0.tar.gz"
+fi
 make makesum
 # Extracted first: otherwise cargo-crates prints the framework's progress
 # lines (===> ...) into the list too
