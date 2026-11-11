@@ -15,10 +15,10 @@ use crate::ui::{OutputFormat, Printer};
 use clap::Args;
 use std::path::PathBuf;
 
-/// Filter processes by working directory
+/// Find processes running in a directory or a folder below it
 #[derive(Args, Debug)]
 pub struct InCommand {
-    /// Directory path (absolute, relative, or . for cwd)
+    /// Directory path (absolute, relative, or . for cwd); folders below it count too
     pub path: String,
 
     /// Filter by process name

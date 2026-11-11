@@ -18,9 +18,9 @@
 //! - **Real-Time Monitoring**: `proc watch` / `proc top` - live process table (TUI on a terminal, NDJSON stream with `--json`)
 //! - **Process Waiting**: `proc wait node` - block until process(es) exit (pipe-friendly)
 //! - **Freeze/Thaw**: `proc freeze` / `proc thaw` - pause and resume by port, PID, or name
-//! - **Port Freeing**: `proc free :3000` - kill and verify port is available
+//! - **Port Freeing**: `proc free :3000` - stop what holds the port (SIGTERM, then SIGKILL after up to 5 seconds) and verify it is available
 //! - **Ancestry Tracing**: `proc why :3000` - trace why a port is busy
-//! - **Orphan Detection**: `proc orphans` - find abandoned child processes
+//! - **Orphan Detection**: `proc orphans --in .` - find processes whose parent has exited (candidates: on macOS every app launchd started has parent 1 too)
 //! - **File Lookup**: `proc for ./server` - find by file path
 //! - **Cross-Platform**: macOS, Linux, Windows, FreeBSD and NetBSD
 //! - **Shell Completions**: bash, zsh, fish, elvish, PowerShell via `proc completions`
@@ -56,7 +56,7 @@
 //! # Wait for a process to finish
 //! proc wait node --timeout 3600
 //!
-//! # Free a port (kill + verify available)
+//! # Free a port (stop what holds it, then check it is free)
 //! proc free :3000
 //!
 //! # Why is this port busy?
@@ -94,6 +94,40 @@
 //! was changed. A signal that ends proc while `watch` has the screen or a
 //! prompt is waiting (SIGINT, SIGTERM, SIGHUP, SIGQUIT) puts the terminal back,
 //! then ends proc by that signal, so a shell shows 128 plus its number.
+//!
+//! ## Errors
+//!
+//! Every fallible function returns [`Result`], whose error is a [`ProcError`].
+//! [`ProcError::reason`] gives the fixed word the CLI prints as the JSON
+//! error's `reason` (one of the `REASON_*` constants in [`error`]), and
+//! [`error::ExitCode::from`] the exit code the CLI ends with. Branch on those,
+//! not on the message, which is for people.
+//!
+//! | `reason` | Exit code | When |
+//! |---|---|---|
+//! | `system_error` | 1 | The OS gave an error, a signal failed, or an operation timed out |
+//! | `not_found` | 2 | No process or port matched, or the process exited meanwhile |
+//! | `command_line_only` | 2 | A name matched nothing, but is in some command lines (`--cmd` matches those) |
+//! | `ruled_out` | 2 | A process holds the target, but a guard (`--start-time`, `--by`, `--in`) rules it out, or every match was a process proc runs under |
+//! | `permission_denied` | 3 | proc may not read it, or a port's holder is out of sight (another user's process) |
+//! | `invalid_input` | 4 | A wrong flag, value or argument |
+//! | `needs_confirmation` | 4 | A command that changes processes had nobody to ask (`--json` or no terminal, without `--yes`) |
+//! | `not_supported` | 4 | This OS cannot do it (`freeze`, `thaw`, `orphans` and `stop --signal` on Windows) |
+//!
+//! [`ProcError::Reported`] is the one error with no `reason`: its command
+//! already printed its result, and the error only carries the exit code. The
+//! JSON documents each command prints are described in
+//! [reference.md](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md).
+//!
+//! ```
+//! use proc_cli::core::parse_port;
+//! use proc_cli::error::{ExitCode, REASON_INVALID_INPUT};
+//!
+//! let err = parse_port(":http").unwrap_err();
+//! assert_eq!(err.reason(), Some(REASON_INVALID_INPUT));
+//! assert_eq!(ExitCode::from(&err) as i32, 4);
+//! assert_eq!(parse_port(":3000").unwrap(), 3000);
+//! ```
 
 // proc reads processes, ports and open files with code for each system it
 // supports; anywhere else the build would fail on whichever of those it hits

@@ -202,10 +202,10 @@ groups:
         examples:
           - t: ""
             kind: none
-            text: "Finds stuck processes and tries to recover them: wakes them (SIGCONT), then interrupts them like Ctrl+C. Nothing is ended without <code>--force</code>."
+            text: "Finds stuck processes and tries to recover them: wakes them (SIGCONT), then interrupts the ones still busy like Ctrl+C, which ends most programs. Only <code>--force</code> goes further."
           - t: "1234"
             kind: pid
-            text: "Tries to recover process 1234 the same gentle way, if it's stuck."
+            text: "Tries to recover process 1234 the same way, if it's stuck."
           - t: "node --force"
             rule: "Anything else is a name. <code>--force</code> allows ending it as a last resort."
             text: "If gentle recovery fails, ends the stuck <code>node</code> processes (SIGTERM, then SIGKILL)."

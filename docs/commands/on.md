@@ -16,7 +16,7 @@ proc on :3000 :8080    # multiple targets
 
 Several targets are separate arguments. Comma-separated lists (`:3000,:8080`) still work but are deprecated.
 
-Every answer is the same card for a process: its command line, directory, path, user, parent, status, resources (CPU, memory, CPU time, open files), start time and uptime, children, the ports it listens on with who can reach them, and the connections to those ports. A line is left out when the OS does not give the value (another user's process on macOS gives no open files, no status, no CPU or memory, and no ports: proc cannot see its sockets, so the card has no `Listening:`), never printed empty.
+Every answer is the same card for a process: its command line, directory, path, user, parent, status, resources (CPU, memory, CPU time, open files), start time and uptime, children, the ports it listens on with who can reach them, and the connections to those ports. A line is left out when the OS does not give the value (another user's process on macOS can leave only `Process:`, `Path:` and `Children:`: macOS gives a normal user none of the rest, and proc cannot see its sockets, so the card has no `Listening:`; `sudo` reads them all), never printed empty.
 
 ```text
 $ proc on :53581

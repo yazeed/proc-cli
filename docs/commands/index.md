@@ -13,7 +13,7 @@ permalink: /commands
 | [why](why) | | Trace why a port is busy or show process ancestry |
 | [for](for) | `f` | Find processes by file path |
 | [by](by) | `b` | Filter processes by name |
-| [in](in) | | Filter processes by working directory |
+| [in](in) | | Processes running in a directory or a folder below it |
 | [list](list) | `l`, `ps` | List processes |
 | [info](info) | `i`, `inspect` | Show detailed process information |
 | [ports](ports) | `p` | List all listening ports |
@@ -30,9 +30,9 @@ permalink: /commands
 | [stop](stop) | `s` | Graceful stop with --signal support (SIGTERM, then SIGKILL) |
 | [freeze](freeze) | | Pause processes (SIGSTOP) |
 | [thaw](thaw) | | Resume frozen processes (SIGCONT) |
-| [free](free) | | Free ports by killing the occupying process |
+| [free](free) | | Free a port: SIGTERM, SIGKILL after up to 5 seconds, then check the port is free |
 | [wait](wait) | | Block until process(es) exit |
-| [unstick](unstick) | `u` | Attempt to recover stuck processes |
+| [unstick](unstick) | `u` | Recover stuck processes (SIGCONT, then SIGINT, which ends most programs); `--force` ends what stays stuck |
 
 ## Common options
 
@@ -42,7 +42,7 @@ Most commands support these flags (check individual command pages for details):
 |------|-------|-------------|
 | `--json` | `-j` | Output as JSON |
 | `--verbose` | `-v` | Print every value whole. In a process table it adds PPID, STATUS and DIR and cuts nothing |
-| `--in [<dir>]` | `-i` | Filter by directory (bare `--in` is the current directory) |
+| `--in [<dir>]` | `-i` | Only processes running in this directory or a folder below it (bare `--in` is the current directory) |
 | `--by <name>` | `-b` | Filter by process name |
 | `--help` | `-h` | Show help |
 
@@ -63,7 +63,7 @@ A name matches the whole process name, ignoring case, the way `killall` and `pki
 
 ## Scripting
 
-With `--json`, every command prints one JSON document with `action` (the command name) and `success`. `proc watch --json` streams one per refresh. Errors, including invalid flags, are JSON too, and every error says why in `"reason"`, one fixed word: `"system_error"` (exit 1); `"not_found"`, `"command_line_only"` or `"ruled_out"` (with `"ruled_out_by"`, the guards that ruled the process out, or `"left_out"`, the processes proc runs under that were all a name matched) for exit 2; `"permission_denied"` (exit 3); and for exit 4, which means nothing was done, `"invalid_input"` (a wrong flag, value or argument), `"needs_confirmation"` or `"not_supported"` (this OS cannot do it). A command that changes processes run with `--json` but without `--yes` exits 4 and adds `"needs_confirmation": true` and `"processes"` (the ones it would have changed); with `--yes`, the receipt lists the same processes as `"processes"`, in the same order, each with an `"outcome"` (`"succeeded"` or `"failed"`, and `"error"` when it failed), and a `"count"`. Every command that takes targets also puts `"not_found"` in its JSON, an array of the targets that matched nothing (empty when all were found); the found ones are still handled, and when every target is missing the command exits 2 (`free` exits 0: a port nobody holds is already free).
+With `--json`, every command prints one JSON document with `action` (the command name) and `success`. `proc watch --json` streams one per refresh. Errors, including invalid flags, are JSON too, and every error says why in `"reason"`, one fixed word: `"system_error"` (exit 1); `"not_found"`, `"command_line_only"` or `"ruled_out"` (with `"ruled_out_by"`, the guards that ruled the process out, or `"left_out"`, the processes proc runs under that were all a name matched) for exit 2; `"permission_denied"` (exit 3); and for exit 4, which means nothing was done, `"invalid_input"` (a wrong flag, value or argument), `"needs_confirmation"` or `"not_supported"` (this OS cannot do it). A command that changes processes run with `--json` but without `--yes` exits 4 and adds `"needs_confirmation": true` and `"processes"` (the ones it would have changed); with `--yes`, the receipt lists the same processes as `"processes"`, in the same order, each with an `"outcome"` (`"succeeded"` or `"failed"`, and `"error"` when it failed), and a `"count"`. `why`, `info`, `kill`, `stop`, `freeze`, `thaw`, `unstick`, `free`, `wait`, and `on` given several targets, also put `"not_found"` in their JSON, an array of the targets that matched nothing (empty when all were found); the found ones are still handled, and when every target is missing the command exits 2 (`free` exits 0: a port nobody holds is already free).
 
 | Exit code | Meaning |
 |-----------|---------|

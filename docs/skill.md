@@ -43,7 +43,7 @@ In Claude Code, you can install it as a plugin instead:
 npx skills update
 ```
 
-Installs always fetch the current skill from the repository, so a new install is up to date too. The skill is written for proc 2.0 or later. It tells your agent to check `proc --version`, and to ask you to upgrade rather than run destructive commands on an older proc.
+Installs always fetch the current skill from the repository, so a new install is up to date too. The skill is written for proc 2.4 or later. It tells your agent to check `proc --version`, and to ask you to upgrade rather than run destructive commands on an older proc.
 
 ## What your agent learns
 

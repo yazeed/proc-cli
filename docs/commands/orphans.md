@@ -7,6 +7,8 @@ permalink: /commands/orphans
 
 Find processes whose parent has exited, leaving them orphaned (reparented to PID 1). Alias: `o`.
 
+**It finds candidates, not leftovers.** Any process whose parent is PID 1 is listed, apart from system daemons. On macOS that includes every app launchd started (Preview, Notification Center, helper agents), so `proc orphans` with no filter lists dozens of ordinary apps. `nohup` and `tmux` jobs are orphaned on purpose too. Narrow it with `--in` (your project) or `--by`, and check each process (`proc info`, `proc why`) before `--kill`.
+
 **Not available on Windows.** Windows does not re-parent a process whose parent exited, so there is no reliable orphan to find: every form of `proc orphans`, including `--kill` and `--dry-run`, exits 4 with "not supported on Windows".
 
 ```bash

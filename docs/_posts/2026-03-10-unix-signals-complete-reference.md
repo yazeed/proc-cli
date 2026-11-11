@@ -201,13 +201,13 @@ Note: signal numbers differ between platforms (Linux x86 and ARM in the first co
 
 ## with proc
 
-[proc](https://github.com/yazeed/proc-cli)'s `stop` command sends SIGTERM first with a configurable timeout, then escalates to SIGKILL. `proc stuck` finds processes that have run over five minutes and are busy (over 50% CPU) or blocked in uninterruptible sleep, and `proc unstick` sends recovery signals (SIGCONT, then SIGINT) before escalating.
+[proc](https://github.com/yazeed/proc-cli)'s `stop` command sends SIGTERM first with a configurable timeout, then escalates to SIGKILL. `proc stuck` finds processes that have run over five minutes and are busy (over 50% CPU) or blocked in uninterruptible sleep, and `proc unstick` sends recovery signals (SIGCONT, then SIGINT, which ends most programs) and, with `--force`, escalates to SIGTERM and SIGKILL.
 
 ```bash
 proc stop node                 # SIGTERM, wait, then SIGKILL
 proc stop node --timeout 10    # 10 second grace period
 proc stuck                     # find high-CPU stuck processes
-proc unstick                   # recover with escalating signals
+proc unstick                   # recover with SIGCONT, then SIGINT
 ```
 
 ## Install

@@ -24,7 +24,7 @@ A dev server won't start because port 3000 is taken. proc finds the old tmux ses
 [![Open Collective](https://img.shields.io/opencollective/all/proc-cli?label=backers)](https://opencollective.com/proc-cli)
 [![Website](https://img.shields.io/website?url=https%3A%2F%2Fproc-cli.com%2F&label=website)](https://proc-cli.com/)
 
-**Docs:** [commands](https://proc-cli.com/commands) · [install](https://proc-cli.com/install) · [FAQ](https://proc-cli.com/faq) · [agent skill](https://proc-cli.com/skill) · [changelog](CHANGELOG.md)
+**Docs:** [commands](https://proc-cli.com/commands) · [install](https://proc-cli.com/install) · [FAQ](https://proc-cli.com/faq) · [agent skill](https://proc-cli.com/skill) · [changelog](https://github.com/yazeed/proc-cli/blob/main/CHANGELOG.md)
 
 ## One command instead of a pipeline
 
@@ -139,13 +139,13 @@ Read-only. Nothing is touched.
 | `why <target>` | | Trace what started a process (why is this port busy?) |
 | `for <file>` | `f` | Processes running a program or holding a file open |
 | `by <name>` | `b` | Processes with this name |
-| `in <path>` | | Processes whose working directory is this path |
+| `in <path>` | | Processes whose working directory is this directory or a folder below it |
 | `list` | `l`, `ps` | All processes |
 | `info <target>` | `i`, `inspect` | Everything about one process |
 | `ports` | `p` | All listening TCP ports |
 | `tree` | `t` | Parents and children |
 | `stuck` | `x` | Hung processes: busy or blocked for 2 seconds, running longer than `--timeout` (default 300) |
-| `orphans` | `o` | Processes whose parent has exited (Unix only: exits 4 on Windows) |
+| `orphans` | `o` | Processes whose parent has exited (Unix only: exits 4 on Windows). On macOS also every app launchd started, so narrow it with `--in` |
 
 ### Change it
 
@@ -158,7 +158,7 @@ Asks first, or previews with `--dry-run`.
 | `free <:port>` | | Stop what holds the port (SIGTERM, SIGKILL after up to 5 seconds) and check the port is free |
 | `freeze <target>` | | Pause it (SIGSTOP; Unix only: exits 4 on Windows) |
 | `thaw <target>` | | Resume it (SIGCONT; Unix only: exits 4 on Windows) |
-| `unstick` | `u` | Try to recover stuck processes; `--force` ends them if recovery fails |
+| `unstick` | `u` | Try to recover stuck processes (SIGCONT, then SIGINT, which ends most programs); `--force` adds SIGTERM, then SIGKILL |
 
 ### Keep watching
 
@@ -208,7 +208,7 @@ Not every filter is on every command. `--in`, `--by` (short `-b`) and `--cmd` wo
 
 | Filter | Description | On |
 |--------|-------------|----|
-| `--in [<path>]`, `-i` | Working directory (bare `--in` is the current directory) | nearly every command |
+| `--in [<path>]`, `-i` | Working directory: this directory or a folder below it (bare `--in` is the current directory) | nearly every command |
 | `--by <name>`, `-b` | Process name (the whole name, like a name target) | nearly every command |
 | `--cmd` | Match names and `--by` as a substring of the name or full command line (like `pkill -f`) | every command that takes a name or `--by` |
 | `--start-time <s>` | Only the process that started then (`start_time` from its JSON): a PID the OS has since given to a new process exits 2. One PID target | `kill`, `stop`, `freeze`, `thaw`, `wait`, `info`, `unstick` |
@@ -256,7 +256,7 @@ proc on :8080 --json | jq '.process | {pid, cwd, uptime_secs}'
 - **Errors are JSON too**, including invalid flags: `{"action", "success": false, "error", "exit_code", "reason"}`. `"success": false` always comes with a non-zero exit code.
 - **Every error says why in `"reason"`**, one fixed word to branch on: `"system_error"` (exit 1); `"not_found"`, `"command_line_only"` (the name is only in command lines; `--cmd` matches) or `"ruled_out"` (a guard ruled the process out, listed in `"ruled_out_by"`, or every match was a process proc runs under, listed in `"left_out"`) for exit 2; `"permission_denied"` (exit 3); and, for exit 4, where nothing was done, `"invalid_input"` (a wrong flag, value or argument), `"needs_confirmation"` or `"not_supported"` (this OS cannot do it).
 - **Preview, then confirm.** A command that changes processes, run with `--json` but without `--yes`, exits 4 with `"needs_confirmation": true` and `"processes"` (the ones it would have changed), so a script can show them before running it again with `--yes`. With `--yes`, the receipt lists the same processes as `"processes"`, in the same order, each with an `"outcome"` (`"succeeded"` or `"failed"`, and `"error"` when it failed) and a `"count"`.
-- **`not_found`** lists the targets that matched nothing (empty when all were found). It is in the JSON of `on`, `why`, `info`, `kill`, `stop`, `freeze`, `thaw`, `unstick`, `free` and `wait`, and in the exit 4 output above. `list` and `watch` do not have it.
+- **`not_found`** lists the targets that matched nothing (empty when all were found). It is in the JSON of `why`, `info`, `kill`, `stop`, `freeze`, `thaw`, `unstick`, `free` and `wait`, of `on` given several targets, and in the exit 4 output above. `on` with one target, `tree`, `by`, `for`, `in`, `list` and `watch` do not have it.
 - **A prompt shows what you would approve.** The list of processes goes to the terminal beside the `[y/N]` question: on stdout, or on stderr when stdout is a file or a pipe. If the list cannot be shown, nothing is asked and nothing is changed (exit 4).
 - **A reader that stops early ends proc quietly.** `proc list | head -n1` exits 0 without an error, and `proc kill 1234 --yes | head -n1` still kills the process and exits with the code of the kill (0 if it worked, 2 if there was nothing to kill): a closed pipe never changes the result, on stdout or stderr. A write that fails for another reason (a full disk) is exit 1, with one line on stderr.
 
@@ -269,7 +269,7 @@ proc on :8080 --json | jq '.process | {pid, cwd, uptime_secs}'
 | `4` | Invalid input (unknown flag, bad or empty argument, invalid signal, an `--in` directory that doesn't exist), an action this OS doesn't support (`freeze`, `thaw`, `orphans` and `stop --signal` on Windows), or a command that changes processes run without `--yes` where nobody can confirm (`--json`, or no terminal): nothing was changed |
 | `129`, `130`, `131`, `143` | A signal ended proc (SIGHUP, SIGINT or Ctrl+C, SIGQUIT, SIGTERM) while `watch` had the screen or a prompt was waiting: the terminal is put back first, then proc ends by that signal, so a shell shows 128 plus its number and Ctrl+C stops a script's loop. Nothing was changed by an unanswered prompt |
 
-Full schemas: [`skills/proc-cli/reference.md`](skills/proc-cli/reference.md).
+Full schemas: [`skills/proc-cli/reference.md`](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md).
 
 ### Agent skill
 
@@ -286,7 +286,7 @@ In Claude Code you can also install it as a plugin:
 /plugin install proc-cli@proc-cli
 ```
 
-The skill lives in [`skills/proc-cli/`](skills/proc-cli/SKILL.md) and follows the [Agent Skills](https://agentskills.io) standard. [What it teaches, how to update it, and prompts to try &rarr;](https://proc-cli.com/skill)
+The skill lives in [`skills/proc-cli/`](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/SKILL.md) and follows the [Agent Skills](https://agentskills.io) standard. [What it teaches, how to update it, and prompts to try &rarr;](https://proc-cli.com/skill)
 
 [![Skills installs](https://skills.sh/b/yazeed/proc-cli)](https://www.skills.sh/yazeed/proc-cli)
 [![SafeSkill](https://safeskill.dev/api/badge/proc-cli)](https://safeskill.dev/scan/proc-cli)
@@ -307,7 +307,7 @@ The Linux binaries are statically linked (musl) and need no particular glibc ver
 
 On FreeBSD and NetBSD proc reads ports with `sockstat` and open files with `fstat`, both in the base system, so it needs nothing installed. The kernel forgets the path of a working directory once the directory is deleted, so `proc in` a deleted directory exits 4 there, where Linux and macOS still find the processes in it.
 
-proc is for processes and ports on the machine it runs on. It is not for containers, system services or remote hosts (see [PHILOSOPHY.md](PHILOSOPHY.md)).
+proc is for processes and ports on the machine it runs on. It is not for containers, system services or remote hosts (see [PHILOSOPHY.md](https://github.com/yazeed/proc-cli/blob/main/PHILOSOPHY.md)).
 
 ## Shell completions and man page
 
@@ -341,11 +341,11 @@ The binary will be at `target/release/proc`.
 
 ## Use as a library
 
-proc is also a Rust crate, `proc_cli`: see the [API docs on docs.rs](https://docs.rs/proc-cli) and the `Library API` entries in the [changelog](CHANGELOG.md).
+proc is also a Rust crate, `proc_cli`: see the [API docs on docs.rs](https://docs.rs/proc-cli) and the `Library API` entries in the [changelog](https://github.com/yazeed/proc-cli/blob/main/CHANGELOG.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). The principles behind the commands are in [PHILOSOPHY.md](PHILOSOPHY.md).
+See [CONTRIBUTING.md](https://github.com/yazeed/proc-cli/blob/main/CONTRIBUTING.md). The principles behind the commands are in [PHILOSOPHY.md](https://github.com/yazeed/proc-cli/blob/main/PHILOSOPHY.md).
 
 ## Star History
 

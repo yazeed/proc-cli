@@ -332,7 +332,7 @@ pub enum Commands {
     #[command(visible_alias = "b")]
     By(ByCommand),
 
-    /// Filter processes by working directory
+    /// Find processes running in a directory or a folder below it
     In(InCommand),
 
     /// List processes
@@ -368,6 +368,9 @@ pub enum Commands {
     Stuck(StuckCommand),
 
     /// Attempt to recover stuck processes
+    ///
+    /// Sends SIGCONT, then SIGINT (as Ctrl+C does, which ends most programs) to a
+    /// process still busy; --force adds SIGTERM, then SIGKILL, for one still stuck.
     #[command(visible_alias = "u")]
     Unstick(UnstickCommand),
 
@@ -378,13 +381,20 @@ pub enum Commands {
     Thaw(ThawCommand),
 
     /// Find orphaned processes
+    ///
+    /// Lists the processes whose parent is PID 1, apart from system daemons.
+    /// On macOS that includes every app launchd started, so narrow the list with
+    /// --in or --by, and check each process before --kill.
     #[command(visible_alias = "o")]
     Orphans(OrphansCommand),
 
     /// Trace why a port is busy or show process ancestry
     Why(WhyCommand),
 
-    /// Free port(s) by killing process and verifying availability
+    /// Free port(s): stop what holds them and check they are free
+    ///
+    /// Asks each holder to exit (SIGTERM), force-kills (SIGKILL) whatever is still
+    /// running after up to 5 seconds (or --wait, if shorter), then checks the port.
     Free(FreeCommand),
 
     /// Wait for process(es) to exit

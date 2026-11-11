@@ -145,7 +145,7 @@ Filters (a command takes only those its `--help` lists):
 
 | Filter | Commands |
 |--------|----------|
-| `--in [dir]` (`-i`; bare means `.`) | all except `why`, `free`, `in` |
+| `--in [dir]` (`-i`; bare means `.`): the directory and every folder below it | all except `why`, `free`, `in` |
 | `--by <name>` (`-b`) | all except `why`, `free`, `by`, `list` |
 | `--cmd` (substring of name or command line) | every command that takes a name or `--by` |
 | `--start-time <secs>` (one PID target; the `start_time` from its JSON) | `kill`, `stop`, `freeze`, `thaw`, `wait`, `info`, `unstick` |
@@ -208,7 +208,7 @@ The same machine gives the same order on every run, so a list can be compared wi
 }
 ```
 
-`runs_proc` is `true` on a process proc runs under (see Target and filter semantics) and absent on every other. `exe_path`, `cwd`, `command`, `user`, `parent_pid`, `start_time`, `uptime_secs`, `parent_name`, `cpu_time_secs`, `open_files` and `child_count` are omitted when unavailable (on macOS the start time of other users' processes), never `null`. `--min-uptime` never matches those. `user` falls back to the numeric ID. `status` is `running`, `sleeping`, `stopped`, `zombie`, `dead`, `idle` (Linux: an idle kernel thread), `starting` (macOS, FreeBSD and NetBSD: being created by `fork`), `disk_wait` (Linux: uninterruptible sleep on the disk, state `D`) or `unknown`. Before 2.3.0 those last three were `unknown`; match on the words, not on `unknown` as "the rest".
+`runs_proc` is `true` on a process proc runs under (see Target and filter semantics) and absent on every other. `exe_path`, `cwd`, `command`, `user`, `parent_pid`, `start_time`, `uptime_secs`, `parent_name`, `cpu_time_secs`, `open_files` and `child_count` are omitted when unavailable (on macOS the start time of other users' processes), never `null`. `--min-uptime` never matches those. `cpu_percent`, `memory_mb` and `status` are always there, so for a process the OS does not let proc read (another user's process when proc is not root, on macOS root's `launchd` among them) they are `0.0`, `0.0` and `"unknown"`, with most of the optional keys absent: a `status` of `unknown` and no `cpu_time_secs` is the mark. Treat those values as unknown, not as measurements. `user` falls back to the numeric ID. `status` is `running`, `sleeping`, `stopped`, `zombie`, `dead`, `idle` (Linux: an idle kernel thread), `starting` (macOS, FreeBSD and NetBSD: being created by `fork`), `disk_wait` (Linux: uninterruptible sleep on the disk, state `D`) or `unknown`. Before 2.3.0 those last three were `unknown`; match on the words, not on `unknown` as "the rest".
 
 `cpu_percent` is a percent of one core (over 100 with several), measured over 0.2 s by `list`, `by`, `in`, `for`, `info`, `on`, `tree`, `orphans`, `wait -v` and any `--dry-run` or confirmation. In a receipt (`processes`, `succeeded`) it is not meaningful, and `status` there is the status before the action (a frozen process shows `running`).
 
@@ -377,7 +377,7 @@ Each `processes` entry has the same fields as a process object (see Process and 
     "process": {"pid": 1234, "name": "node", "command": "node server.js", "cwd": "/home/user/project", "status": "running", "uptime_secs": 3600, "cpu_percent": 12.5, "memory_mb": 256.0, "exe_path": "/usr/local/bin/node", "user": "alice", "parent_pid": 1000, "start_time": 1700000000, "parent_name": "zsh", "cpu_time_secs": 42, "open_files": 23, "child_count": 2},
     "ports": [<Port>, ...],
     "ancestry": [
-      {"pid": 1, "name": "launchd", "status": "running", "uptime_secs": 864000, "is_target": false, "cpu_percent": 0.0, "memory_mb": 12.0, "exe_path": "/sbin/launchd", "user": "root", "parent_pid": 0, "start_time": 1699000000, "child_count": 40},
+      {"pid": 1, "name": "launchd", "status": "unknown", "is_target": false, "cpu_percent": 0.0, "memory_mb": 0.0, "exe_path": "/sbin/launchd", "child_count": 40},
       {"pid": 1234, "name": "node", "command": "node server.js", "cwd": "/home/user/project", "status": "running", "uptime_secs": 3600, "is_target": true, "cpu_percent": 12.5, "memory_mb": 256.0, "exe_path": "/usr/local/bin/node", "user": "alice", "parent_pid": 1000, "start_time": 1700000000, "parent_name": "zsh", "cpu_time_secs": 42, "open_files": 23, "child_count": 2}
     ]
   }]
@@ -466,4 +466,10 @@ Before proc 2.0:
 - macOS wrote IPv6 addresses as `[::1]`.
 - Before 1.14.1, `proc in <dir>` rejected a deleted directory with exit 4.
 
-If `proc --version` is below 2.0, ask the user to upgrade rather than working around these.
+From 2.0 to 2.3, changing commands ask before acting, but some of what this reference describes is missing:
+
+- 2.0.1 added `reason`; 2.1.0 added `--start-time`, `ruled_out`, `ruled_out_by` and `command_line_only`.
+- 2.3.0 added the receipt's `processes` with each `outcome`, `count`, and `exposure` and `connections` on ports.
+- 2.4.0 added `runs_proc`, `left_out`, `unseen_ports` and `hidden_by`.
+
+If `proc --version` is below 2.4, ask the user to upgrade rather than working around these.

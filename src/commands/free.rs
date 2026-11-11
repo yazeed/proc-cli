@@ -18,7 +18,7 @@ use clap::Args;
 use colored::*;
 use serde::Serialize;
 
-/// Free port(s) by killing the process and verifying the port is available
+/// Free port(s): SIGTERM each holder, SIGKILL what is left after up to 5 seconds, and verify the port is available
 #[derive(Args, Debug)]
 pub struct FreeCommand {
     /// Port target(s): :port (separate arguments for several, e.g. :3000 :8080)

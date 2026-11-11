@@ -11,7 +11,7 @@ description: >-
   did not start needs a dry run and the user's approval first. Not for containers, system
   services or remote hosts.
 license: MIT
-compatibility: Requires the proc CLI 2.0 or later, on macOS, Linux or Windows (2.2 or later on FreeBSD and NetBSD)
+compatibility: Requires the proc CLI 2.4 or later, on macOS, Linux, Windows, FreeBSD or NetBSD
 metadata:
   author: yazeed
   repository: https://github.com/yazeed/proc-cli
@@ -21,7 +21,7 @@ metadata:
 
 proc finds what is on a port, frees a port in use, and kills or stops a process, targeting it by port, PID, name, file or directory. It can kill, stop and freeze processes, so the risk is acting on one that is not yours. Read the safety model before any command that changes a process.
 
-Run `proc --version`. This skill is for proc 2.0 or later. If it prints a version below 2.0, or a command here exits 4 with "unexpected argument", stop: run read-only commands only, and tell the user that on their version `--json` alone acts without `--yes`, names match any part of a command line, and several targets need commas, so you will run nothing that changes a process until they upgrade. Never run a changing command with `--json` there unless it also has `--dry-run`. If proc is missing, ask the user before installing: `brew install yazeed/proc/proc`, `cargo install proc-cli` or `npm install -g proc-cli` (the last two on Windows too). https://proc-cli.com/install lists the other ways, by system: Scoop, apt, dnf, pip and more.
+Run `proc --version`. This skill is for proc 2.4 or later. If it prints a version below 2.0, or a command here exits 4 with "unexpected argument", stop: run read-only commands only, and tell the user that on their version `--json` alone acts without `--yes`, names match any part of a command line, and several targets need commas, so you will run nothing that changes a process until they upgrade. Never run a changing command with `--json` there unless it also has `--dry-run`. From 2.0 to 2.3 a changing command asks properly, but the guards and fields these rules rely on are missing (`--start-time` arrived in 2.1, the receipt's `processes` and `outcome` in 2.3, `runs_proc` and `left_out` in 2.4): run read-only commands only, and ask the user to upgrade before you stop anything. If proc is missing, ask the user before installing: `brew install yazeed/proc/proc`, `cargo install proc-cli` or `npm install -g proc-cli` (the last two on Windows too). https://proc-cli.com/install lists the other ways, by system: Scoop, apt, dnf, pip and more.
 
 ## Safety model
 
@@ -56,7 +56,7 @@ Never do these: `--yes` with a name; `orphans --kill` or `stuck --kill`; `kill` 
 
 Give several targets as separate arguments: `proc stop <pid> <pid> :<port> --dry-run --json`. Commas (`:3000,:8080`) still work but are deprecated, and print a `note:` on stderr in human mode only, so `--json` is unaffected. A path is not a name: `proc kill ./server` finds nothing.
 
-`--in` filters by working directory. It takes the next word as its value unless that starts with `-`, so put it after the targets or write `--in=<dir>`. It narrows a search; it does not prove ownership. Use a directory only you use, such as a temp dir or worktree you created.
+`--in` filters by working directory: the directory and every folder below it. It takes the next word as its value unless that starts with `-`, so put it after the targets or write `--in=<dir>`. It narrows a search; it does not prove ownership. Use a directory only you use, such as a temp dir or worktree you created.
 
 ## Read-only commands (one default per task)
 

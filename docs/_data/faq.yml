@@ -28,10 +28,15 @@
 - q: How do I check if a port is already in use?
   id: check-port-in-use
   a: |
-    `proc on :8080` prints what's listening, or says nothing is. In scripts, check the exit code: `0` means the port is taken, `2` means nothing is listening.
+    `proc on :8080` prints what's listening, or says nothing is. In scripts, check the exit code: `0` means the port is taken, `2` means nothing is listening, and `3` means something is listening that proc can't see (another user's process): treat that as taken too.
 
     ```bash
-    if proc on :8080 --json > /dev/null; then echo "8080 is taken"; fi
+    proc on :8080 --json > /dev/null
+    case $? in
+      2)   echo "8080 is free" ;;
+      0|3) echo "8080 is taken" ;;
+      *)   echo "could not check 8080" ;;
+    esac
     ```
 
 - q: How do I fix "address already in use" (EADDRINUSE)?
@@ -101,12 +106,12 @@
 - q: What is a zombie process, and how do I get rid of one?
   id: zombie-process
   a: |
-    A zombie is a process that has already exited but whose parent hasn't collected its exit status yet. It uses no CPU or memory, and you can't kill it, because it's already dead. Find zombies with `proc list --status zombie`, then stop or restart their parent (shown in `parent_pid`), which clears them.
+    A zombie is a process that has already exited but whose parent hasn't collected its exit status yet. It uses no CPU or memory, and you can't kill it, because it's already dead. Find zombies with `proc list --status zombie -v` (the PPID column is the parent, `parent_pid` in `--json`), then stop or restart that parent, which clears them.
 
 - q: What is an orphan process, and how do I find leftovers?
   id: orphan-process
   a: |
-    An orphan is a process whose parent has exited, so the system adopted it. Dev servers, file watchers and headless browsers left behind by a closed terminal or a coding agent often end up this way. `proc orphans --in .` lists the ones started in your project, and `--kill` cleans them up after asking.
+    An orphan is a process whose parent has exited, so the system adopted it. Dev servers, file watchers and headless browsers left behind by a closed terminal or a coding agent often end up this way. `proc orphans --in .` lists the ones started in your project, and `--kill` cleans them up after asking. Keep the `--in`: on macOS every app launchd started also has PID 1 as its parent, so an unfiltered `proc orphans` lists ordinary apps such as Preview too.
 
 - q: How do I pause and resume a process?
   id: pause-resume-process

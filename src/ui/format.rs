@@ -61,7 +61,7 @@ pub fn truncate_string(s: &str, max_width: usize) -> String {
 ///
 /// The tail is what differs between rows (`.next/standalone` vs `.next/server`),
 /// so it keeps the larger share and the root stays visible:
-/// `/Users/zee/…/maliqe-website/.next/standalone`.
+/// `/Users/dev/…/my-app/.next/standalone`.
 pub fn truncate_path(path: &str, max_width: usize) -> String {
     if path.width() <= max_width {
         return path.to_string();

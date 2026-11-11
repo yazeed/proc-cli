@@ -1,11 +1,11 @@
 ---
 layout: page
 title: proc in
-description: "Filter processes by working directory."
+description: "Find the processes running in a directory or a folder below it."
 permalink: /commands/in
 ---
 
-Find processes running in a specific directory.
+Find processes running in a directory or in a folder below it: `proc in ~/projects` also lists a server started in `~/projects/my-app/api`.
 
 ```bash
 proc in .                  # processes in current directory
@@ -45,7 +45,7 @@ proc in .
 proc in . --by python
 
 # high-CPU processes in a project
-proc in ~/Sites/myapp --min-cpu 10
+proc in ~/projects/my-app --min-cpu 10
 
 # JSON output for scripting
 proc in . --json

@@ -1,13 +1,13 @@
 ---
 layout: page
 title: proc unstick
-description: "Attempt to recover stuck processes."
+description: "Recover stuck processes with SIGCONT and SIGINT; --force ends the ones that stay stuck."
 permalink: /commands/unstick
 ---
 
-Try to recover stuck processes before resorting to killing. Alias: `u`.
+Try to recover stuck processes, and with `--force` end the ones that stay stuck. Alias: `u`.
 
-Sends SIGCONT then SIGINT recovery sequence. Use `--force` to terminate if recovery fails.
+**It can end a process without `--force`.** It sends SIGCONT (wakes a paused process) and watches for a second; a process still busy then gets SIGINT, the signal Ctrl+C sends, which ends most programs. A process that is gone afterwards counts as `terminated`. With `--force`, one still stuck 3 seconds later gets SIGTERM, and SIGKILL 5 seconds after that. On Windows there is no gentle step: without `--force` nothing is sent, and with it the process is ended.
 
 ```bash
 proc unstick               # recover all stuck processes

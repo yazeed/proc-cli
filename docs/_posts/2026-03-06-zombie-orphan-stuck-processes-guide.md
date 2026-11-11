@@ -278,13 +278,13 @@ proc stuck
  4821  node  dev   475.7  5.9GB  1h 12m  node /Users/dev/my-agent/node_modules/.bin/ts-node index.ts
 ```
 
-Attempt recovery with escalating signals (SIGCONT, then SIGINT):
+Attempt recovery: SIGCONT, then SIGINT for a process still busy. SIGINT is what Ctrl+C sends, so it ends most programs:
 
 ```bash
 proc unstick
 ```
 
-If gentle recovery does not work, `--force` escalates through SIGTERM and SIGKILL:
+If recovery does not work, `--force` escalates through SIGTERM and SIGKILL:
 
 ```bash
 proc unstick --force
