@@ -815,14 +815,20 @@ jobs:
             exit 1
           done
 
+  # winget-releaser builds on the last version in winget-pkgs, so until a
+  # moderator merges the first one, its open pull request is moved to each
+  # release instead (move-pr.sh), or it would land at the version it was
+  # opened with (2.2.0 at the 2.4.0 release). A dry run prints what the move
+  # would change, for the version in Cargo.toml, and pushes nothing
   update-winget:
     name: Update winget
     needs: create-release
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    outputs:
+      listed: ${{ steps.listed.outputs.listed }}
     steps:
-      # winget-releaser builds on the last version in winget-pkgs, so until
-      # the first one is merged there is nothing to update yet
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
       - name: Check that yazeed.proc-cli is in winget-pkgs
         id: listed
         env:
@@ -831,14 +837,32 @@ jobs:
           if gh api repos/microsoft/winget-pkgs/contents/manifests/y/yazeed/proc-cli > /dev/null 2>&1; then
             echo "listed=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::yazeed.proc-cli is not in winget-pkgs yet, so winget is not updated for this release"
             echo "listed=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Move the first version's pull request to the release
+        if: steps.listed.outputs.listed == 'false'
+        env:
+          GH_TOKEN: ${{ github.event_name == 'push' && secrets.WINGET_TOKEN || github.token }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            sh pkg/winget/move-pr.sh "${GITHUB_REF_NAME#v}" --push
+          else
+            sh pkg/winget/move-pr.sh "$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+          fi
+
+      - name: Upload the manifests (for main)
+        if: steps.listed.outputs.listed == 'false'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: winget-manifests
+          path: pkg/winget/*.yaml
+          if-no-files-found: error
 
       # Opens the pull request for the new version in microsoft/winget-pkgs,
       # from the yazeed/winget-pkgs fork (Komac finds it by that name). Only the
       # zip: the bare .exe would match the action's default pattern too.
-      - if: steps.listed.outputs.listed == 'true'
+      - if: steps.listed.outputs.listed == 'true' && github.event_name == 'push'
         uses: vedantmgoyal9/winget-releaser@b7370d4d152efdce803a26cc6ca9eee58cb2ad54 # main, 2026-10-07
         with:
           identifier: yazeed.proc-cli
@@ -1088,15 +1112,16 @@ jobs:
           if-no-files-found: error
 
   # The files the package jobs wrote go to main in one commit, so main holds
-  # what was submitted for the release: pkg/nixpkgs/package.nix and the FreeBSD
-  # port's and pkgsrc package's files. A job's files are taken only when that
-  # job passed. They can't be in the release commit: their checksums are of
+  # what was submitted for the release: pkg/nixpkgs/package.nix, the FreeBSD
+  # port's and pkgsrc package's files and, while winget's first version waits
+  # for a moderator, its manifests (pkg/winget/). A job's files are taken only
+  # when that job passed. They can't be in the release commit: their checksums are of
   # the tag's download, which holds that commit's ID. A dry run shows what it
   # would commit (with checksums of its tarball of the checkout) and commits
   # nothing
   commit-package-files:
     name: Commit the package files
-    needs: [update-nixpkgs, update-freebsd, update-pkgsrc]
+    needs: [update-nixpkgs, update-freebsd, update-pkgsrc, update-winget]
     if: ${{ !cancelled() && contains(needs.*.result, 'success') }}
     runs-on: ubuntu-latest
     permissions:
@@ -1127,6 +1152,13 @@ jobs:
           name: pkgsrc-update
           path: ${{ runner.temp }}/pkgsrc
 
+      - name: Download the winget manifests
+        if: needs.update-winget.result == 'success' && needs.update-winget.outputs.listed == 'false'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: winget-manifests
+          path: ${{ runner.temp }}/winget
+
       # Only the files each job writes: the artifacts also hold the scripts,
       # which main keeps as they are
       - name: Commit them to main (a dry run shows the change)
@@ -1134,6 +1166,8 @@ jobs:
           NIXPKGS: ${{ needs.update-nixpkgs.result }}
           FREEBSD: ${{ needs.update-freebsd.result }}
           PKGSRC: ${{ needs.update-pkgsrc.result }}
+          WINGET: ${{ needs.update-winget.result }}
+          WINGET_LISTED: ${{ needs.update-winget.outputs.listed }}
         run: |
           if [ "$NIXPKGS" = success ]; then
             cp "$RUNNER_TEMP/nixpkgs/package.nix" pkg/nixpkgs/
@@ -1154,6 +1188,15 @@ jobs:
           else
             echo "::warning::update-pkgsrc ended $PKGSRC: pkg/pkgsrc/ is left as it is"
           fi
+          # Once winget-pkgs has the package, winget-releaser writes each
+          # release's manifests there, and pkg/winget/ keeps the first version
+          if [ "$WINGET" = success ] && [ "$WINGET_LISTED" = false ]; then
+            for f in yazeed.proc-cli.yaml yazeed.proc-cli.locale.en-US.yaml yazeed.proc-cli.installer.yaml; do
+              cp "$RUNNER_TEMP/winget/$f" pkg/winget/
+            done
+          elif [ "$WINGET" != success ]; then
+            echo "::warning::update-winget ended $WINGET: pkg/winget/ is left as it is"
+          fi
           git diff --stat
           if [ "$GITHUB_EVENT_NAME" != push ]; then
             git diff
@@ -1167,7 +1210,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit --quiet --all -m "chore: package files for ${GITHUB_REF_NAME}" \
-            -m "The nixpkgs, FreeBSD and pkgsrc files the release's jobs wrote for ${GITHUB_REF_NAME} (run ${GITHUB_RUN_ID})."
+            -m "The nixpkgs, FreeBSD, pkgsrc and winget files the release's jobs wrote for ${GITHUB_REF_NAME} (run ${GITHUB_RUN_ID})."
           # main can move while the release runs
           for _ in 1 2 3; do
             if git push --quiet origin HEAD:main; then
