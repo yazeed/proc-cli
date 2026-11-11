@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The winget submission is 2.4.0.** microsoft/winget-pkgs#469298, the first version of `yazeed.proc-cli`, was opened at 2.2.0 and still waits for a moderator; it now holds 2.4.0's manifests (the Windows zip's SHA-256 checked against the release's `checksums.txt`), so Windows users get the current release when it is merged, `proc ports` naming every holder (2.3.0) included. RELEASE.md says what to do if another release comes out first. Nothing changed in proc
+
 - **Every workflow action runs on Node 24.** Six still ran on Node 20, which GitHub is retiring: `actions/download-artifact` 4.3.0 to 8.0.2, `actions/upload-artifact` 4.6.2 to 7.0.2, `actions/setup-node` 4.4.0 to 6.5.0, `docker/build-push-action` 5.4.0 to 7.4.0, `docker/login-action` 3.7.0 to 4.8.0 and `docker/setup-qemu-action` 3.7.0 to 4.4.0. `cachix/install-nix-action` moved to 31.11.4 and `vmactions/freebsd-vm` to 1.6.0 (FreeBSD 15.1's image now has a UFS root, not ZFS). `setup-node` stays on 6.x: 7.0 no longer exports the placeholder `NODE_AUTH_TOKEN` the npm job's trusted publishing was tested with, so Dependabot leaves 7.x alone until a release's dry run passes on it. CI and the release's dry run passed on the branch before it was merged. Nothing changed in proc
 
 ### Fixed
