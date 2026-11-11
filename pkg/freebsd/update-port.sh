@@ -63,6 +63,11 @@ head -n 1 Makefile.crates.new | grep -q '^CARGO_CRATES=' ||
 mv Makefile.crates.new Makefile.crates
 make makesum
 
+# The work directory was extracted with the old crate list: built there, proc
+# would get the last release's crates, not the ones this Cargo.lock locks
+# (2.4.0's dry run built itoa 1.0.18 against 1.0.19). Extracted again, it has
+# the ones the port lists
+make clean
 make stage check-plist stage-qa package
 pkg add -f "work/pkg/proc-cli-$version.pkg"
 printed=$(/usr/local/bin/proc --version | head -n 1)

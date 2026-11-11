@@ -104,6 +104,10 @@ make makesum
 grep -q "^SHA512 (proc-cli-$version.tar.gz) = [0-9a-f]" distinfo ||
     fail "distinfo has no checksum for proc-cli-$version.tar.gz after make makesum"
 
+# The work directory was extracted with trunk's crate list: built there,
+# cargo finds the last release's crates, not the ones this Cargo.lock locks
+# (2.4.0's dry run: itoa 1.0.18 against 1.0.19). Extracted again, it has these
+make clean
 make package install
 printed=$(/usr/pkg/bin/proc --version | head -n 1)
 [ "$printed" = "proc $version" ] || fail "the installed proc prints '$printed', not 'proc $version'"
