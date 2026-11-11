@@ -763,6 +763,20 @@ mod tests {
     }
 
     #[test]
+    fn resolve_target_finds_a_name_for_a_library_caller() {
+        // no command resolves names through it any more (they use
+        // `lookup_target`), but the library still offers it
+        let me = Process::find_by_pid(std::process::id()).unwrap().unwrap();
+        let found = resolve_target(&me.name, NameMatch::Exact);
+        // proc itself is never a match, so only other processes of its name
+        assert!(found.iter().flatten().all(|p| p.pid != me.pid), "{found:?}");
+        assert!(matches!(
+            resolve_target("no-such-process-q9z", NameMatch::Exact),
+            Err(ProcError::ProcessNotFound(_))
+        ));
+    }
+
+    #[test]
     fn resolving_by_name_for_a_read_notes_the_process_proc_runs_under() {
         // this test runs under its parent (cargo, or a shell): its exact name
         // finds it, kept and marked, and the resolution notes it
