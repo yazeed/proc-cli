@@ -262,22 +262,32 @@ fn clicolor_force_colours_a_pipe_and_overrides_no_colour() {
 fn coloured_text_is_the_plain_text_plus_escape_codes() {
     let owned = Owned::listener();
     let dir = owned.raw_dir();
-    // The headline and the table's header are the same in both runs; the CPU
-    // and uptime figures move between runs, so compare the lines that hold none
+    // A column is as wide as its widest cell, and two runs can see the listener
+    // differently (its uptime, CPU, memory or status: an instant of "disk wait"
+    // widened STATUS by one, CI 2026-11-11), so the spacing is only comparable
+    // when both runs printed the same cells. Run the pair until they do, then
+    // the text must be the same, spacing and all
+    let cells = |text: &str| -> Vec<Vec<String>> {
+        text.lines()
+            .map(|l| l.split_whitespace().map(str::to_string).collect())
+            .collect()
+    };
     for args in [vec!["list", "--in", &dir], vec!["list", "--in", &dir, "-v"]] {
-        let (coloured, _, _) = run(coloured_cmd(), &args);
-        let (plain, _, _) = run(plain_cmd(), &args);
-        assert!(coloured.contains(ESC), "{coloured:?}");
-        let stable = |text: &str| -> Vec<String> {
-            text.lines()
-                .filter(|l| l.starts_with("✓") || l.trim_start().starts_with("PID"))
-                .map(str::to_string)
-                .collect()
+        let mut attempts = 0;
+        let (coloured, plain) = loop {
+            attempts += 1;
+            let (coloured, _, _) = run(coloured_cmd(), &args);
+            let (plain, _, _) = run(plain_cmd(), &args);
+            assert!(coloured.contains(ESC), "{coloured:?}");
+            let coloured = strip_colours(&coloured);
+            if cells(&coloured) == cells(&plain) || attempts == 10 {
+                break (coloured, plain);
+            }
         };
         assert_eq!(
-            stable(&strip_colours(&coloured)),
-            stable(&plain),
-            "{args:?}\n{}",
+            coloured,
+            plain,
+            "{args:?}, {attempts} attempts\n{}",
             owned.what_proc_saw()
         );
     }

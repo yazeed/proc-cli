@@ -454,19 +454,29 @@ mod unix {
     #[test]
     fn uptime_is_reported_in_seconds() {
         let sleeper = Sleeper::spawn();
+        let now = || {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        };
 
+        let before = now();
         let (json, code) = run_json(&["info", &sleeper.pid(), "--json"]);
+        let after = now();
         assert_eq!(code, 0);
         let process = &json["processes"][0];
         let uptime = process["uptime_secs"].as_u64().unwrap();
         let start = process["start_time"].as_u64().unwrap();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        // The sleeper was just spawned, and uptime agrees with start_time
+        // The sleeper was just spawned, and uptime agrees with start_time: proc
+        // read it at start_time + uptime, a moment while it ran (a second either
+        // way for rounding). Under the suite's load one run can take seconds
+        // (7 on macOS), so the time after it ends is no measure of that moment
         assert!(uptime < 60, "uptime_secs = {uptime}");
-        assert!(now.saturating_sub(start).abs_diff(uptime) <= 2);
+        assert!(
+            (before.saturating_sub(1)..=after + 1).contains(&(start + uptime)),
+            "start_time {start}, uptime_secs {uptime}, proc ran from {before} to {after}"
+        );
     }
 
     /// A shell with one child, killed when the test ends (the child, a
