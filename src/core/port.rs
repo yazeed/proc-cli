@@ -236,8 +236,9 @@ impl PortInfo {
     /// Why `port` may have a holder proc can't see, asked once no holder was
     /// found; `None` when nothing does as far as proc can tell. A listening
     /// socket proc found no holder for is another user's process's (Linux and
-    /// macOS, see [`listening_everyone`]); on a BSD that hides other users'
-    /// sockets (see [`others_hidden`]), proc can't tell. Windows lists every
+    /// macOS, whose tables list every socket); on a BSD that hides other users'
+    /// sockets (FreeBSD's `security.bsd.see_other_uids=0`, NetBSD's
+    /// `security.curtain=1`), proc can't tell. Windows lists every
     /// socket with its process, so there it is always `None`
     pub fn unseen(port: u16) -> Option<Unseen> {
         if listening_everyone().is_some_and(|all| all.contains(&port)) {
