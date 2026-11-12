@@ -23,13 +23,13 @@ This post compares proc with the tools you're probably already using.
 | Task | proc | Traditional |
 |------|------|------------|
 | What's on port 3000? | `proc on :3000` | `lsof -i :3000 -P -n` |
-| Kill it | `proc kill :3000` | `lsof -i :3000 -t \| xargs kill -9` |
-| What ports is node using? | `proc on node` | `lsof -i -P -n \| grep node` |
-| Find by name + directory | `proc by node --in .` | `ps aux \| grep node` + manual cwd check |
+| Kill it | `proc kill :3000` | <code markdown="0">lsof -i :3000 -t &#124; xargs kill -9</code> |
+| What ports is node using? | `proc on node` | <code markdown="0">lsof -i -P -n &#124; grep node</code> |
+| Find by name + directory | `proc by node --in .` | <code markdown="0">ps aux &#124; grep node</code> + manual cwd check |
 | Kill multiple targets | `proc kill :3000 :8080 node` | Three separate pipelines |
 | Process tree | `proc tree node` | `pstree -p $(pgrep node)` |
 | What's running this file? | `proc for ./app.js` | `lsof ./app.js` or `fuser ./app.js` |
-| Real-time monitoring | `proc watch node` | `watch -n2 'ps aux \| grep node'` |
+| Real-time monitoring | `proc watch node` | <code markdown="0">watch -n2 'ps aux &#124; grep node'</code> |
 | JSON output | `proc on :3000 --json` | `lsof -F -i :3000` (custom format) |
 
 ## Tool-by-tool breakdown

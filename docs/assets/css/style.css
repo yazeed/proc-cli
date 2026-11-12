@@ -359,7 +359,13 @@ h2:hover .heading-anchor, h3:hover .heading-anchor, .heading-anchor:focus { opac
   color: var(--ink);
   white-space: nowrap;
 }
-.prose td :not(pre) > code, .prose li :not(pre) > code { white-space: normal; }
+/* inline code wraps only between its words, on every screen, so a flag such
+   as --json never splits at its hyphen and a long message or pipeline never
+   widens the page; only a single word too long for any line (a path, a URL)
+   breaks inside. site.js marks the words */
+:not(pre) > code.code-words { white-space: normal; }
+:not(pre) > code .word { white-space: nowrap; }
+:not(pre) > code.code-long, :not(pre) > code .word-long { white-space: normal; overflow-wrap: anywhere; }
 
 /* ---------- code blocks: the terminal ---------- */
 
@@ -412,6 +418,35 @@ pre code {
 
 /* rouge also puts .highlight on the pre itself, so only clear the wrapper div */
 div.highlight { background: none; }
+
+/* Commands wrap at the edge instead of hiding the rest of the line, on every
+   screen: a comment or a flag past the edge is otherwise unseen on a phone.
+   site.js gives each line its own box, so a wrapped line keeps a hanging
+   indent and still reads as one command. Output and program code keep their
+   columns and scroll, with the glows above. A block of commands in another
+   language (the /plugin lines Claude Code takes) is marked {: .commands} */
+.prose .language-bash pre code,
+.prose .language-sh pre code,
+.prose .language-shell pre code,
+.prose .language-console pre code,
+.prose .language-bat pre code,
+.prose .language-powershell pre code,
+.prose .language-dockerfile pre code,
+.prose .commands pre code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+pre code .line {
+  display: block;
+  padding-left: 2ch;
+  text-indent: -2ch;
+}
+/* a flag or other short token stays whole when its line wraps (a hyphen
+   would otherwise let -t break after its dash); comments and quoted strings
+   (an awk program, a jq filter) still wrap at their spaces, or anywhere */
+pre code .line > span:not(.c):not(.c1):not(.cm):not(.ch):not(.cs):not([class^="s"]) { white-space: nowrap; }
+/* a blank line between commands keeps its height */
+pre code .line:empty::before { content: "\200b"; }
 
 .highlight .c, .highlight .c1, .highlight .cm, .highlight .cs, .highlight .ch {
   color: var(--syn-comment); font-style: italic;
@@ -501,12 +536,28 @@ pre:hover + .copy-button,
 
 .prose tr:last-child td { border-bottom: 0; }
 
-/* aliases and short flags stay on one line */
-.page-commands .prose td:nth-child(2) { white-space: nowrap; }
+/* aliases and short flags stay on one line; the rest of the cell wraps (the
+   whole column used to stay on one line, which made the exit code table
+   twice the width of the screen) */
+.page-commands .prose td:nth-child(2) code { white-space: nowrap; }
 
-@media (max-width: 640px) {
-  .prose table { display: block; overflow-x: auto; }
+/* a table wider than the column scrolls inside its own box, on every screen,
+   never the page; site.js puts each table in one */
+.prose .table-scroll {
+  overflow-x: auto;
+  margin-top: 1.4rem;
+  margin-bottom: 1.4rem;
+  /* the same edge glows as a code block that scrolls, in the page colours */
+  background:
+    linear-gradient(to right, var(--paper) 50%, transparent) left / 3rem 100% no-repeat local,
+    linear-gradient(to left, var(--paper) 50%, transparent) right / 3rem 100% no-repeat local,
+    linear-gradient(to right, color-mix(in srgb, var(--ink) 12%, transparent), transparent) left / 1.25rem 100% no-repeat scroll,
+    linear-gradient(to left, color-mix(in srgb, var(--ink) 12%, transparent), transparent) right / 1.25rem 100% no-repeat scroll,
+    var(--paper);
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
 }
+.prose .table-scroll > table { margin: 0; }
 
 /* ---------- posts ---------- */
 
@@ -936,8 +987,6 @@ pre:hover + .copy-button,
   .swap-row { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
   .post-list a { grid-template-columns: minmax(0, 1fr); }
   .install-line { font-size: 0.9rem; }
-  /* long inline spans (error messages, pipelines) wrap instead of running off the screen */
-  .prose :not(pre) > code { white-space: normal; overflow-wrap: anywhere; }
   .reader-line, .reader-explain, .reader-picks { padding-left: 1.15rem; padding-right: 1.15rem; }
   .reader-row { grid-template-columns: minmax(0, 1fr); }
   .reader-explain { min-height: 13rem; }

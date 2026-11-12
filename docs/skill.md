@@ -56,6 +56,7 @@ In Claude Code, you can install it as a plugin instead:
 /plugin marketplace add yazeed/proc-cli
 /plugin install proc-cli@proc-cli
 ```
+{: .commands}
 
 ## Update
 

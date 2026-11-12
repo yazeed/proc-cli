@@ -353,10 +353,10 @@ fuser 3000/tcp 2>/dev/null | xargs -n1 echo
 | lsof | macOS, Linux | `lsof -i :3000 -P -n` | Full table (PID, user, command, etc.) |
 | lsof | macOS, Linux | `lsof -i :3000 -t` | PID only, one per line |
 | ss | Linux | `ss -tlnp 'sport = :3000'` | Table with process info in parens |
-| netstat | Linux | `netstat -tlnp \| grep :3000` | Table with PID/name column |
-| netstat | macOS | `netstat -anv \| grep '\.3000 '` | Table with a pid column |
+| netstat | Linux | <code markdown="0">netstat -tlnp &#124; grep :3000</code> | Table with PID/name column |
+| netstat | macOS | <code markdown="0">netstat -anv &#124; grep '\.3000 '</code> | Table with a pid column |
 | fuser | Linux | `fuser 3000/tcp` | PID to stdout, label to stderr |
-| netstat | Windows | `netstat -ano \| findstr :3000` | Table, PID in the last column |
+| netstat | Windows | <code markdown="0">netstat -ano &#124; findstr :3000</code> | Table, PID in the last column |
 | PowerShell | Windows | `Get-NetTCPConnection -LocalPort 3000 -State Listen` | Objects with `OwningProcess` |
 
 ## Killing the process
