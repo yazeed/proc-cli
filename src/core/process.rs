@@ -2709,12 +2709,15 @@ mod tests {
     fn a_control_character_in_a_windows_command_line_matches_as_typed_and_displays_escaped() {
         use crate::core::matches_by_filter;
 
-        let mut exe = std::env::current_exe().unwrap();
-        exe.pop();
-        exe.pop();
-        exe.push("examples");
-        exe.push("listener.exe");
-        assert!(exe.exists(), "build the example first: {}", exe.display());
+        // the examples stay in target/debug/examples whichever folder cargo
+        // builds this test in (deps up to Rust 1.99, build/proc-cli/<hash>/out
+        // from 1.100), so look up from it
+        let exe = std::env::current_exe()
+            .unwrap()
+            .ancestors()
+            .map(|dir| dir.join("examples").join("listener.exe"))
+            .find(|path| path.exists())
+            .expect("build the example first: no examples/listener.exe above the test binary");
         let part = format!("\u{7}ctl{}", std::process::id());
         let mut child = std::process::Command::new(&exe)
             .arg(&part)
