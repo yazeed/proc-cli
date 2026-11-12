@@ -59,8 +59,25 @@ mod unix {
     /// The job's PID while it runs, 0 once it has been reaped
     static JOB: AtomicI32 = AtomicI32::new(0);
 
-    extern "C" fn forward(signal: libc::c_int) {
+    /// Each signal this session got (up to `SEEN_MAX`): its number, who sent
+    /// it, and the job it went to (0: none, the job had ended). Written to
+    /// `forwarded` at the end, so a test that sees the wrong signal end proc
+    /// can say where it came from
+    const SEEN_MAX: usize = 16;
+    static SEEN: AtomicI32 = AtomicI32::new(0);
+    static SEEN_SIGNAL: [AtomicI32; SEEN_MAX] = [const { AtomicI32::new(0) }; SEEN_MAX];
+    static SEEN_FROM: [AtomicI32; SEEN_MAX] = [const { AtomicI32::new(0) }; SEEN_MAX];
+    static SEEN_JOB: [AtomicI32; SEEN_MAX] = [const { AtomicI32::new(0) }; SEEN_MAX];
+
+    extern "C" fn forward(signal: libc::c_int, info: *mut libc::siginfo_t, _: *mut libc::c_void) {
         let job = JOB.load(Ordering::SeqCst);
+        let n = SEEN.fetch_add(1, Ordering::SeqCst) as usize;
+        if n < SEEN_MAX {
+            SEEN_SIGNAL[n].store(signal, Ordering::SeqCst);
+            // SAFETY: with SA_SIGINFO the kernel passes a valid siginfo
+            SEEN_FROM[n].store(unsafe { (*info).si_pid() }, Ordering::SeqCst);
+            SEEN_JOB[n].store(job, Ordering::SeqCst);
+        }
         if job > 0 {
             // SAFETY: kill is async-signal-safe; `job` is our unreaped child
             unsafe {
@@ -111,11 +128,14 @@ mod unix {
         }
         JOB.store(job, Ordering::SeqCst);
         for signal in FORWARDED {
-            // SAFETY: `forward` only calls kill, which is async-signal-safe
+            // SAFETY: `forward` only stores into atomics and calls kill, which
+            // is async-signal-safe
             unsafe {
                 let mut action: libc::sigaction = std::mem::zeroed();
-                action.sa_sigaction = forward as extern "C" fn(libc::c_int) as libc::sighandler_t;
-                action.sa_flags = libc::SA_RESTART;
+                action.sa_sigaction = forward
+                    as extern "C" fn(libc::c_int, *mut libc::siginfo_t, *mut libc::c_void)
+                    as libc::sighandler_t;
+                action.sa_flags = libc::SA_RESTART | libc::SA_SIGINFO;
                 libc::sigemptyset(&mut action.sa_mask);
                 libc::sigaction(signal, &action, std::ptr::null_mut());
             }
@@ -152,6 +172,7 @@ mod unix {
             std::thread::sleep(Duration::from_millis(5));
         }
 
+        write_atomically(&dir.join("forwarded"), &seen());
         if libc::WIFSIGNALED(status) {
             end_by(libc::WTERMSIG(status));
         }
@@ -213,6 +234,21 @@ mod unix {
     }
 
     /// Written whole or not at all, so the test never reads half a file
+    /// The signals this session got, one line each:
+    /// `signal 15 from 4821 to job 4830` (`to job 0`: it had ended)
+    fn seen() -> String {
+        (0..(SEEN.load(Ordering::SeqCst) as usize).min(SEEN_MAX))
+            .map(|n| {
+                format!(
+                    "signal {} from {} to job {}\n",
+                    SEEN_SIGNAL[n].load(Ordering::SeqCst),
+                    SEEN_FROM[n].load(Ordering::SeqCst),
+                    SEEN_JOB[n].load(Ordering::SeqCst)
+                )
+            })
+            .collect()
+    }
+
     fn write_atomically(path: &Path, text: &str) {
         let partial = path.with_extension("partial");
         std::fs::write(&partial, text).expect("session: write in the session's directory");

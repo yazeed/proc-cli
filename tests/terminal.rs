@@ -79,6 +79,28 @@ struct PtyRun {
     /// ... and once the child had ended
     #[cfg(unix)]
     mode_at_end: Option<u64>,
+    /// How proc itself ended, as `examples/session` saw it (the session then
+    /// ends the same way, once its output is read)
+    #[cfg(unix)]
+    proc_ended: Option<session::Ended>,
+    /// The signals the session got, who sent each and where it went
+    #[cfg(unix)]
+    forwarded: String,
+}
+
+/// Every session, proc and listener PID the tests in this binary started, in
+/// order: a signal from an unexpected sender is looked up here. The tests are
+/// threads of one process, so one list holds them all
+#[cfg(unix)]
+static STARTED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+#[cfg(unix)]
+fn note_started(what: String) {
+    let test = std::thread::current().name().unwrap_or("?").to_string();
+    STARTED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push(format!("{test}: {what}"));
 }
 
 /// The terminal's local mode flags, if they can be read. (`tcflag_t` is 32 bits
@@ -297,6 +319,19 @@ fn try_run_program_in_pty(program: &str, args: &[&str], script: &[Step]) -> Resu
         .spawn_command(cmd)
         .expect("spawn proc in the pty");
     drop(spawning);
+    #[cfg(unix)]
+    {
+        // the session writes proc's PID as soon as it has started it
+        let until = Instant::now() + Duration::from_secs(3);
+        while session.job().is_none() && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        note_started(format!(
+            "session {:?}, proc {:?}: proc {args:?}",
+            child.process_id(),
+            session.job()
+        ));
+    }
     // Windows: the child holds the only other end; with ours closed, the
     // reader sees end-of-file when the child is gone.
     // Unix: we keep our copy of the child's end until we have read everything,
@@ -481,6 +516,10 @@ fn try_run_program_in_pty(program: &str, args: &[&str], script: &[Step]) -> Resu
         mode_at_signal,
         #[cfg(unix)]
         mode_at_end,
+        #[cfg(unix)]
+        proc_ended: guard.1.ended(),
+        #[cfg(unix)]
+        forwarded: guard.1.forwarded(),
     })
 }
 
@@ -553,6 +592,8 @@ impl Owned {
             .stdin(Stdio::null())
             .spawn()
             .expect("spawn the listener example");
+        #[cfg(unix)]
+        note_started(format!("listener {}", child.id()));
         let mut line = String::new();
         let mut stdout = BufReader::new(child.stdout.take().unwrap());
         let read = stdout.read_line(&mut line);
@@ -1376,13 +1417,27 @@ fn assert_ended_by(run: &PtyRun, signal: i32, what: &str) {
     let name = unsafe { std::ffi::CStr::from_ptr(libc::strsignal(signal)) }
         .to_string_lossy()
         .into_owned();
-    assert_eq!(
-        run.ended_by.as_deref(),
-        Some(name.as_str()),
-        "{what}: exit {}: {}",
-        run.exit_code,
-        run.output
+    // On a failure: how proc and its session each ended, every signal the
+    // session got and who sent it, and every PID the tests started, so a
+    // signal from the wrong place says where it came from (twice on NetBSD,
+    // 2026-11-11 and 2026-11-12, not reproduced in 320 runs)
+    let started = STARTED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .join("\n");
+    let report = format!(
+        "{what}: proc itself ended {:?}, its session by {:?}, exit {}\n\
+         signals the session got:\n{}\
+         PIDs the tests started, in order:\n{started}\n\
+         proc printed:\n{}",
+        run.proc_ended, run.ended_by, run.exit_code, run.forwarded, run.output
     );
+    assert_eq!(
+        run.proc_ended,
+        Some(session::Ended::Signaled(signal)),
+        "{report}"
+    );
+    assert_eq!(run.ended_by.as_deref(), Some(name.as_str()), "{report}");
 }
 
 /// Position of the last `needle` in what the terminal received

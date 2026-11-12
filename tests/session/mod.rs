@@ -51,6 +51,13 @@ impl Session {
         }
     }
 
+    /// The signals the session got, who sent each and the job it went to, once
+    /// the session has ended (`examples/session` writes them last)
+    pub fn forwarded(&self) -> String {
+        std::fs::read_to_string(self.dir.path().join("forwarded"))
+            .unwrap_or_else(|e| format!("(no record: {e})\n"))
+    }
+
     /// The job's PID, once it has started
     pub fn job(&self) -> Option<i32> {
         std::fs::read_to_string(self.dir.path().join("pid"))
