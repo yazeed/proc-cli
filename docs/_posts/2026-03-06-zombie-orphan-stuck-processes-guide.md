@@ -1,12 +1,27 @@
 ---
-title: "Zombie processes, orphans, and stuck processes: a debugging guide"
-description: "What zombie, orphan, and stuck processes actually are, how to find them with ps and awk, and how to deal with each type."
+title: "Zombie (defunct), orphan and stuck processes: how to find and get rid of them"
+description: "What zombie (defunct), orphan and stuck processes are, how to find them on Linux and macOS, why you can't kill a zombie, what \"There is 1 zombie process\" means, and how to clean up the processes an editor or agent left running."
 date: 2026-03-06
+last_modified_at: 2026-11-12
 ---
 
 Your process will not die. You have run `kill` twice, maybe three times. Or `ps` is showing a state you do not recognize -- something with a `Z` or a `D` in the STAT column. You are not sure whether to escalate or wait.
 
 Here is what is actually happening, and what to do about it.
+
+## The short answer
+
+- **A zombie (shown as `<defunct>`)** has already exited; only its exit status is left, waiting for its parent to collect it. You can't kill it. Find its parent (`ps -o ppid= -p <pid>`) and restart or stop the parent, and the zombie goes with it.
+- **An orphan** is still running, but its parent has exited. It keeps holding ports and memory until you stop it like any process, once you've checked it's yours.
+- **A stuck process in state `D`** is waiting on a disk, a network mount or a driver, and ignores even `kill -9` until that wait ends. Fix what it's waiting on.
+
+| | Zombie | Orphan |
+|---|---|---|
+| Still running? | No, it has exited | Yes |
+| Uses CPU or memory? | No, only a process-table slot | Yes |
+| Its parent | Alive, but hasn't collected it | Gone; PID 1 adopted it |
+| Can you kill it? | No: deal with the parent | Yes: `kill <pid>` |
+| Usually means | A bug in the parent, if they pile up | Something that should have been stopped with its parent |
 
 ## Process states explained
 
@@ -108,6 +123,16 @@ A handful of zombies are normal and harmless. They take up one slot in the proce
 
 *Thousands* of zombies are a problem. They indicate a parent process that is spawning children and never reaping them. Eventually this can exhaust the PID space, preventing new processes from being created. If you see zombie counts climbing, the fix is to find and fix (or restart) the buggy parent.
 
+### "There is 1 zombie process" at login
+
+Ubuntu prints a short system summary when you log in over SSH, and it includes a line like `There is 1 zombie process.` It's a count, not an alarm: one zombie is harmless. To see which process it is and who its parent is:
+
+```bash
+ps -eo pid,ppid,stat,comm | awk '$3 ~ /Z/'
+```
+
+If the number grows every time you log in, the parent it names isn't collecting its children: restart that parent.
+
 ## Orphan processes
 
 An orphan is the inverse of a zombie. Where a zombie is a dead child with a living parent, an orphan is a living child whose parent has died.
@@ -138,6 +163,8 @@ ps -eo pid,ppid,comm | awk '$2 == 1'
 
 This finds every process whose parent PID is 1. But the output will include legitimate system services, daemons, and anything launched by your init system. You need context to tell the difference.
 
+On macOS this matters even more: `launchd`, PID 1, is the parent of every app you open, so parent PID 1 alone means almost nothing there. On one developer's Mac, 73 processes had parent PID 1, and 69 of them were apps and system services launchd had started on purpose. Narrow the search to your own work instead: processes running from your projects folder, or named like your tools.
+
 Suspicious orphans are usually:
 
 - Processes with names matching development tools (node, python, ruby, webpack, esbuild)
@@ -151,6 +178,22 @@ The most common case in development: you start a process that spawns children, t
 Build tools are frequent offenders. A webpack-dev-server might spawn file watchers. A test runner might spawn worker processes. If you kill the parent with `kill -9` (which cannot be caught or forwarded), the children are orphaned.
 
 This is why `kill -9` should be a last resort, not a reflex. `SIGTERM` gives the parent a chance to clean up its children. `SIGKILL` does not.
+
+### An editor that quit and left its servers running
+
+Code editors and AI coding agents start helper processes: language servers, file watchers and MCP servers, the small programs that give an AI assistant its tools. When the editor quits or crashes without stopping them, they become orphans and keep running.
+
+One of us found six processes for the same MCP server: three `uv` launchers, each with the `python3` server it had started. One pair was 47 minutes old. The other two had been running for 19 days, left by editor sessions closed long before, and their launchers' parent was PID 1. They use little CPU, which is why nobody notices, but each holds memory and whatever files, connections or API sessions it opened, and they add up across editor restarts.
+
+To find them, search by where they run rather than by parent PID alone:
+
+```bash
+ps -eo pid,ppid,etime,command \
+  | awk '$2 == 1' \
+  | grep -i -e mcp -e node -e python
+```
+
+`etime` is how long each has run: something your editor started weeks ago, with no parent, is a leftover, while one started with your current window is still in use. Check the command line names a project of yours, then stop it with `kill <pid>`. Stopping a launcher like `uv` doesn't always stop the server it started, so check the list again afterwards.
 
 ## Stuck processes (uninterruptible sleep)
 
@@ -263,9 +306,23 @@ On macOS, the equivalent is `sudo sample <pid>` or `sudo spindump <pid>`.
 
 ## proc's approach
 
-[proc](https://github.com/yazeed/proc-cli) has two built-in commands for this: `proc stuck` finds processes that have run for over five minutes and are using more than 50% CPU or are blocked in uninterruptible sleep (D), and `proc unstick` attempts to recover them.
+[proc](https://github.com/yazeed/proc-cli) has commands for each of these. For orphans, `proc orphans` lists processes whose parent has exited; on macOS, where launchd is every app's parent, narrow it to your projects:
 
-Find all stuck processes (default threshold is 5 minutes). It does not list zombies or stopped processes; use `proc by NAME --status zombie` or `--status stopped` for those:
+```bash
+# orphans in your projects folder
+proc orphans --in ~/projects
+
+# only the uv launchers
+proc orphans --in ~/projects --by uv
+```
+
+The table shows each one's directory, command and uptime, so you can tell an MCP server from 19 days ago from something you meant to leave running. Stop the ones that are yours by PID: `proc stop <pid>`. (`proc orphans` is Unix only: Windows doesn't re-parent processes.)
+
+For zombies, `proc list --status zombie` lists them, and `proc why <pid>` shows the parent chain that leads to each.
+
+For stuck processes, `proc stuck` finds processes that have run for over five minutes and are using more than 50% CPU or are blocked in uninterruptible sleep (D), and `proc unstick` attempts to recover them.
+
+Find all stuck processes (default threshold is 5 minutes). It does not list zombies or stopped processes; use `proc list --status zombie` or `--status stopped` for those:
 
 ```bash
 proc stuck
@@ -303,9 +360,14 @@ Both commands support `--dry-run`, `--json`, and `--yes` for scripting.
 ## Install
 
 ```bash
-brew install yazeed/proc/proc     # macOS
-cargo install proc-cli            # Rust
-npm install -g proc-cli           # npm/bun
+# macOS
+brew install yazeed/proc/proc
+
+# npm or bun, any OS
+npm install -g proc-cli
+
+# Rust
+cargo install proc-cli
 ```
 
-See the [GitHub repo](https://github.com/yazeed/proc-cli) for all installation options.
+On Windows: `scoop bucket add proc https://github.com/yazeed/scoop-bucket-proc` and `scoop install proc`. The [install page](/install) lists every other way.
