@@ -189,7 +189,7 @@ sudo dscacheutil -flushcache
 sudo killall -HUP mDNSResponder
 ```
 
-Names are case-sensitive here: `killall dock` finds nothing, because the process is called `Dock`.
+Names are case-sensitive here: `killall dock` finds nothing, because the process is called `Dock`. For a frozen app, Force Quit and Activity Monitor are usually quicker: see [how to force quit an app or kill a process on a Mac](/posts/force-quit-kill-process-mac/).
 
 ## when to use each
 
