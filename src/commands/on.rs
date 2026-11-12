@@ -176,10 +176,10 @@ impl OnCommand {
                     left_out.extend(ancestors.into_iter().map(|a| (target.clone(), a)));
                     not_found.push(target.clone());
                 }
+                // an error, or (when every holder of a port ended after it was
+                // listed) nothing found
                 other => {
-                    if let Err(error) = &other {
-                        command_line.extend(error.command_line_match());
-                    }
+                    command_line.extend(other.err().and_then(|error| error.command_line_match()));
                     not_found.push(target.clone());
                 }
             }

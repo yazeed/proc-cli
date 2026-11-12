@@ -339,10 +339,16 @@ impl PortInfo {
     fn get_listening_macos() -> Result<Vec<PortInfo>> {
         // Use lsof on macOS - only TCP LISTEN sockets. `+c 0` prints the whole
         // command name; by default lsof cuts it to 9 characters
-        let output = crate::ui::interrupt::unblocked_in_child(&mut Command::new("lsof"))
-            .args(["+c", "0", "-iTCP", "-sTCP:LISTEN", "-P", "-n"])
-            .output()
-            .map_err(|e| ProcError::SystemError(format!("Failed to run lsof: {}", e)))?;
+        let mut lsof = Command::new("lsof");
+        crate::ui::interrupt::unblocked_in_child(&mut lsof).args([
+            "+c",
+            "0",
+            "-iTCP",
+            "-sTCP:LISTEN",
+            "-P",
+            "-n",
+        ]);
+        let output = crate::core::process::output_of(&mut lsof, "lsof")?;
 
         Ok(Self::parse_lsof_output(&String::from_utf8_lossy(
             &output.stdout,
@@ -611,10 +617,10 @@ impl PortInfo {
     #[cfg(target_os = "windows")]
     pub(crate) fn netstat_tables() -> Result<[String; 2]> {
         // `netstat -p TCP` lists IPv4 sockets only; IPv6 ones need `-p TCPv6`
-        let v4 = Command::new("netstat")
-            .args(["-ano", "-p", "TCP"])
-            .output()
-            .map_err(|e| ProcError::SystemError(format!("Failed to run netstat: {}", e)))?;
+        let v4 = crate::core::process::output_of(
+            Command::new("netstat").args(["-ano", "-p", "TCP"]),
+            "netstat",
+        )?;
         // A machine without IPv6 may refuse the second call; that leaves the
         // IPv4 sockets, not an error
         let v6 = Command::new("netstat")

@@ -238,6 +238,18 @@ fn command_failure(stdout: &[u8], stderr: &[u8], status: &str) -> String {
         .unwrap_or_else(|| format!("exited with {status}"))
 }
 
+/// What `command` printed, once it has run; a program that can't be started
+/// (`lsof`, `netstat`, `taskkill`) is an error naming it
+#[cfg(any(target_os = "macos", windows, test))]
+pub(crate) fn output_of(
+    command: &mut std::process::Command,
+    program: &str,
+) -> Result<std::process::Output> {
+    command
+        .output()
+        .map_err(|e| ProcError::SystemError(format!("Failed to run {program}: {e}")))
+}
+
 /// What a SIGKILL to `pid` came to, with the system's reason when it was
 /// refused ("EPERM: Operation not permitted" for another user's process), as
 /// `terminate` and `send_signal` report theirs. ESRCH means the process ended
@@ -248,6 +260,17 @@ fn sigkill_outcome(sent: nix::Result<()>, pid: u32) -> Result<()> {
         Ok(()) => Ok(()),
         Err(nix::errno::Errno::ESRCH) => Err(ProcError::ProcessNotFound(pid.to_string())),
         Err(e) => Err(ProcError::SignalError(e.to_string())),
+    }
+}
+
+/// What `terminate` (SIGTERM) or `send_signal` (`named`, which the error
+/// names) came to: the system's reason when it refused
+#[cfg(unix)]
+fn signal_outcome(sent: nix::Result<()>, named: Option<nix::sys::signal::Signal>) -> Result<()> {
+    match (sent, named) {
+        (Ok(()), _) => Ok(()),
+        (Err(e), None) => Err(ProcError::SignalError(e.to_string())),
+        (Err(e), Some(signal)) => Err(ProcError::SignalError(format!("{signal}: {e}"))),
     }
 }
 
@@ -264,10 +287,10 @@ fn force_kill(pid: u32) -> Result<()> {
 /// `taskkill /F` for `pid`: success, or Windows' reason ("Access is denied")
 #[cfg(windows)]
 fn force_kill(pid: u32) -> Result<()> {
-    let output = std::process::Command::new("taskkill")
-        .args(["/F", "/PID", &pid.to_string()])
-        .output()
-        .map_err(|e| ProcError::SystemError(e.to_string()))?;
+    let output = output_of(
+        std::process::Command::new("taskkill").args(["/F", "/PID", &pid.to_string()]),
+        "taskkill",
+    )?;
     taskkill_outcome(&output)
 }
 
@@ -1672,10 +1695,9 @@ impl Process {
             .filter(|(pid, _)| stuck.contains(pid))
             .map(|(pid, p)| {
                 let mut process = Process::from_sysinfo(*pid, p);
-                // the figure the last read measured, not sysinfo's own
-                if let Some(&busy) = cpu.get(pid) {
-                    process.cpu_percent = busy;
-                }
+                // the figure the last read measured, not sysinfo's own (a process
+                // stuck in every read was in the one before the last, so it has one)
+                process.cpu_percent = cpu.get(pid).copied().unwrap_or(process.cpu_percent);
                 process
             })
             .collect();
@@ -1766,13 +1788,12 @@ impl Process {
 
         for process in processes.iter_mut() {
             let pid = Pid::from_u32(process.pid);
-            let (Some(current), Some(&cpu_before)) = (sys.process(pid), before.get(&pid)) else {
+            // gone, or the PID now belongs to a new process: no reading for it
+            let current = sys.process(pid).filter(|current| process.is_same(current));
+            let (Some(current), Some(&cpu_before)) = (current, before.get(&pid)) else {
                 continue;
             };
-            if process.is_same(current) {
-                process.cpu_percent =
-                    cpu_percent_between(cpu_before, cpu_time_ms(pid, current), wall);
-            }
+            process.cpu_percent = cpu_percent_between(cpu_before, cpu_time_ms(pid, current), wall);
         }
     }
 
@@ -1895,8 +1916,10 @@ impl Process {
         use nix::unistd::Pid as NixPid;
 
         self.ensure_same_process()?;
-        kill(NixPid::from_raw(self.pid as i32), Signal::SIGTERM)
-            .map_err(|e| ProcError::SignalError(e.to_string()))
+        signal_outcome(
+            kill(NixPid::from_raw(self.pid as i32), Signal::SIGTERM),
+            None,
+        )
     }
 
     /// Graceful termination (Windows): `taskkill` without `/F` asks the
@@ -1908,10 +1931,10 @@ impl Process {
         use std::process::Command;
 
         self.ensure_same_process()?;
-        let output = Command::new("taskkill")
-            .args(["/PID", &self.pid.to_string()])
-            .output()
-            .map_err(|e| ProcError::SystemError(e.to_string()))?;
+        let output = output_of(
+            Command::new("taskkill").args(["/PID", &self.pid.to_string()]),
+            "taskkill",
+        )?;
 
         taskkill_outcome(&output)
     }
@@ -1922,8 +1945,10 @@ impl Process {
         use nix::sys::signal::kill;
         use nix::unistd::Pid as NixPid;
         self.ensure_same_process()?;
-        kill(NixPid::from_raw(self.pid as i32), signal)
-            .map_err(|e| ProcError::SignalError(format!("{}: {}", signal, e)))
+        signal_outcome(
+            kill(NixPid::from_raw(self.pid as i32), signal),
+            Some(signal),
+        )
     }
 
     // Note: On Windows, send_signal is not available. Commands that use it
@@ -2179,20 +2204,22 @@ mod tests {
 
     #[test]
     fn a_name_rewritten_into_a_title_gives_way_to_the_kernels() {
-        let kernel = || Some("sshd".to_string());
+        let asked = std::cell::Cell::new(0);
+        let kernel = || {
+            asked.set(asked.get() + 1);
+            Some("sshd".to_string())
+        };
         // a title, and a login shell's `-bash`: the kernel's name
         assert_eq!(
             kernel_name_if_retitled("sshd [listener] 0 of 10-100 startups".into(), kernel),
             "sshd"
         );
+        assert_eq!(asked.get(), 1);
         let bash = || Some("bash".to_string());
         assert_eq!(kernel_name_if_retitled("-bash".into(), bash), "bash");
         // a plain name stays, and the kernel isn't asked
-        let unasked = || -> Option<String> { panic!("asked the kernel") };
-        assert_eq!(
-            kernel_name_if_retitled("python3".into(), unasked),
-            "python3"
-        );
+        assert_eq!(kernel_name_if_retitled("python3".into(), kernel), "python3");
+        assert_eq!(asked.get(), 1, "asked the kernel for a plain name");
         // no kernel name to use: the name sysinfo gave
         let none = || None;
         assert_eq!(kernel_name_if_retitled("a b".into(), none), "a b");
@@ -3462,6 +3489,52 @@ mod tests {
         assert!(
             matches!(&gone, ProcError::ProcessNotFound(p) if p == "7"),
             "{gone:?}"
+        );
+    }
+
+    /// A user Windows has no account for (a deleted one, or another machine's)
+    /// is shown by its SID rather than left blank
+    #[cfg(windows)]
+    #[test]
+    fn a_user_with_no_account_is_named_by_its_sid() {
+        let sid = "S-1-5-21-1111111111-2222222222-3333333333-424242";
+        let uid: Uid = sid.parse().unwrap();
+        assert_eq!(user_name(&uid), sid);
+    }
+
+    #[test]
+    fn a_program_that_cannot_be_started_is_an_error_naming_it() {
+        let err = output_of(
+            &mut std::process::Command::new("proc-no-such-tool"),
+            "proc-no-such-tool",
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&err, ProcError::SystemError(m) if m.starts_with("Failed to run proc-no-such-tool: ")),
+            "{err:?}"
+        );
+    }
+
+    /// SIGTERM and the other signals report the system's reason too, the
+    /// other signals with their name first
+    #[cfg(unix)]
+    #[test]
+    fn a_signal_that_was_refused_says_why() {
+        use nix::errno::Errno;
+        use nix::sys::signal::Signal;
+        signal_outcome(Ok(()), None).unwrap();
+        signal_outcome(Ok(()), Some(Signal::SIGSTOP)).unwrap();
+        assert_eq!(
+            signal_outcome(Err(Errno::EPERM), None)
+                .unwrap_err()
+                .to_string(),
+            "Signal failed: EPERM: Operation not permitted"
+        );
+        assert_eq!(
+            signal_outcome(Err(Errno::EPERM), Some(Signal::SIGSTOP))
+                .unwrap_err()
+                .to_string(),
+            "Signal failed: SIGSTOP: EPERM: Operation not permitted"
         );
     }
 

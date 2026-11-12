@@ -653,6 +653,24 @@ mod match_tests {
         assert_eq!(processes.len(), 1);
     }
 
+    /// Only the guards that fail are named: a `--in` and a `--start-time` the
+    /// process passes stay out of `ruled_out_by` when `--by` rules it out
+    #[test]
+    fn only_the_guards_a_process_fails_are_named() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir = std::fs::canonicalize(dir.path())
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let mut process = bare_process();
+        process.name = "sleep".to_string();
+        process.cwd = Some(dir.clone());
+        process.start_time = Some(1_700_000_000);
+        let guards = super::Guards::new(&Some(dir), &Some("node".to_string()), Some(1_700_000_000));
+        let named = super::ruled_out_by(&[process], &guards, NameMatch::Exact).unwrap();
+        assert_eq!(named, vec![("--by".to_string(), "node".to_string())]);
+    }
+
     #[test]
     fn a_working_directory_matches_itself_and_what_is_under_it() {
         let mut process = bare_process();

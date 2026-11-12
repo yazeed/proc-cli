@@ -84,8 +84,12 @@ impl Channel {
             let mut state = self.lock();
             if err.kind() == ErrorKind::BrokenPipe {
                 state.broken = true;
-            } else if state.failure.is_none() {
-                state.failure = Some((err.kind(), err.to_string()));
+            } else {
+                // the first failure is the one reported (a second can only
+                // come from another thread writing at the same moment)
+                state
+                    .failure
+                    .get_or_insert_with(|| (err.kind(), err.to_string()));
             }
         }
         result
@@ -444,18 +448,28 @@ mod tests {
         Err(io::Error::other("no space left on device"))
     }
 
+    /// A write that succeeds and notes in `ran` that the channel ran it
+    fn noting(ran: &Cell<bool>) -> impl FnOnce() -> io::Result<()> + '_ {
+        move || {
+            ran.set(true);
+            Ok(())
+        }
+    }
+
     #[test]
     fn a_broken_pipe_stops_the_stream_without_a_failure() {
         let channel = Channel::new();
-        assert!(channel.run(|| Ok(())).is_ok());
+        let first = Cell::new(false);
+        assert!(channel.run(noting(&first)).is_ok());
+        assert!(first.get());
         assert_eq!(
             channel.run(broken).unwrap_err().kind(),
             ErrorKind::BrokenPipe
         );
         // later writes fail at once, without running
-        let err = channel
-            .run(|| -> io::Result<()> { panic!("must not write after a broken pipe") })
-            .unwrap_err();
+        let later = Cell::new(false);
+        let err = channel.run(noting(&later)).unwrap_err();
+        assert!(!later.get(), "wrote after a broken pipe");
         assert_eq!(err.kind(), ErrorKind::BrokenPipe);
         assert_eq!(channel.failure(), None);
     }
@@ -467,9 +481,9 @@ mod tests {
             channel.run(full).unwrap_err().to_string(),
             "no space left on device"
         );
-        let err = channel
-            .run(|| -> io::Result<()> { panic!("must not write after a failure") })
-            .unwrap_err();
+        let later = Cell::new(false);
+        let err = channel.run(noting(&later)).unwrap_err();
+        assert!(!later.get(), "wrote after a failure");
         assert_eq!(err.to_string(), "no space left on device");
         assert_eq!(
             channel.failure().as_deref(),

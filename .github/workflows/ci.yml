@@ -387,14 +387,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Pinned to 1.99.1 for now: Rust 1.100 counts a line only when its own
-      # path runs (the closing brace of an `if` counts the times it was
-      # skipped), which finds 31 lines no test takes. Back to stable once
-      # tests cover them (2026-11-12)
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          toolchain: 1.99.1
           components: llvm-tools-preview
 
       - name: Install cargo-llvm-cov

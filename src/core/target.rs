@@ -757,6 +757,16 @@ mod tests {
             nothing_resolved(&typed(&["zsh", "-zsh"]), &[], &both, &[]),
             ProcError::AncestorsOnly { ref name, ref ancestors } if name == "zsh -zsh" && ancestors.len() == 1
         ));
+        // one target that matched two shells proc runs under (a login zsh and
+        // the zsh inside it) is quoted once
+        let nested = vec![
+            ("zsh".to_string(), zsh(11849)),
+            ("zsh".to_string(), zsh(81340)),
+        ];
+        assert!(matches!(
+            nothing_resolved(&typed(&["zsh"]), &[], &nested, &[]),
+            ProcError::AncestorsOnly { ref name, ref ancestors } if name == "zsh" && ancestors.len() == 2
+        ));
     }
 
     #[test]

@@ -170,6 +170,13 @@ fn install_panic_hook() {
     }));
 }
 
+/// A terminal that can't be switched or read (the screen, raw mode, a key) is
+/// a system error. Not `?`'s own conversion, which reads a missing device as a
+/// process not found
+fn screen_error(e: std::io::Error) -> crate::error::ProcError {
+    crate::error::ProcError::SystemError(e.to_string())
+}
+
 /// Whether a key press ends the watch: q, Esc or Ctrl+C (raw mode turns Ctrl+C
 /// into a key instead of a signal)
 fn is_quit_key(code: KeyCode, modifiers: KeyModifiers) -> bool {
@@ -327,9 +334,10 @@ impl WatchCommand {
                 if *pid == self_pid || crate::core::is_thread(proc) {
                     continue;
                 }
-                if seen_pids.insert(pid.as_u32()) {
-                    processes.push(Process::from_sysinfo(*pid, proc));
-                }
+                // a map's keys are unique, so every PID here is new; it is
+                // noted for the zombies below
+                seen_pids.insert(pid.as_u32());
+                processes.push(Process::from_sysinfo(*pid, proc));
             }
             // the zombies sysinfo leaves out, which `list` shows
             let zombies = crate::core::process::unlisted_zombies(&seen_pids);
@@ -422,10 +430,8 @@ impl WatchCommand {
         let _interrupts = interrupt::protect_screen();
 
         // Enter alternate screen + raw mode
-        execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide)
-            .map_err(|e| crate::error::ProcError::SystemError(e.to_string()))?;
-        terminal::enable_raw_mode()
-            .map_err(|e| crate::error::ProcError::SystemError(e.to_string()))?;
+        execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide).map_err(screen_error)?;
+        terminal::enable_raw_mode().map_err(screen_error)?;
 
         let mut sys = refreshed_system();
         let interval = Duration::from_secs_f64(self.interval);
@@ -473,13 +479,10 @@ impl WatchCommand {
                     break;
                 }
 
-                if event::poll(remaining)
-                    .map_err(|e| crate::error::ProcError::SystemError(e.to_string()))?
-                {
+                if event::poll(remaining).map_err(screen_error)? {
                     if let Event::Key(KeyEvent {
                         code, modifiers, ..
-                    }) = event::read()
-                        .map_err(|e| crate::error::ProcError::SystemError(e.to_string()))?
+                    }) = event::read().map_err(screen_error)?
                     {
                         if is_quit_key(code, modifiers) {
                             return Ok(());
@@ -750,6 +753,19 @@ mod tests {
 
     fn lines_with<'a>(frame: &'a str, needle: &str) -> Vec<&'a str> {
         frame.lines().filter(|l| l.contains(needle)).collect()
+    }
+
+    /// A terminal error is a system error with the system's words, whatever
+    /// its kind: a missing device is not a process not found
+    #[test]
+    fn a_terminal_that_fails_is_a_system_error() {
+        for kind in [io::ErrorKind::NotFound, io::ErrorKind::Other] {
+            let err = screen_error(io::Error::new(kind, "no terminal"));
+            assert!(
+                matches!(&err, crate::error::ProcError::SystemError(m) if m == "no terminal"),
+                "{err:?}"
+            );
+        }
     }
 
     // ---- keys ----

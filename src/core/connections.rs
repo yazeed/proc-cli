@@ -26,7 +26,7 @@ use crate::error::Result;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 #[cfg(target_os = "macos")]
-use {crate::error::ProcError, std::process::Command};
+use std::process::Command;
 
 /// The connections to one port. `total` and `by_state` count every connection;
 /// `peers` lists up to the limit asked for, and `peers_truncated` says the list
@@ -209,11 +209,11 @@ fn read_socks(_tables: &SocketTables, ports: &[u16]) -> Result<Vec<Sock>> {
     // that say whose a connection nobody has accepted is. One call for all the
     // ports: a port list after TCP: is one filter
     let list: Vec<String> = ports.iter().map(u16::to_string).collect();
-    let output = crate::ui::interrupt::unblocked_in_child(&mut Command::new("lsof"))
+    let mut lsof = Command::new("lsof");
+    crate::ui::interrupt::unblocked_in_child(&mut lsof)
         // `+c 0`: the whole command name, as the listing call has it
-        .args(["+c", "0", "-nP", &format!("-iTCP:{}", list.join(","))])
-        .output()
-        .map_err(|e| ProcError::SystemError(format!("Failed to run lsof: {}", e)))?;
+        .args(["+c", "0", "-nP", &format!("-iTCP:{}", list.join(","))]);
+    let output = crate::core::process::output_of(&mut lsof, "lsof")?;
     Ok(parse_lsof_connections(&String::from_utf8_lossy(
         &output.stdout,
     )))
@@ -884,6 +884,42 @@ garbage
         assert_eq!(rows[0].0, 16714);
         // an address of the wrong length for its table
         assert!(parse_proc_net_connections(text, true).is_empty());
+    }
+
+    /// Every state the kernel writes (include/net/tcp_states.h, in hex) is
+    /// read by its name, in the one spelling proc reports on every OS
+    /// (`state_name`): CLOSE is `closed`, and NEW_SYN_RECV, the kernel's own
+    /// half-open state, is `syn_recv`
+    #[test]
+    fn linux_states_are_read_by_name() {
+        let states = [
+            ("01", "established"),
+            ("02", "syn_sent"),
+            ("03", "syn_recv"),
+            ("04", "fin_wait1"),
+            ("05", "fin_wait2"),
+            ("06", "time_wait"),
+            ("07", "closed"),
+            ("08", "close_wait"),
+            ("09", "last_ack"),
+            ("0A", "listen"),
+            ("0B", "closing"),
+            ("0C", "syn_recv"),
+        ];
+        let mut text = String::from("  sl  local_address rem_address   st\n");
+        for (inode, (code, _)) in states.iter().enumerate() {
+            text += &format!(
+                "   {inode}: 0100007F:0050 0100007F:AFA7 {code} 00000000:00000000 00:00000000 00000000   101        0 {inode} 1 0\n"
+            );
+        }
+        let rows = parse_proc_net_connections(&text, false);
+        let read: Vec<(u64, &str)> = rows.iter().map(|(i, s)| (*i, s.state.as_str())).collect();
+        let wanted: Vec<(u64, &str)> = states
+            .iter()
+            .enumerate()
+            .map(|(i, (_, name))| (i as u64, *name))
+            .collect();
+        assert_eq!(read, wanted);
     }
 
     // `netstat -ano -p TCP` and `-p TCPv6` in the layout Windows prints (the

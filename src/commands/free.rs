@@ -74,17 +74,16 @@ impl FreeCommand {
 
         for (target, port) in &ports {
             // A port nobody listens on, or whose holders have all gone, is not found
-            let mut held = false;
+            let mut holders = Vec::new();
             for listener in PortInfo::holders_seen(*port)? {
-                if let Some(proc) = Process::find_by_pid(listener.pid)? {
-                    port_processes.push((*port, proc));
-                    held = true;
-                }
+                // none for a holder that ended after its port was listed
+                holders.extend(Process::find_by_pid(listener.pid)?);
             }
-            if !held {
+            if holders.is_empty() {
                 printer.warning(&format!("No process listening on port {}", port));
                 not_found.push((*target).clone());
             }
+            port_processes.extend(holders.into_iter().map(|proc| (*port, proc)));
         }
         // the JSON results list the ports that matched nothing
         let printer = printer.with_not_found(&not_found);

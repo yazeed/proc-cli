@@ -7,7 +7,7 @@ use clap_complete::generate;
 use colored::Colorize;
 use proc_cli::cli::{Cli, Commands};
 use proc_cli::core::{comma_notice, Process};
-use proc_cli::error::{ExitCode, ProcError, REASON_INVALID_INPUT};
+use proc_cli::error::{ExitCode, ProcError, REASON_INVALID_INPUT, REASON_SYSTEM_ERROR};
 use proc_cli::ui::out;
 use proc_cli::ui::print_note;
 use proc_cli::{err_println, out_println};
@@ -203,7 +203,7 @@ fn run() -> u8 {
                 print_json_error(
                     &error,
                     exit_code,
-                    Some(REASON_INVALID_INPUT),
+                    REASON_INVALID_INPUT,
                     None,
                     None,
                     None,
@@ -305,7 +305,8 @@ fn run() -> u8 {
             print_json_error(
                 &e.to_string(),
                 exit_code as i32,
-                e.reason(),
+                // every error that reaches here has one (`Reported` returned above)
+                e.reason().unwrap_or(REASON_SYSTEM_ERROR),
                 confirmation,
                 ruled_out_by.as_deref(),
                 e.left_out(),
@@ -364,7 +365,7 @@ fn write_man_pages(dir: &std::path::Path) -> std::io::Result<()> {
 fn print_json_error(
     error: &str,
     exit_code: i32,
-    reason: Option<&str>,
+    reason: &str,
     confirmation: Option<(&[Process], Option<&[String]>)>,
     ruled_out_by: Option<&[&str]>,
     left_out: Option<&[proc_cli::core::Ancestor]>,
@@ -374,11 +375,9 @@ fn print_json_error(
         "action": action_name(),
         "success": false,
         "error": error,
-        "exit_code": exit_code
+        "exit_code": exit_code,
+        "reason": reason
     });
-    if let Some(reason) = reason {
-        error_json["reason"] = serde_json::json!(reason);
-    }
     if let Some((processes, not_found)) = confirmation {
         error_json["needs_confirmation"] = serde_json::json!(true);
         error_json["processes"] = serde_json::json!(processes);
@@ -436,7 +435,7 @@ fn invalid_argument(message: &str) -> u8 {
         print_json_error(
             message,
             exit_code as i32,
-            Some(REASON_INVALID_INPUT),
+            REASON_INVALID_INPUT,
             None,
             None,
             None,
@@ -563,12 +562,13 @@ impl ClapMessage<'_> {
 
     /// clap's rendering without its tips
     fn human(&self) -> String {
-        let mut text = self.message.join("\n");
-        if !self.rest.is_empty() {
-            text.push_str("\n\n");
-            text.push_str(&self.rest.join("\n"));
-        }
-        text
+        // the message, then the usage block after a blank line (clap gives
+        // every error one, so it is only left out if it is ever missing)
+        [self.message.join("\n"), self.rest.join("\n")]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n")
     }
 }
 
