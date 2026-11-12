@@ -440,6 +440,11 @@ fn the_skill_asks_for_a_proc_that_has_every_flag_it_uses() {
         skill.contains(&format!("This skill is for proc {asked} or later")),
         "SKILL.md's body asks for the same version as its compatibility line, {asked}"
     );
+    // The skill page on the website tells people the same version
+    assert!(
+        read("docs/skill.md").contains(&format!("The skill is written for proc {asked} or later")),
+        "docs/skill.md says the skill is written for proc {asked} or later, as SKILL.md does"
+    );
 
     // The release that first names each flag, oldest first
     let changelog = read("CHANGELOG.md");
