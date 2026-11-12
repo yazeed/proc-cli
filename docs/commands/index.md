@@ -81,7 +81,7 @@ Seconds are whole seconds everywhere except `watch --interval`: `--min-uptime 72
 | `--wait <secs>` | | Seconds to wait for the port to be free (default 10) | `free` |
 | `--interval <secs>` | `-n` | Seconds between status lines (`wait`, whole seconds, default 5) or refreshes (`watch`, at least 0.1, default 2) | `wait`, `watch` |
 | `--quiet` | `-q` | No periodic still-running lines | `wait` |
-| `--help` | `-h` | Help for proc or for one command | all |
+| `--help` | `-h` | Help for proc, or for one command with two examples, a link to its page and, where the exit code says whether it worked, its exit codes | all |
 
 ## Platforms
 

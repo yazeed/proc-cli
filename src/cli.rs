@@ -131,7 +131,7 @@ const EXAMPLES: &[(&str, &[(&str, &str)])] = &[
     (
         "Free Ports",
         &[
-            ("proc free :3000", "Kill process, verify port freed"),
+            ("proc free :3000", "Stop what holds it, check it's free"),
             ("proc free :3000 :8080 --yes", "Free several ports"),
         ],
     ),
@@ -139,8 +139,8 @@ const EXAMPLES: &[(&str, &[(&str, &str)])] = &[
         "Diagnostics",
         &[
             ("proc why :3000", "Why is port 3000 busy? (ancestry)"),
-            ("proc orphans", "Find orphaned processes"),
-            ("proc orphans --kill", "Find and kill orphans"),
+            ("proc orphans --in .", "Leftovers from this project"),
+            ("proc orphans --in . --kill", "End them, after asking"),
         ],
     ),
     (
@@ -303,6 +303,292 @@ fn long_footer() -> StyledStr {
     StyledStr::from(out)
 }
 
+/// Each command's own examples, at the end of its `--help` and its man page
+const COMMAND_EXAMPLES: &[(&str, &[(&str, &str)])] = &[
+    (
+        "on",
+        &[
+            ("proc on :3000", "What's on port 3000?"),
+            ("proc on node", "Which ports the processes named node use"),
+        ],
+    ),
+    (
+        "why",
+        &[
+            ("proc why :3000", "What started what holds port 3000"),
+            ("proc why 1234", "Where PID 1234 came from"),
+        ],
+    ),
+    (
+        "for",
+        &[
+            ("proc for ./server", "What runs this program"),
+            ("proc for app.log", "What has this file open"),
+        ],
+    ),
+    (
+        "by",
+        &[
+            ("proc by node", "The processes named node"),
+            (
+                "proc by node --cmd",
+                "... or with node in their command line",
+            ),
+        ],
+    ),
+    (
+        "in",
+        &[
+            ("proc in .", "Everything running in this project"),
+            ("proc in . --by node", "Its node processes"),
+        ],
+    ),
+    (
+        "list",
+        &[
+            (
+                "proc list --sort cpu --limit 10",
+                "The 10 busiest processes",
+            ),
+            ("proc list node python", "The ones named node or python"),
+        ],
+    ),
+    (
+        "info",
+        &[
+            ("proc info 1234", "Everything about PID 1234"),
+            ("proc info :3000 node", "About each of several targets"),
+        ],
+    ),
+    (
+        "ports",
+        &[
+            ("proc ports", "Every listening port"),
+            ("proc ports --exposed", "Only the ones open to the network"),
+        ],
+    ),
+    (
+        "tree",
+        &[
+            ("proc tree node", "The tree under each process named node"),
+            (
+                "proc tree :3000 --ancestors",
+                "The parents above the holder of port 3000",
+            ),
+        ],
+    ),
+    (
+        "watch",
+        &[
+            (
+                "proc watch node -n 1",
+                "The node processes, refreshed every second",
+            ),
+            ("proc watch --json | head -n1", "One frame, for a script"),
+        ],
+    ),
+    (
+        "stuck",
+        &[
+            ("proc stuck", "What looks hung"),
+            ("proc stuck --kill --dry-run", "What --kill would end"),
+        ],
+    ),
+    (
+        "unstick",
+        &[
+            (
+                "proc unstick --dry-run",
+                "What it would try, on which processes",
+            ),
+            ("proc unstick 1234 --force", "Recover PID 1234, or end it"),
+        ],
+    ),
+    (
+        "freeze",
+        &[
+            ("proc freeze node --dry-run", "What it would pause"),
+            (
+                "proc freeze :3000",
+                "Pause what's on port 3000, after asking",
+            ),
+        ],
+    ),
+    (
+        "thaw",
+        &[
+            ("proc thaw node", "Resume the node processes, after asking"),
+            (
+                "proc thaw :3000 --yes",
+                "Resume a port's holder you've seen",
+            ),
+        ],
+    ),
+    (
+        "orphans",
+        &[
+            ("proc orphans --in .", "Leftovers from this project"),
+            ("proc orphans --in . --kill", "End them, after asking"),
+        ],
+    ),
+    (
+        "kill",
+        &[
+            ("proc kill :3000", "Everything on port 3000, after asking"),
+            (
+                "proc kill node --in . --dry-run",
+                "What it would kill in this project",
+            ),
+        ],
+    ),
+    (
+        "stop",
+        &[
+            (
+                "proc stop :3000",
+                "Ask what's on port 3000 to exit, after asking",
+            ),
+            (
+                "proc stop worker --signal INT",
+                "Start with SIGINT instead of SIGTERM",
+            ),
+        ],
+    ),
+    (
+        "free",
+        &[
+            (
+                "proc free :3000",
+                "Stop what holds port 3000, check it's free",
+            ),
+            ("proc free :3000 --dry-run", "What it would stop"),
+        ],
+    ),
+    (
+        "wait",
+        &[
+            (
+                "proc wait 1234 --timeout 60",
+                "Until PID 1234 exits, or a minute",
+            ),
+            ("proc wait :3000", "Until what holds port 3000 exits"),
+        ],
+    ),
+];
+
+/// The exit codes of a command that changes processes and takes targets
+const TARGETED_EXITS: &[(&str, &str)] = &[
+    ("0", "Done, or the dry run found what it would change"),
+    (
+        "1",
+        "A process could not be changed (the system refused it)",
+    ),
+    (
+        "2",
+        "Nothing matched, or a guard (--by, --in, --start-time) ruled it out",
+    ),
+    (
+        "3",
+        "Permission denied, or a port another user's process holds",
+    ),
+    (
+        "4",
+        "Nothing was done: a wrong argument, no --yes where nobody can be",
+    ),
+    (
+        "",
+        "asked (--json, no terminal), or not supported on this OS",
+    ),
+];
+
+/// `free`'s exit codes: a port nobody holds is already free
+const FREE_EXITS: &[(&str, &str)] = &[
+    (
+        "0",
+        "Every port is free (or already was), or the dry run listed its holders",
+    ),
+    ("1", "A port stayed in use"),
+    ("3", "A port another user's process holds"),
+    (
+        "4",
+        "Nothing was done: a target that isn't a port, a wrong argument,",
+    ),
+    (
+        "",
+        "or no --yes where nobody can be asked (--json, no terminal)",
+    ),
+];
+
+/// The exit codes of `stuck` and `orphans`, which change processes only with --kill
+const SEARCH_EXITS: &[(&str, &str)] = &[
+    (
+        "0",
+        "Done, found nothing, or the dry run listed what --kill would end",
+    ),
+    ("1", "A process could not be killed (the system refused it)"),
+    (
+        "4",
+        "Nothing was done: a wrong argument, or no --yes where nobody can be",
+    ),
+    (
+        "",
+        "asked (--json, no terminal); orphans exits 4 on Windows",
+    ),
+];
+
+/// `wait`'s exit codes: whether the processes exited is its answer
+const WAIT_EXITS: &[(&str, &str)] = &[
+    ("0", "Every process exited"),
+    ("1", "--timeout ran out first"),
+    (
+        "2",
+        "Nothing matched, or a guard (--by, --in, --start-time) ruled it out",
+    ),
+    ("3", "A port another user's process holds: it is in use"),
+    ("4", "A wrong argument"),
+];
+
+/// The end of a command's `--help` and man page: its examples, its exit codes
+/// where they say whether it did what was asked, and its page on the website
+fn command_footer(name: &str) -> StyledStr {
+    let (header, literal) = (STYLES.get_header(), STYLES.get_literal());
+    let examples = COMMAND_EXAMPLES
+        .iter()
+        .find(|(command, _)| *command == name)
+        .map(|(_, rows)| *rows)
+        .unwrap_or_default();
+    let width = examples
+        .iter()
+        .map(|(example, _)| example.chars().count())
+        .max()
+        .unwrap_or(0);
+    let mut out = format!("{header}Examples:{header:#}\n");
+    for (example, meaning) in examples {
+        let pad = " ".repeat(width - example.chars().count());
+        out.push_str(&format!(
+            "  {literal}{example}{literal:#}{pad}  {meaning}\n"
+        ));
+    }
+    let exits = match name {
+        "kill" | "stop" | "freeze" | "thaw" | "unstick" => Some(TARGETED_EXITS),
+        "free" => Some(FREE_EXITS),
+        "stuck" | "orphans" => Some(SEARCH_EXITS),
+        "wait" => Some(WAIT_EXITS),
+        _ => None,
+    };
+    if let Some(exits) = exits {
+        out.push('\n');
+        out.push_str(&render_sections(&[&Section {
+            header: "Exit codes:",
+            rows: exits,
+        }]));
+    } else {
+        out.push('\n');
+    }
+    out.push_str(&more(&format!("https://proc-cli.com/commands/{name}")));
+    StyledStr::from(out)
+}
+
 /// Semantic CLI tool for process management. Target by port, PID, name or path.
 #[derive(Parser)]
 #[command(name = "proc")]
@@ -322,49 +608,61 @@ pub struct Cli {
 pub enum Commands {
     /// Port/process lookup (bidirectional)
     #[command(visible_alias = ":")]
+    #[command(after_help = command_footer("on"))]
     On(OnCommand),
 
     /// Find processes by file path
     #[command(visible_alias = "f")]
+    #[command(after_help = command_footer("for"))]
     For(ForCommand),
 
     /// Filter processes by name
     #[command(visible_alias = "b")]
+    #[command(after_help = command_footer("by"))]
     By(ByCommand),
 
     /// Find processes running in a directory or a folder below it
+    #[command(after_help = command_footer("in"))]
     In(InCommand),
 
     /// List processes
     #[command(visible_aliases = ["l", "ps"])]
+    #[command(after_help = command_footer("list"))]
     List(ListCommand),
 
     /// Show detailed process information
     #[command(visible_aliases = ["i", "inspect"])]
+    #[command(after_help = command_footer("info"))]
     Info(InfoCommand),
 
     /// List all listening TCP ports
     #[command(visible_alias = "p")]
+    #[command(after_help = command_footer("ports"))]
     Ports(PortsCommand),
 
     /// Kill process(es) forcefully
     #[command(visible_alias = "k")]
+    #[command(after_help = command_footer("kill"))]
     Kill(KillCommand),
 
     /// Stop process(es) gracefully
     #[command(visible_alias = "s")]
+    #[command(after_help = command_footer("stop"))]
     Stop(StopCommand),
 
     /// Show process tree
     #[command(visible_alias = "t")]
+    #[command(after_help = command_footer("tree"))]
     Tree(TreeCommand),
 
     /// Watch processes in real-time
     #[command(visible_aliases = ["w", "top"])]
+    #[command(after_help = command_footer("watch"))]
     Watch(WatchCommand),
 
     /// Find stuck/hung processes
     #[command(visible_alias = "x")]
+    #[command(after_help = command_footer("stuck"))]
     Stuck(StuckCommand),
 
     /// Attempt to recover stuck processes
@@ -372,12 +670,15 @@ pub enum Commands {
     /// Sends SIGCONT, then SIGINT (as Ctrl+C does, which ends most programs) to a
     /// process still busy; --force adds SIGTERM, then SIGKILL, for one still stuck.
     #[command(visible_alias = "u")]
+    #[command(after_help = command_footer("unstick"))]
     Unstick(UnstickCommand),
 
     /// Freeze (pause) process(es) with SIGSTOP
+    #[command(after_help = command_footer("freeze"))]
     Freeze(FreezeCommand),
 
     /// Resume frozen process(es) with SIGCONT
+    #[command(after_help = command_footer("thaw"))]
     Thaw(ThawCommand),
 
     /// Find orphaned processes
@@ -386,18 +687,22 @@ pub enum Commands {
     /// On macOS that includes every app launchd started, so narrow the list with
     /// --in or --by, and check each process before --kill.
     #[command(visible_alias = "o")]
+    #[command(after_help = command_footer("orphans"))]
     Orphans(OrphansCommand),
 
     /// Trace why a port is busy or show process ancestry
+    #[command(after_help = command_footer("why"))]
     Why(WhyCommand),
 
     /// Free port(s): stop what holds them and check they are free
     ///
     /// Asks each holder to exit (SIGTERM), force-kills (SIGKILL) whatever is still
     /// running after up to 5 seconds (or --wait, if shorter), then checks the port.
+    #[command(after_help = command_footer("free"))]
     Free(FreeCommand),
 
     /// Wait for process(es) to exit
+    #[command(after_help = command_footer("wait"))]
     Wait(WaitCommand),
 
     /// Generate shell completions

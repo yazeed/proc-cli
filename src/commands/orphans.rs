@@ -4,7 +4,7 @@
 //!   proc orphans              # List orphaned processes
 //!   proc orphans --in .       # Orphans in current directory
 //!   proc orphans --by node    # Only those named node (--cmd: node anywhere in the command line)
-//!   proc orphans --kill       # Find and kill orphans
+//!   proc orphans --in . --kill # Find this project's orphans and kill them, after asking
 //!   proc orphans --kill --yes # Kill orphans without confirmation
 
 use crate::core::Process;

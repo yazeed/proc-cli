@@ -19,8 +19,10 @@
 //!   that brought each flag it uses
 //! - the packages that list every file they install (pkgsrc, FreeBSD) list
 //!   the man page of every command
+//! - every command's `--help` has examples that parse, a link to its page,
+//!   and, where the exit code is the answer, the exit codes
 
-use clap::CommandFactory;
+use clap::{CommandFactory, Parser};
 use proc_cli::cli::Cli;
 use proc_cli::error::{
     REASON_COMMAND_LINE_ONLY, REASON_INVALID_INPUT, REASON_NEEDS_CONFIRMATION, REASON_NOT_FOUND,
@@ -199,6 +201,58 @@ fn the_commands_are_grouped_the_same_everywhere() {
         in_lib.sort();
         assert_eq!(in_lib, sorted_names, "src/lib.rs's {title} line");
     }
+}
+
+/// Commands whose exit code says whether they did what was asked: the ones
+/// that change processes, and `wait`, whose exit code is its answer
+const EXIT_CODES_IN_HELP: &[&str] = &[
+    "kill", "stop", "free", "freeze", "thaw", "unstick", "orphans", "stuck", "wait",
+];
+
+#[test]
+fn every_commands_help_has_examples_that_parse() {
+    let mut misses = Vec::new();
+    for cmd in commands() {
+        let name = cmd.get_name().to_string();
+        let mut cmd = cmd;
+        let help = cmd.render_long_help().to_string();
+        let Some((_, after)) = help.split_once("Examples:\n") else {
+            misses.push(format!("proc {name} --help: an Examples: section"));
+            continue;
+        };
+        let examples: Vec<&str> = after
+            .lines()
+            .take_while(|l| !l.trim().is_empty())
+            .map(str::trim)
+            .collect();
+        if examples.len() < 2 {
+            misses.push(format!("proc {name} --help: two examples"));
+        }
+        for example in examples {
+            // `proc kill :3000   Everything on port 3000`: the command, up to
+            // the meaning (two spaces) or a pipe
+            let line = example.split("  ").next().unwrap();
+            let line = line.split(" | ").next().unwrap();
+            let words: Vec<&str> = line.split_whitespace().collect();
+            if words.get(1) != Some(&name.as_str()) {
+                misses.push(format!(
+                    "proc {name} --help: an example of another command: {example}"
+                ));
+            } else if let Err(e) = Cli::try_parse_from(&words) {
+                misses.push(format!(
+                    "proc {name} --help: {line} doesn't parse: {}",
+                    e.kind()
+                ));
+            }
+        }
+        if EXIT_CODES_IN_HELP.contains(&name.as_str()) && !help.contains("Exit codes:\n") {
+            misses.push(format!("proc {name} --help: an Exit codes: section"));
+        }
+        if !help.contains(&format!("https://proc-cli.com/commands/{name}")) {
+            misses.push(format!("proc {name} --help: a link to its page"));
+        }
+    }
+    assert_none_missing(misses);
 }
 
 #[test]
