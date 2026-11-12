@@ -238,17 +238,37 @@ fn command_failure(stdout: &[u8], stderr: &[u8], status: &str) -> String {
         .unwrap_or_else(|| format!("exited with {status}"))
 }
 
-/// The result of asking sysinfo to kill process `pid`, which says whether the
-/// kill was delivered
-fn kill_outcome(delivered: bool, pid: u32) -> Result<()> {
-    if delivered {
-        Ok(())
-    } else {
-        Err(ProcError::SignalError(format!(
-            "Failed to kill process {}",
-            pid
-        )))
+/// What a SIGKILL to `pid` came to, with the system's reason when it was
+/// refused ("EPERM: Operation not permitted" for another user's process), as
+/// `terminate` and `send_signal` report theirs. ESRCH means the process ended
+/// after it was checked: not found, as a process gone before the check is
+#[cfg(unix)]
+fn sigkill_outcome(sent: nix::Result<()>, pid: u32) -> Result<()> {
+    match sent {
+        Ok(()) => Ok(()),
+        Err(nix::errno::Errno::ESRCH) => Err(ProcError::ProcessNotFound(pid.to_string())),
+        Err(e) => Err(ProcError::SignalError(e.to_string())),
     }
+}
+
+/// SIGKILL to `pid`
+#[cfg(unix)]
+fn force_kill(pid: u32) -> Result<()> {
+    use nix::sys::signal::{kill, Signal};
+    sigkill_outcome(
+        kill(nix::unistd::Pid::from_raw(pid as i32), Signal::SIGKILL),
+        pid,
+    )
+}
+
+/// `taskkill /F` for `pid`: success, or Windows' reason ("Access is denied")
+#[cfg(windows)]
+fn force_kill(pid: u32) -> Result<()> {
+    let output = std::process::Command::new("taskkill")
+        .args(["/F", "/PID", &pid.to_string()])
+        .output()
+        .map_err(|e| ProcError::SystemError(e.to_string()))?;
+    taskkill_outcome(&output)
 }
 
 /// Whether the process holding a PID now (start time `current`, 0 when it can't
@@ -548,8 +568,8 @@ fn read_until_started(wants_start: bool, mut read: impl FnMut() -> Option<u64>) 
     }
 }
 
-/// What a `taskkill` run (no `/F`) came to: success, or the reason it gave
-/// (compiled on Unix for the tests only)
+/// What a `taskkill` run came to: success, or the reason it gave (compiled on
+/// Unix for the tests only)
 #[cfg(any(windows, test))]
 fn taskkill_outcome(output: &std::process::Output) -> Result<()> {
     if output.status.success() {
@@ -1762,7 +1782,7 @@ impl Process {
         self.refresh_for_check(&mut sys);
 
         match sys.process(Pid::from_u32(self.pid)) {
-            Some(proc) if self.is_same(proc) => kill_outcome(proc.kill(), self.pid),
+            Some(current) if self.is_same(current) => force_kill(self.pid),
             // gone, or the PID now belongs to a new process, or (macOS) a zombie
             _ => self.kill_unlisted(),
         }
@@ -1774,9 +1794,7 @@ impl Process {
     #[cfg(target_os = "macos")]
     fn kill_unlisted(&self) -> Result<()> {
         self.same_but_unlisted()?;
-        let pid = nix::unistd::Pid::from_raw(self.pid as i32);
-        let delivered = nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGKILL).is_ok();
-        kill_outcome(delivered, self.pid)
+        force_kill(self.pid)
     }
 
     /// `kill` for a PID the refresh did not list: gone, or a new process has it
@@ -3424,13 +3442,26 @@ mod tests {
         ghost().kill_and_wait().unwrap();
     }
 
+    /// A refused SIGKILL says why, as the system put it; one that finds the
+    /// process gone is not found (no real signal is sent here)
+    #[cfg(unix)]
     #[test]
-    fn a_kill_that_was_not_delivered_is_an_error() {
-        kill_outcome(true, 7).unwrap();
-        let err = kill_outcome(false, 7).unwrap_err();
+    fn a_kill_that_was_not_delivered_says_why() {
+        use nix::errno::Errno;
+        sigkill_outcome(Ok(()), 7).unwrap();
+        let refused = sigkill_outcome(Err(Errno::EPERM), 7).unwrap_err();
         assert!(
-            matches!(&err, ProcError::SignalError(m) if m == "Failed to kill process 7"),
-            "{err:?}"
+            matches!(&refused, ProcError::SignalError(m) if m == "EPERM: Operation not permitted"),
+            "{refused:?}"
+        );
+        assert_eq!(
+            refused.to_string(),
+            "Signal failed: EPERM: Operation not permitted"
+        );
+        let gone = sigkill_outcome(Err(Errno::ESRCH), 7).unwrap_err();
+        assert!(
+            matches!(&gone, ProcError::ProcessNotFound(p) if p == "7"),
+            "{gone:?}"
         );
     }
 

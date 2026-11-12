@@ -49,9 +49,9 @@ The system refused proc a read it needed (the PID reads `0` when the refusal was
 
 ## Partly done (exit 1)
 
-#### `✗ Failed to kill 1 process` with `→ launchd [PID 1]: Signal failed: …`
+#### `✗ Failed to kill 1 process` with `→ launchd [PID 1]: Signal failed: EPERM: Operation not permitted`
 
-The system refused the signal, usually because another user owns the process. The other processes in the list were handled. Make sure the failed one is really yours before you try again with `sudo`.
+The system refused the signal, and the line ends with its reason. `EPERM: Operation not permitted` means another user (or the system) owns the process; on Windows the reason reads `Access is denied`. The other processes in the list were handled. Make sure the failed one is really yours before you try again with `sudo`.
 
 #### `Port 3000 still in use (may be in TIME_WAIT)`
 

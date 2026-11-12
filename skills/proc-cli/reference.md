@@ -29,7 +29,7 @@ Everything here is for lookup. The safety model, the playbooks and the exit-code
 | 3 | Permission denied: proc itself got an I/O permission error, or a `:port` target has a holder proc can't see (see `permission_denied` below). It is not what a refused signal produces (see below). |
 | 4 | Invalid input (unknown flag, missing argument, bad signal name, missing directory or file), an action this OS does not support (`freeze`, `thaw`, `orphans` and `stop --signal` on Windows), or `needs_confirmation`. |
 
-A signal the OS refuses, such as `kill` on another user's process, is not exit 3. It is a `failed` entry for that process with `error` text such as `Signal failed: Failed to kill process 123` (SIGKILL) or `Signal failed: EPERM: Operation not permitted` (other signals), and the exit code is 1. If the process is gone or its PID was reused, the entry reads `No process found matching '123'`. Treat any unexpected `failed` entry as a process that is not yours: stop and ask the user.
+A signal the OS refuses, such as `kill` on another user's process, is not exit 3. It is a `failed` entry for that process whose `error` gives the system's reason, such as `Signal failed: EPERM: Operation not permitted` (Linux, macOS, BSD; on Windows, the reason `taskkill` gives, such as `Access is denied`), and the exit code is 1. If the process is gone or its PID was reused, the entry reads `No process found matching '123'`. Treat any unexpected `failed` entry as a process that is not yours: stop and ask the user.
 
 `"success": false` always comes with a non-zero exit code. Every command prints exactly one JSON document with `--json`, except `watch`, which streams one per refresh. `--json` exists on the 19 commands only: `--help` and `--version` print text even with `--json`, and `completions` and `manpage` reject it (exit 4, `invalid_input`).
 
@@ -367,8 +367,8 @@ A single name gives `results` entries of `{process, ports}` without `target`; ea
   "succeeded_count": 1, "failed_count": 0,
   "not_found": ["99999999"],
   "succeeded": [<Process>, ...],
-  "failed": [{"process": <Process>, "error": "Signal failed: Failed to kill process 123"}],
-  "processes": [<Process> + "outcome": "succeeded", <Process> + "outcome": "failed" + "error": "Signal failed: Failed to kill process 123"],
+  "failed": [{"process": <Process>, "error": "Signal failed: EPERM: Operation not permitted"}],
+  "processes": [<Process> + "outcome": "succeeded", <Process> + "outcome": "failed" + "error": "Signal failed: EPERM: Operation not permitted"],
   "count": 2
 }
 ```
