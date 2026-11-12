@@ -929,6 +929,88 @@ fn for_finds_a_process_that_has_the_file_open() {
     );
 }
 
+/// The PIDs `proc for <args>` lists, once it lists `want` or 10 seconds pass
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn for_pids_until(args: &[&str], want: u32) -> (Vec<u64>, i32) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let (json, code) = run_json(args);
+        let pids: Vec<u64> = json["results"]
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|r| r["process"]["pid"].as_u64())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if pids.contains(&u64::from(want)) || Instant::now() > deadline {
+            return (pids, code);
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// `for <dir> --recursive` counts a file held open anywhere below the
+/// directory, which the directory's own lookup doesn't see, and leaves out a
+/// sibling whose name only starts the same
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn for_recursive_finds_a_file_held_open_below_a_directory() {
+    let (_tmp, dir) = fresh_dir();
+    let app = dir.join("app");
+    let deep = app.join("data").join("logs");
+    let sibling = dir.join("application");
+    std::fs::create_dir_all(&deep).unwrap();
+    std::fs::create_dir_all(&sibling).unwrap();
+    let held = deep.join("held.txt");
+    let other = sibling.join("other.txt");
+    std::fs::write(&held, "held").unwrap();
+    std::fs::write(&other, "other").unwrap();
+    let holder = Holder::start(&held);
+    let neighbour = Holder::start(&other);
+    let app_arg = app.to_string_lossy().into_owned();
+
+    let (pids, code) = for_pids_until(&["for", &app_arg, "--recursive", "--json"], holder.0.id());
+    assert_eq!(code, 0, "{pids:?}");
+    assert!(pids.contains(&u64::from(holder.0.id())), "{pids:?}");
+    assert!(!pids.contains(&u64::from(neighbour.0.id())), "{pids:?}");
+
+    // without the flag only the directory itself counts, and nothing has it open
+    let (json, code) = run_json(&["for", &app_arg, "--json"]);
+    assert_eq!(code, 2, "{json}");
+}
+
+/// A process working in the directory, or running a program from it, is
+/// below it on every system that can answer
+#[cfg(not(any(target_os = "freebsd", target_os = "netbsd")))]
+#[test]
+fn for_recursive_finds_a_process_working_in_the_directory() {
+    let mut p = Owned::listener();
+    let (json, code) = run_json(&["for", &p.dir(), "-r", "--json"]);
+    assert_eq!(code, 0, "{json}\n{}", p.what_proc_saw());
+    assert!(
+        json["results"].as_array().is_some_and(|items| items
+            .iter()
+            .any(|r| r["process"]["pid"].as_u64() == Some(u64::from(p.pid())))),
+        "{json}"
+    );
+}
+
+/// FreeBSD's and NetBSD's `fstat` names no files, only the filesystem they're
+/// on: below a mount point it answers, below any other directory it would
+/// answer for the whole filesystem, so proc says it can't
+#[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+#[test]
+fn for_recursive_on_bsd_answers_for_a_mount_point_only() {
+    let (_tmp, dir) = fresh_dir();
+    let (json, code) = run_json(&["for", &dir.to_string_lossy(), "--recursive", "--json"]);
+    assert_eq!(code, 4, "{json}");
+    assert_eq!(json["reason"], "not_supported", "{json}");
+    let (json, code) = run_json(&["for", "/", "--recursive", "--json"]);
+    assert_eq!(code, 0, "{json}");
+}
+
 /// Several processes with no port to list: the table, and no `Listening:` list
 #[cfg(unix)]
 #[test]

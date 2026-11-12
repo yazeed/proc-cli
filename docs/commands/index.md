@@ -57,6 +57,7 @@ Not every filter is on every command; each command's page lists its own. `--in`,
 | `--range <start-end>` | `-r` | Ports in a range, such as `3000-9000` (1 to 65535) | `ports` |
 | `--sort <key>` | `-s` | `cpu`, `mem` (biggest first); `pid`, `name` (ascending). `ports`: `port`, `pid`, `name`. Ties come by PID | `list`, `by`, `in`, `for`, `watch`, `ports` |
 | `--limit <n>` | `-n` (`-l` on `watch`) | At most this many results | `list`, `by`, `in`, `for`, `ports`, `watch` |
+| `--recursive` | `-r` | For a directory, also every process using something below it (on FreeBSD and NetBSD, a mount point only) | `for` |
 | `--ancestors` | `-a` | The chain of parents up to the root, instead of the children | `tree` |
 | `--depth <n>` | `-d` | How deep the tree goes (default 10) | `tree` |
 | `--compact` | `-C` | PIDs only | `tree` |

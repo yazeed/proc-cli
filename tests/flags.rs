@@ -118,6 +118,9 @@ const CASES: &[Case] = &[
     code("for", &["{exe}", "-j", "-v"], 0),
     code("for", &["{exe}", "--verbose", "--wide"], 0),
     code("for", &["{exe}", "-w"], 0),
+    // a file has nothing below it: the same answer as without the flag
+    code("for", &["{exe}", "--recursive"], 0),
+    code("for", &["{exe}", "-r", "--json"], 0),
     code("for", &["{exe}", "--in", "{dir}"], 0),
     code("for", &["{exe}", "-i", "{dir}", "-b", "{name}"], 0),
     code("for", &["{exe}", "--by", "{name}"], 0),

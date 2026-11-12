@@ -6,6 +6,7 @@
 //!   proc for /var/log/app.log    # What has this file open? (not searched on Windows)
 //!   proc for ~/bin/myapp         # Tilde expansion
 //!   proc for app.log --by node   # Only the process named node (--cmd: node anywhere in the command line)
+//!   proc for /mnt/usb -r         # Everything below it: why umount says "target is busy"
 
 use super::held::{card_options, held_during, known, shown_ports, write_process_card, HeldPort};
 use crate::core::{
@@ -26,6 +27,12 @@ use std::path::PathBuf;
 pub struct ForCommand {
     /// File path (relative, absolute, or with ~)
     pub file: String,
+
+    /// For a directory, also count everything below it: a file open anywhere
+    /// under it, or a process working in it or running a program from it (on
+    /// FreeBSD and NetBSD, a mount point only)
+    #[arg(long, short = 'r')]
+    pub recursive: bool,
 
     /// Filter by working directory; takes the next word as the directory unless it starts with '-'
     /// (bare --in is the current directory, --in=DIR is explicit)
@@ -83,11 +90,21 @@ impl ForCommand {
         // 1. Resolve file path (relative, tilde, canonicalize)
         let file_path = self.resolve_path(&self.file)?;
 
-        // 2. Find processes by executable path
-        let exe_processes = Process::find_by_exe_path(&file_path)?;
+        // 2. Find processes by executable path, or with --recursive on a
+        // directory, by an executable or working directory below it
+        let below = self.recursive && file_path.is_dir();
+        let exe_processes = if below {
+            Process::find_by_path_below(&file_path)?
+        } else {
+            Process::find_by_exe_path(&file_path)?
+        };
 
         // 3. Find processes with file open (/proc on Linux, lsof or fstat elsewhere)
-        let open_file_procs = Process::find_by_open_file(&file_path)?;
+        let open_file_procs = if below {
+            Process::find_holding_below(&file_path)?
+        } else {
+            Process::find_by_open_file(&file_path)?
+        };
 
         // 4. Merge and deduplicate by PID
         let mut seen_pids = HashSet::new();
@@ -363,6 +380,7 @@ mod tests {
     fn command() -> ForCommand {
         ForCommand {
             file: "x".to_string(),
+            recursive: false,
             in_dir: None,
             by_name: None,
             cmd: false,

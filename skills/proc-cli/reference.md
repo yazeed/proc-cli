@@ -123,7 +123,7 @@ Aliases: `on` `:`; `for` `f`; `by` `b`; `list` `l` `ps`; `info` `i` `inspect`; `
 | Command | Takes | Does |
 |---------|-------|------|
 | `on` | targets | Port to process (`:3000`), or process to ports (PID, name). |
-| `for` | one file | Processes running this file, or holding it open. |
+| `for` | one file | Processes running this file, or holding it open. With `--recursive` on a directory, everything below it too. |
 | `by` | one name | Processes with this name. |
 | `in` | one directory | Processes whose cwd is under the directory. |
 | `list` | optional names | All processes, or those named. |
@@ -160,6 +160,7 @@ Filters (a command takes only those its `--help` lists):
 | `--wide` (`-w`) | `list`, `by`, `in`, `for`, `watch`, `stuck`, `orphans` |
 | `--exposed` (`-e`; 0.0.0.0, `::`), `--local` (`-l`; 127.0.0.1, `::1`), `--range <from>-<to>` (`-r`) | `ports` |
 | `--depth <n>` (`-d`; default 10), `--compact` (`-C`), `--ancestors` (`-a`) | `tree` |
+| `--recursive` (`-r`): for a directory, also everything below it: a file open anywhere under it, a process working in it or running a program from it. On FreeBSD and NetBSD a mount point only (any other directory exits 4, `not_supported`) | `for` |
 | `--interval <secs>` (`-n`) | `watch`, `wait` (`wait --quiet` hides the periodic still-running lines) |
 | `--timeout <secs>` (`-t`) | `stop` (default 10), `wait` (0 = forever), `stuck` and `unstick` (default 300) |
 

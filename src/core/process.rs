@@ -319,31 +319,55 @@ fn linux_open_file_holders(
     proc_root: &std::path::Path,
     path: &std::path::Path,
 ) -> Result<Vec<u32>> {
+    linux_holders(proc_root, |used| used == path)
+}
+
+/// `linux_open_file_holders` for anything at or below `dir`: a file open
+/// anywhere under it, a working directory, root or executable there, or a
+/// file mapped from there. Below means by whole components: `/srv/app2` is
+/// not below `/srv/app`
+#[cfg(all(unix, any(target_os = "linux", test)))]
+fn linux_open_file_holders_below(
+    proc_root: &std::path::Path,
+    dir: &std::path::Path,
+) -> Result<Vec<u32>> {
+    linux_holders(proc_root, |used| used.starts_with(dir))
+}
+
+/// The PIDs under `proc_root` whose entry uses a path `matches` accepts (see
+/// `linux_open_file_holders`)
+#[cfg(all(unix, any(target_os = "linux", test)))]
+fn linux_holders(
+    proc_root: &std::path::Path,
+    matches: impl Fn(&std::path::Path) -> bool,
+) -> Result<Vec<u32>> {
     let entries = std::fs::read_dir(proc_root)
         .map_err(|e| ProcError::SystemError(format!("{}: {e}", proc_root.display())))?;
     let mut pids: Vec<u32> = entries
         .filter_map(|entry| {
             let entry = entry.ok()?;
             let pid: u32 = entry.file_name().to_str()?.parse().ok()?;
-            holds_path(&entry.path(), path).then_some(pid)
+            holds_path(&entry.path(), &matches).then_some(pid)
         })
         .collect();
     pids.sort_unstable();
     Ok(pids)
 }
 
-/// Whether the `/proc/<pid>` entry `entry` shows `path` in use (see
-/// `linux_open_file_holders`)
+/// Whether the `/proc/<pid>` entry `entry` shows a path `matches` accepts in
+/// use (see `linux_open_file_holders`)
 #[cfg(all(unix, any(target_os = "linux", test)))]
-fn holds_path(entry: &std::path::Path, path: &std::path::Path) -> bool {
-    let links_to = |link: std::path::PathBuf| std::fs::read_link(link).is_ok_and(|to| to == path);
+fn holds_path(entry: &std::path::Path, matches: &impl Fn(&std::path::Path) -> bool) -> bool {
+    let links_to = |link: std::path::PathBuf| std::fs::read_link(link).is_ok_and(|to| matches(&to));
     ["cwd", "root", "exe"]
         .iter()
         .any(|name| links_to(entry.join(name)))
         || std::fs::read_dir(entry.join("fd"))
             .is_ok_and(|fds| fds.flatten().any(|fd| links_to(fd.path())))
-        || std::fs::read_to_string(entry.join("maps"))
-            .is_ok_and(|maps| maps.lines().any(|line| mapped_path(line) == Some(path)))
+        || std::fs::read_to_string(entry.join("maps")).is_ok_and(|maps| {
+            maps.lines()
+                .any(|line| mapped_path(line).is_some_and(matches))
+        })
 }
 
 /// The file a line of `/proc/<pid>/maps` maps, if it maps one:
@@ -360,6 +384,99 @@ fn mapped_path(line: &str) -> Option<&std::path::Path> {
     mapped
         .starts_with('/')
         .then(|| std::path::Path::new(mapped))
+}
+
+/// The PIDs that `lsof -Fpn` (every open file on the system, as `p<pid>` lines
+/// each followed by `f<descriptor>` and `n<name>` lines) shows using a path at
+/// or below `dir`, PID ascending. Names that aren't paths (sockets, pipes)
+/// are skipped
+#[cfg(any(
+    all(
+        unix,
+        not(any(target_os = "freebsd", target_os = "netbsd", target_os = "linux"))
+    ),
+    test
+))]
+fn lsof_holders_below(fields: &str, dir: &std::path::Path) -> Vec<u32> {
+    let mut pids = Vec::new();
+    let mut current: Option<u32> = None;
+    for line in fields.lines() {
+        if let Some(pid) = line.strip_prefix('p') {
+            current = pid.parse().ok();
+        } else if let (Some(name), Some(pid)) = (line.strip_prefix('n'), current) {
+            if name.starts_with('/') && std::path::Path::new(name).starts_with(dir) {
+                pids.push(pid);
+            }
+        }
+    }
+    pids.sort_unstable();
+    pids.dedup();
+    pids
+}
+
+/// The PIDs using anything below `dir`, from `lsof`'s list of every open file
+/// on the system. An `lsof` that can't be started is an error naming it, as in
+/// `open_file_pids_with`
+#[cfg(all(
+    unix,
+    not(any(target_os = "freebsd", target_os = "netbsd", target_os = "linux"))
+))]
+fn lsof_pids_below(dir: &std::path::Path) -> Result<Vec<u32>> {
+    use std::process::Command;
+    let mut command = Command::new(OPEN_FILE_PROGRAM);
+    // -n -P: no name lookups; -w: no warnings; -F pn: PID and name fields
+    let output = crate::ui::interrupt::unblocked_in_child(&mut command)
+        .args(["-n", "-P", "-w", "-Fpn"])
+        .output()
+        .map_err(|e| {
+            ProcError::NotSupported(format!(
+                "proc reads open files with {OPEN_FILE_PROGRAM}, which could not be run ({e})"
+            ))
+        })?;
+    // lsof exits 1 when some process could not be read; what it listed holds
+    Ok(lsof_holders_below(
+        &String::from_utf8_lossy(&output.stdout),
+        dir,
+    ))
+}
+
+/// The PIDs `fstat -f` lists for the filesystem mounted at `dir`, which must be
+/// a mount point (see `Process::find_holding_below`)
+#[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+fn fstat_filesystem_pids(dir: &std::path::Path) -> Result<Vec<u32>> {
+    use std::process::Command;
+    if !is_mount_point(dir) {
+        return Err(ProcError::NotSupported(format!(
+            "on this system proc can look below a mount point only, and {} is not one: \
+             {OPEN_FILE_PROGRAM} names the filesystem a file is on, not its path",
+            dir.display()
+        )));
+    }
+    let mut command = Command::new(OPEN_FILE_PROGRAM);
+    let output = crate::ui::interrupt::unblocked_in_child(&mut command)
+        .arg("-f")
+        .arg(dir)
+        .output()
+        .map_err(|e| {
+            ProcError::NotSupported(format!(
+                "proc reads open files with {OPEN_FILE_PROGRAM}, which could not be run ({e})"
+            ))
+        })?;
+    Ok(fstat_pids(&String::from_utf8_lossy(&output.stdout)))
+}
+
+/// Whether `path` is a mount point: the root, or a directory on another
+/// filesystem than its parent
+#[cfg(all(unix, any(target_os = "freebsd", target_os = "netbsd", test)))]
+fn is_mount_point(path: &std::path::Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let Ok(meta) = std::fs::metadata(path) else {
+        return false;
+    };
+    match path.parent() {
+        None => true,
+        Some(parent) => std::fs::metadata(parent).is_ok_and(|up| up.dev() != meta.dev()),
+    }
 }
 
 /// The PIDs `lsof -t` printed, one per line
@@ -1421,6 +1538,58 @@ impl Process {
     pub fn find_by_open_file(_path: &std::path::Path) -> Result<Vec<Process>> {
         // Windows: Could use handle.exe from Sysinternals, but skip for now
         Ok(vec![])
+    }
+
+    /// Find processes using anything at or below the directory `dir`: a file
+    /// open anywhere under it, a working directory, root or executable there,
+    /// or a file mapped from there. proc itself is left out. Linux reads
+    /// `/proc`; macOS lists every open file once with `lsof` and keeps those
+    /// below `dir` (`lsof +D` walks the whole tree and took minutes on a home
+    /// folder, the full list under a second). FreeBSD's and NetBSD's `fstat`
+    /// names no files, only the filesystem one is on, so there `dir` must be a
+    /// mount point; any other directory is `NotSupported` rather than an
+    /// answer for the whole filesystem
+    #[cfg(unix)]
+    pub fn find_holding_below(dir: &std::path::Path) -> Result<Vec<Process>> {
+        #[cfg(target_os = "linux")]
+        let pids = linux_open_file_holders_below(std::path::Path::new("/proc"), dir)?;
+        #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+        let pids = fstat_filesystem_pids(dir)?;
+        #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "netbsd")))]
+        let pids = lsof_pids_below(dir)?;
+        Ok(Self::records_of(pids))
+    }
+
+    /// Find processes using anything below a directory (Windows: open files
+    /// aren't searched, as for `find_by_open_file`)
+    #[cfg(not(unix))]
+    pub fn find_holding_below(_dir: &std::path::Path) -> Result<Vec<Process>> {
+        Ok(vec![])
+    }
+
+    /// The processes whose working directory or executable is at or below
+    /// `dir`, proc itself left out: what every system can tell without
+    /// looking at open files
+    pub fn find_by_path_below(dir: &std::path::Path) -> Result<Vec<Process>> {
+        let self_pid = std::process::id();
+        let below = |path: &Option<String>| {
+            path.as_deref()
+                .is_some_and(|path| std::path::Path::new(path).starts_with(dir))
+        };
+        Ok(Self::find_all()?
+            .into_iter()
+            .filter(|p| p.pid != self_pid && (below(&p.cwd) || below(&p.exe_path)))
+            .collect())
+    }
+
+    /// The records of `pids`, proc itself and any that exited meanwhile left out
+    #[cfg(unix)]
+    fn records_of(pids: Vec<u32>) -> Vec<Process> {
+        let self_pid = std::process::id();
+        pids.into_iter()
+            .filter(|&pid| pid != self_pid)
+            .filter_map(|pid| Self::find_by_pid(pid).ok().flatten())
+            .collect()
     }
 
     /// Find processes that look stuck: running longer than `timeout`, and in each
@@ -3379,6 +3548,48 @@ mod tests {
             matches!(&found, Err(ProcError::SystemError(why)) if why.contains("/proc-no-such-dir")),
             "{found:?}"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn every_way_a_process_uses_something_below_a_directory_is_found_in_proc() {
+        use std::os::unix::fs::symlink;
+        let target = std::path::Path::new("/srv/app/data file.db");
+        let root = fake_proc(target);
+        let entry = |pid: &str| {
+            let dir = root.path().join(pid);
+            std::fs::create_dir_all(dir.join("fd")).unwrap();
+            dir
+        };
+        // 16 sits in the directory itself; 17 is in a sibling whose name
+        // starts the same, which is not below it
+        symlink("/srv/app", entry("16").join("cwd")).unwrap();
+        symlink("/srv/application/log", entry("17").join("fd").join("4")).unwrap();
+        let pids =
+            linux_open_file_holders_below(root.path(), std::path::Path::new("/srv/app")).unwrap();
+        assert_eq!(pids, vec![10, 11, 12, 14, 15, 16]);
+    }
+
+    #[test]
+    fn lsof_fields_give_the_processes_with_a_file_below_a_directory() {
+        let fields = "p100\nfcwd\nn/srv/app\nftxt\nn/usr/bin/zsh\n\
+                      p200\nf3\nn/srv/app/data/log.txt\n\
+                      p300\nf4\nn/srv/application/log\nf5\nn127.0.0.1:3000\n\
+                      p400\nfcwd\nn/\n";
+        assert_eq!(
+            lsof_holders_below(fields, std::path::Path::new("/srv/app")),
+            vec![100, 200]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_root_is_a_mount_point_and_a_fresh_directory_is_not() {
+        assert!(is_mount_point(std::path::Path::new("/")));
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        assert!(!is_mount_point(&sub));
     }
 
     #[cfg(unix)]

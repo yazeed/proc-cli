@@ -223,6 +223,7 @@ Not every filter is on every command. `--in`, `--by` (short `-b`) and `--cmd` wo
 | `--sort`, `-s <key>` | `list`, `by`, `in`, `for`, `watch`: cpu, mem (biggest first); pid, name (ascending). `ports`: port, pid, name (ascending). Ties come by PID | see left |
 | `--limit`, `-n <n>` | Limit the number of results (`-l` on `watch`, where `-n` is `--interval`) | `list`, `by`, `in`, `for`, `ports`, `watch` |
 | `--ancestors`, `-a` | Show the ancestry path up to the root | `tree` |
+| `--recursive`, `-r` | For a directory, also every process using something below it: a file open under it, or working or running a program there (why `umount` says "target is busy"). FreeBSD and NetBSD: a mount point only | `for` |
 | `--depth`, `-d <n>` | Maximum tree depth (default 10) | `tree` |
 | `--compact`, `-C` | PIDs only | `tree` |
 | `--timeout`, `-t <s>` | Only processes running longer than this (default 300) | `stuck`, `unstick` |
