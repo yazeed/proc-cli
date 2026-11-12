@@ -244,7 +244,7 @@ To measure locally:
 scripts/coverage-local.sh
 ```
 
-It runs the suite in a Linux container at your machine's architecture and prints the same per-file report, listing every uncovered line. It covers Linux only: lines that exist only on macOS or Windows show as uncovered locally and are measured in CI.
+It runs the suite in a Linux container at your machine's architecture and prints the same per-file report, listing every uncovered line. It covers Linux only: lines that exist only on macOS or Windows show as uncovered locally and are measured in CI, and so do the few that only run for a user who isn't root (the container runs as root). It needs 10 GB free where it writes (`OUT_DIR`, by default under your temp folder) and won't start with less; when it ends, however it ends, only `lcov.info` and the logs are left there, and the `rust:1-bookworm` image is removed if the run pulled it.
 
 Lines that cannot be exercised go in `coverage-exclusions.txt`, one `src/path.rs:START-END  reason` per line. An entry needs a reason that says why the line cannot run, and the maintainer's approval before it is added. An entry that hides no uncovered line is stale and fails the gate, so delete it when the code it covered gets a test.
 
