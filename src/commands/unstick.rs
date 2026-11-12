@@ -193,10 +193,7 @@ impl UnstickCommand {
                     failed: 0,
                     not_found: &not_found,
                     left_out: &left_out,
-                    processes: stuck
-                        .iter()
-                        .map(|p| ProcessOutcome::of(p, "would_attempt".to_string()))
-                        .collect(),
+                    processes: stuck.iter().map(ProcessOutcome::would_attempt).collect(),
                     count: stuck.len(),
                     recovered_count: 0,
                     not_stuck_count: 0,
@@ -306,7 +303,7 @@ impl UnstickCommand {
                 left_out: &left_out,
                 processes: outcomes
                     .iter()
-                    .map(|(p, o)| ProcessOutcome::of(p, outcome_label(o)))
+                    .map(|(p, o)| ProcessOutcome::of(p, o))
                     .collect(),
                 count: stuck.len(),
                 recovered_count: recovered,
@@ -522,7 +519,7 @@ fn outcome_label(outcome: &Outcome) -> String {
         Outcome::Terminated => "terminated".to_string(),
         Outcome::StillStuck => "still_stuck".to_string(),
         Outcome::NotStuck => "not_stuck".to_string(),
-        Outcome::Failed(e) => format!("failed: {}", e),
+        Outcome::Failed(_) => "failed".to_string(),
     }
 }
 
@@ -616,6 +613,9 @@ struct ProcessOutcome {
     #[serde(skip_serializing_if = "Option::is_none")]
     uptime_secs: Option<u64>,
     outcome: String,
+    /// Why a `failed` outcome failed; absent for every other outcome
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     cwd: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -628,12 +628,27 @@ struct ProcessOutcome {
 }
 
 impl ProcessOutcome {
-    fn of(p: &Process, outcome: String) -> Self {
+    /// What unstick did to `p`, with the reason in `error` when it failed
+    fn of(p: &Process, outcome: &Outcome) -> Self {
+        let error = match outcome {
+            Outcome::Failed(e) => Some(e.clone()),
+            _ => None,
+        };
+        Self::new(p, outcome_label(outcome), error)
+    }
+
+    /// What a dry run would try on `p`
+    fn would_attempt(p: &Process) -> Self {
+        Self::new(p, "would_attempt".to_string(), None)
+    }
+
+    fn new(p: &Process, outcome: String, error: Option<String>) -> Self {
         Self {
             pid: p.pid,
             name: p.name.clone(),
             uptime_secs: p.uptime_secs,
             outcome,
+            error,
             cwd: p.cwd.clone(),
             command: p.command.clone(),
             status: p.status,
@@ -930,12 +945,53 @@ mod tests {
             (
                 Outcome::Failed("denied".to_string()),
                 "failed: denied",
-                "failed: denied",
+                "failed",
             ),
         ];
         for (outcome, text, label) in cases {
             assert_eq!(plain(&outcome_text(&outcome)), text);
             assert_eq!(outcome_label(&outcome), label);
+        }
+    }
+
+    /// A failure's reason is in `error`, beside `outcome: "failed"`, as in
+    /// every other receipt; an outcome that is not a failure has no `error`
+    #[test]
+    fn a_failure_puts_its_reason_in_error_and_nothing_else_has_one() {
+        let process = Process {
+            pid: 1,
+            name: "x".to_string(),
+            exe_path: None,
+            cwd: None,
+            command: None,
+            argv0: None,
+            raw: None,
+            cpu_percent: 0.0,
+            memory_mb: 0.0,
+            status: ProcessStatus::Sleeping,
+            user: None,
+            parent_pid: None,
+            start_time: None,
+            uptime_secs: None,
+            parent_name: None,
+            cpu_time_secs: None,
+            open_files: None,
+            child_count: None,
+            runs_proc: false,
+        };
+        let failed = Outcome::Failed("Signal failed: denied".to_string());
+        let json = serde_json::to_value(ProcessOutcome::of(&process, &failed)).unwrap();
+        assert_eq!(json["outcome"], "failed");
+        assert_eq!(json["error"], "Signal failed: denied");
+
+        for outcome in [
+            Outcome::Recovered,
+            Outcome::Terminated,
+            Outcome::StillStuck,
+            Outcome::NotStuck,
+        ] {
+            let json = serde_json::to_value(ProcessOutcome::of(&process, &outcome)).unwrap();
+            assert!(json.get("error").is_none(), "{json}");
         }
     }
 

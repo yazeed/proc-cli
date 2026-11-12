@@ -425,9 +425,9 @@ Each `exited` entry is `pid`, `name`, `exited_after_seconds` and then the other 
 
 New in 2.3.0, after `processes`: `count` (the processes found) and `recovered_count`, `not_stuck_count`, `still_stuck_count`, `terminated_count` and `failed_count`, one count per outcome. Deprecated, use the new name; removed in 3.0: the bare numbers `found` (use `count`), `recovered`, `not_stuck`, `still_stuck`, `terminated` and `failed` (use `<outcome>_count`). `failed` is a number here and a list in the receipts of `kill`, `stop`, `freeze`, `thaw`, `stuck --kill` and `orphans --kill`: read `failed_count`.
 
-Each `processes` entry has the same fields as a process object (see Process and port objects) after its own `pid`, `name`, `uptime_secs` and `outcome`; the fields of a process object that the OS does not give are absent.
+Each `processes` entry has the same fields as a process object (see Process and port objects) after its own `pid`, `name`, `uptime_secs`, `outcome` and, on a failure, `error`; the fields of a process object that the OS does not give are absent.
 
-`outcome` is `recovered`, `terminated`, `still_stuck`, `not_stuck`, `failed: <reason>` or `would_attempt` (dry run). Any `still_stuck` or `failed` gives `success: false` and exit 1. SIGINT ends most programs, so `unstick` can end a busy process.
+`outcome` is `recovered`, `terminated`, `still_stuck`, `not_stuck`, `failed` or `would_attempt` (dry run). A `failed` entry gives the reason in `error`, as the receipts of the other commands do; no other outcome has `error`. Until 2.4.0 a failure's `outcome` was `failed: <reason>`. Any `still_stuck` or `failed` gives `success: false` and exit 1. SIGINT ends most programs, so `unstick` can end a busy process.
 
 ### why
 

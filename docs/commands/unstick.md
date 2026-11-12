@@ -58,7 +58,7 @@ With no target and nothing stuck, `✓ No stuck processes found`, exit 0. A targ
 }
 ```
 
-`outcome` is `recovered`, `terminated`, `still_stuck`, `not_stuck`, `would_attempt` (with `--dry-run`) or `failed: <reason>`; check `failed_count`, since a failure's `outcome` starts with `failed:`. The bare numbers `found`, `recovered`, `not_stuck`, `still_stuck`, `terminated` and `failed` are deprecated (use the `_count` names, and `count` for `found`) and go in 3.0. Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#unstick).
+`outcome` is `recovered`, `terminated`, `still_stuck`, `not_stuck`, `would_attempt` (with `--dry-run`) or `failed`, with the reason in `error` (until 2.4.0 a failure's `outcome` was `failed: <reason>`); `failed_count` counts them. The bare numbers `found`, `recovered`, `not_stuck`, `still_stuck`, `terminated` and `failed` are deprecated (use the `_count` names, and `count` for `found`) and go in 3.0. Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#unstick).
 
 ## See also
 
