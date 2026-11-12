@@ -46,7 +46,7 @@ pub struct UnstickCommand {
     target: Vec<String>,
 
     /// Without a target: only stuck processes running longer than this many whole seconds
-    #[arg(long, short, default_value = "300")]
+    #[arg(long, short, default_value = "300", value_parser = crate::core::values::whole_seconds, allow_negative_numbers = true)]
     timeout: u64,
 
     /// Force termination if recovery fails
@@ -80,7 +80,7 @@ pub struct UnstickCommand {
 
     /// Act only if the process still has this start time (Unix seconds, `start_time`
     /// in its JSON): a PID the OS gave to a new process is ruled out. One PID target
-    #[arg(long = "start-time", value_name = "SECONDS", requires = "target")]
+    #[arg(long = "start-time", value_name = "SECONDS", requires = "target", value_parser = crate::core::values::whole_seconds, allow_negative_numbers = true)]
     pub start_time: Option<u64>,
 
     /// Match name targets and --by as a substring of the process name or full command line (like pkill -f)

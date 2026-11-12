@@ -42,7 +42,7 @@ pub struct FreeCommand {
     pub verbose: bool,
 
     /// Max whole seconds to wait for port to become free
-    #[arg(long, default_value = "10")]
+    #[arg(long, default_value = "10", value_parser = crate::core::values::whole_seconds, allow_negative_numbers = true)]
     pub wait: u64,
 }
 

@@ -58,7 +58,7 @@ pub struct WatchCommand {
     pub target: Vec<String>,
 
     /// Refresh interval in seconds (at least 0.1)
-    #[arg(long = "interval", short = 'n', default_value = "2", value_parser = parse_interval)]
+    #[arg(long = "interval", short = 'n', default_value = "2", value_parser = parse_interval, allow_negative_numbers = true)]
     pub interval: f64,
 
     /// Filter by directory; takes the next word as the directory unless it starts with '-'
@@ -75,11 +75,11 @@ pub struct WatchCommand {
     pub cmd: bool,
 
     /// Only show processes using more than this CPU %
-    #[arg(long)]
+    #[arg(long, value_parser = crate::core::values::cpu_percent, allow_negative_numbers = true)]
     pub min_cpu: Option<f32>,
 
     /// Only show processes using more than this memory (MB)
-    #[arg(long)]
+    #[arg(long, value_parser = crate::core::values::megabytes, allow_negative_numbers = true)]
     pub min_mem: Option<f64>,
 
     /// Output as JSON (newline-delimited, one object per refresh)
@@ -95,7 +95,7 @@ pub struct WatchCommand {
     pub wide: bool,
 
     /// Limit the number of results shown
-    #[arg(long, short = 'l')]
+    #[arg(long, short = 'l', value_parser = crate::core::values::count, allow_negative_numbers = true)]
     pub limit: Option<usize>,
 
     /// Sort by: cpu, mem (biggest first); pid, name (ascending). Ties come by PID

@@ -43,11 +43,11 @@ pub struct ListCommand {
     pub path: Option<String>,
 
     /// Only show processes using more than this CPU %
-    #[arg(long)]
+    #[arg(long, value_parser = crate::core::values::cpu_percent, allow_negative_numbers = true)]
     pub min_cpu: Option<f32>,
 
     /// Only show processes using more than this memory (MB)
-    #[arg(long)]
+    #[arg(long, value_parser = crate::core::values::megabytes, allow_negative_numbers = true)]
     pub min_mem: Option<f64>,
 
     /// Filter by status: running, sleeping, stopped, zombie, idle, starting, disk-wait
@@ -55,11 +55,11 @@ pub struct ListCommand {
     pub status: Option<StatusFilter>,
 
     /// Only show processes running longer than this (whole seconds)
-    #[arg(long)]
+    #[arg(long, value_parser = crate::core::values::whole_seconds, allow_negative_numbers = true)]
     pub min_uptime: Option<u64>,
 
     /// Only show children of this parent PID
-    #[arg(long)]
+    #[arg(long, value_parser = crate::core::values::pid, allow_negative_numbers = true)]
     pub parent: Option<u32>,
 
     /// Output as JSON
@@ -75,7 +75,7 @@ pub struct ListCommand {
     pub wide: bool,
 
     /// Limit the number of results
-    #[arg(long, short = 'n')]
+    #[arg(long, short = 'n', value_parser = crate::core::values::count, allow_negative_numbers = true)]
     pub limit: Option<usize>,
 
     /// Sort by: cpu, mem (biggest first); pid, name (ascending). Ties come by PID

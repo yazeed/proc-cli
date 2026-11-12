@@ -31,11 +31,11 @@ pub struct WaitCommand {
     target: Vec<String>,
 
     /// Whole seconds between status lines (exits are noticed within a quarter second)
-    #[arg(long, short = 'n', default_value = "5")]
+    #[arg(long, short = 'n', default_value = "5", value_parser = crate::core::values::whole_seconds, allow_negative_numbers = true)]
     interval: u64,
 
     /// Timeout in whole seconds (0 = no timeout)
-    #[arg(long, short = 't', default_value = "0")]
+    #[arg(long, short = 't', default_value = "0", value_parser = crate::core::values::whole_seconds, allow_negative_numbers = true)]
     timeout: u64,
 
     /// Output as JSON
@@ -57,7 +57,7 @@ pub struct WaitCommand {
 
     /// Wait only if the process still has this start time (Unix seconds, `start_time`
     /// in its JSON): a PID the OS gave to a new process is ruled out. One PID target
-    #[arg(long = "start-time", value_name = "SECONDS")]
+    #[arg(long = "start-time", value_name = "SECONDS", value_parser = crate::core::values::whole_seconds, allow_negative_numbers = true)]
     pub start_time: Option<u64>,
 
     /// Match name targets and --by as a substring of the process name or full command line (like pkill -f)

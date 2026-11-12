@@ -10,6 +10,7 @@ pub mod name_match;
 pub mod port;
 pub mod process;
 pub mod target;
+pub mod values;
 
 pub use apply::apply_to_each;
 pub use connections::{connections_for, connections_to, Connections, Peer, PeerProcess};

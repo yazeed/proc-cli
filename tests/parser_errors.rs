@@ -493,3 +493,75 @@ fn a_typed_value_cannot_cut_the_message_or_make_a_suggestion() {
     ]);
     assert!(!error.contains("Try:"), "{error:?}");
 }
+
+/// Whole seconds: `--timeout`, `--wait`, `--min-uptime`, `--start-time`, and
+/// `wait --interval` (`watch --interval` takes fractions)
+fn takes_whole_seconds(command: &str, long: &str) -> bool {
+    matches!(long, "timeout" | "wait" | "min-uptime" | "start-time")
+        || (command == "wait" && long == "interval")
+}
+
+/// The JSON error of `proc <args> --json`, with its exit code
+fn json_error_and_code(args: &[&str]) -> (Value, i32) {
+    let mut all = args.to_vec();
+    all.push("--json");
+    let output = proc_cmd().args(&all).output().unwrap();
+    let doc: Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|e| panic!("{all:?}: {e}: {:?}", output.stdout));
+    (doc, output.status.code().unwrap())
+}
+
+#[test]
+fn a_number_in_the_wrong_form_says_what_to_write() {
+    // `--timeout 1m` said "invalid digit found in string", and `--timeout -1`
+    // "unexpected argument '-1' found", which reads like a missing flag
+    let mut checked = 0;
+    for sub in Cli::command().get_subcommands() {
+        let name = sub.get_name();
+        for arg in sub
+            .get_arguments()
+            .filter(|a| is_numeric(a) && !a.is_positional())
+        {
+            let flag = format!("--{}", arg.get_long().unwrap());
+            let long = arg.get_long().unwrap();
+            let negative = if long == "parent" {
+                "not a PID"
+            } else if name == "watch" && long == "interval" {
+                "must be at least 0.1 seconds"
+            } else {
+                "can't be negative"
+            };
+            let (doc, code) = json_error_and_code(&[name, &flag, "-1"]);
+            assert_eq!(code, 4, "{name} {flag} -1: {doc}");
+            assert_eq!(doc["reason"], "invalid_input", "{doc}");
+            let error = doc["error"].as_str().unwrap();
+            assert!(error.contains(negative), "{name} {flag} -1: {error}");
+            assert!(error.contains(&flag), "{name} {flag} -1: {error}");
+            if takes_whole_seconds(name, long) {
+                let (doc, _) = json_error_and_code(&[name, &flag, "1m"]);
+                let error = doc["error"].as_str().unwrap();
+                assert!(
+                    error.contains("whole seconds only: write 60 for 1m"),
+                    "{name} {flag} 1m: {error}"
+                );
+            }
+            checked += 1;
+        }
+    }
+    // the 41 numeric flags (the count changes only with the CLI)
+    assert!(checked >= 40, "only {checked} numeric flags found");
+}
+
+#[test]
+fn cpu_and_memory_refuse_numbers_that_compare_with_nothing() {
+    for flag in ["--min-cpu", "--min-mem"] {
+        for bad in ["nan", "inf"] {
+            let (doc, code) = json_error_and_code(&["list", flag, bad]);
+            assert_eq!(code, 4, "{flag} {bad}: {doc}");
+            assert!(
+                doc["error"].as_str().unwrap().contains("not a number"),
+                "{doc}"
+            );
+        }
+    }
+}

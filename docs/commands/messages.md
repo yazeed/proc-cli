@@ -71,9 +71,9 @@ The system gave an error proc couldn't work around, such as an unreadable proces
 
 A command that changes processes ran where nobody could answer its question (in a script, or with stdin redirected). Preview with `--dry-run`, then add `--yes` once you know what it will touch. With `--json` the message reads `kill changes processes, so it needs --yes, with --json too` and the document lists the processes in `processes`.
 
-#### `error: invalid value '2h' for '--min-uptime <MIN_UPTIME>': invalid digit found in string`
+#### `error: invalid value '2h' for '--min-uptime <MIN_UPTIME>': whole seconds only: write 7200 for 2h`
 
-A value in the wrong form. `--timeout`, `--wait`, `--min-uptime`, `--start-time` and `wait --interval` take whole seconds: write `7200`, not `2h` or `1.5`. A negative number reads as a flag, so `--timeout -1` gives `unexpected argument '-1' found`.
+A value in the wrong form, and the message says what to write instead. `--timeout`, `--wait`, `--min-uptime`, `--start-time` and `wait --interval` take whole seconds: `7200`, not `2h` or `1.5`. A negative number is refused as `can't be negative`, and `--min-cpu` and `--min-mem` refuse `nan` and `inf`.
 
 #### `Invalid input: Unknown signal: 'FOO'. Valid signals: HUP, INT, QUIT, ABRT, KILL, TERM, STOP, CONT, USR1, USR2`
 

@@ -54,7 +54,7 @@ pub struct FreezeCommand {
 
     /// Act only if the process still has this start time (Unix seconds, `start_time`
     /// in its JSON): a PID the OS gave to a new process is ruled out. One PID target
-    #[arg(long = "start-time", value_name = "SECONDS")]
+    #[arg(long = "start-time", value_name = "SECONDS", value_parser = crate::core::values::whole_seconds, allow_negative_numbers = true)]
     pub start_time: Option<u64>,
 
     /// Match name targets and --by as a substring of the process name or full command line (like pkill -f)

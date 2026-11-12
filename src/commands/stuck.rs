@@ -21,7 +21,7 @@ use std::time::Duration;
 #[derive(Args, Debug)]
 pub struct StuckCommand {
     /// Only processes running longer than this many whole seconds (stuck: over 50% CPU or blocked, for 2 seconds)
-    #[arg(long, short = 't', default_value = "300")]
+    #[arg(long, short = 't', default_value = "300", value_parser = crate::core::values::whole_seconds, allow_negative_numbers = true)]
     pub timeout: u64,
 
     /// Kill found stuck processes

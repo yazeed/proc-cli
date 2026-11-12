@@ -102,7 +102,7 @@ pub struct PortsCommand {
     pub sort: PortSortKey,
 
     /// Limit the number of results
-    #[arg(long, short = 'n')]
+    #[arg(long, short = 'n', value_parser = crate::core::values::count, allow_negative_numbers = true)]
     pub limit: Option<usize>,
 
     /// Filter ports by range (e.g., 8000-9000)

@@ -181,17 +181,17 @@ Short flags differ in two places: `-l` is `--limit` on `watch` but `--local` on 
 
 | Flag | Accepts | Rejected (exit 4, `invalid_input`) |
 |------|---------|-------------------------------------|
-| `--timeout`, `--wait`, `--min-uptime`, `--start-time`, and `--interval` on `wait` | whole seconds, `0` or more | a fraction (`1.5`) or a unit (`1m`): `invalid digit found in string` |
+| `--timeout`, `--wait`, `--min-uptime`, `--start-time`, and `--interval` on `wait` | whole seconds, `0` or more | a unit (`1m`: `whole seconds only: write 60 for 1m`), a fraction (`1.5`), a negative number (`can't be negative`) |
 | `--interval` on `watch` | seconds, fractions allowed, at least `0.1` | `0.05`: `must be at least 0.1 seconds` |
-| `--min-cpu` | percent of one core, fractions allowed (over 100 with several cores) | text |
-| `--min-mem` | megabytes, fractions allowed | text |
-| `--limit`, `--depth`, `--parent` | a whole number (`--parent` is a PID) | a fraction |
+| `--min-cpu` | percent of one core, fractions allowed (over 100 with several cores) | text, `nan`, `inf`, a negative number |
+| `--min-mem` | megabytes, fractions allowed | text, `nan`, `inf`, a negative number |
+| `--limit`, `--depth`, `--parent` | a whole number (`--parent` is a PID) | a fraction, a negative number |
 | `--range` | `START-END`, from 1 to 65535 (`9000-8000` is refused with a `did you mean 8000-9000?`) | `0-10`, `70000-80000`, `8000` |
 | `--signal` | `HUP`, `INT`, `QUIT`, `ABRT`, `KILL`, `TERM`, `STOP`, `CONT`, `USR1`, `USR2`, any case, with or without `SIG` | a number (`10`) or another name (`WINCH`) |
 | `--status` | `running`, `sleeping`, `stopped`, `zombie`, `idle`, `starting`, `disk-wait` (`disk_wait` too) | `dead` and `unknown`, which only appear in output |
 | `--sort` | see the table above | another word, with the list of valid ones |
 
-A number with a leading `-` is read as a flag: `--timeout -1` exits 4 with `unexpected argument '-1' found`.
+Every error names the value and the flag and says what to write instead: `invalid value '1m' for '--timeout <TIMEOUT>': whole seconds only: write 60 for 1m`. A negative number is read as a value, so it gets the same kind of message (`can't be negative: use 0 or more whole seconds`).
 
 ### Flags that change only the human output
 

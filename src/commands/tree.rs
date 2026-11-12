@@ -44,7 +44,7 @@ pub struct TreeCommand {
     json: bool,
 
     /// Maximum depth to display
-    #[arg(long, short, default_value = "10")]
+    #[arg(long, short, default_value = "10", value_parser = crate::core::values::count, allow_negative_numbers = true)]
     depth: usize,
 
     /// Show PIDs only (compact view)
@@ -52,11 +52,11 @@ pub struct TreeCommand {
     compact: bool,
 
     /// Only show processes using more than this CPU %
-    #[arg(long)]
+    #[arg(long, value_parser = crate::core::values::cpu_percent, allow_negative_numbers = true)]
     min_cpu: Option<f32>,
 
     /// Only show processes using more than this memory (MB)
-    #[arg(long)]
+    #[arg(long, value_parser = crate::core::values::megabytes, allow_negative_numbers = true)]
     min_mem: Option<f64>,
 
     /// Filter by status: running, sleeping, stopped, zombie, idle, starting, disk-wait
@@ -64,7 +64,7 @@ pub struct TreeCommand {
     status: Option<StatusFilter>,
 
     /// Only show processes running longer than this (whole seconds)
-    #[arg(long)]
+    #[arg(long, value_parser = crate::core::values::whole_seconds, allow_negative_numbers = true)]
     min_uptime: Option<u64>,
 
     /// Filter by directory; takes the next word as the directory unless it starts with '-'
