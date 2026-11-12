@@ -15,7 +15,7 @@ Or `rm` refuses with `rm: cannot remove 'data': Device or resource busy`. Both a
 ## The short answer
 
 ```bash
-# every process using anything on that mount
+# everything using that mount
 sudo lsof /mnt/usb
 
 # the same, with fuser (Linux)
@@ -120,10 +120,10 @@ Windows says *The action can't be completed because the file is open in another 
 [proc](https://github.com/yazeed/proc-cli) answers two of these questions directly:
 
 ```bash
-# what has this file open, or is running it?
+# what has this file open?
 proc for /mnt/usb/notes.txt
 
-# which processes are sitting in this directory, or below it?
+# who's working in or below it?
 proc in /mnt/usb
 ```
 

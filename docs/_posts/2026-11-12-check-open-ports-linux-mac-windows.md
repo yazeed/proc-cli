@@ -68,10 +68,17 @@ postgres   912 dev     7u  IPv4 0x3c4d      0t0  TCP 127.0.0.1:5432 (LISTEN)
 Minimal Linux installs and most Docker images don't include it. Install it:
 
 ```bash
-sudo apt install lsof        # Debian, Ubuntu
-sudo dnf install lsof        # Fedora, RHEL
-sudo apk add lsof            # Alpine
-sudo pacman -S lsof          # Arch
+# Debian, Ubuntu
+sudo apt install lsof
+
+# Fedora, RHEL
+sudo dnf install lsof
+
+# Alpine
+sudo apk add lsof
+
+# Arch
+sudo pacman -S lsof
 ```
 
 Or don't: `ss` (above) gives the same answer for ports and is usually installed. `netstat: command not found` is the same story: it's in the old `net-tools` package, which many distributions no longer install, and `ss` replaces it.
@@ -122,8 +129,11 @@ So in the examples above, Postgres on `127.0.0.1:5432` is private, and the Node 
 A firewall can still block a port that listens on everything:
 
 ```bash
-sudo ufw status                   # Ubuntu
-sudo firewall-cmd --list-ports    # Fedora, RHEL
+# Ubuntu
+sudo ufw status
+
+# Fedora, RHEL
+sudo firewall-cmd --list-ports
 ```
 
 To test from **another** machine whether a port really answers:
@@ -156,7 +166,7 @@ proc ports
 # only the ports open to the network
 proc ports --exposed
 
-# a range, or one port with its connections
+# a range, or one port in detail
 proc ports --range 3000-9000
 proc on :3000
 ```
