@@ -1,7 +1,8 @@
 ---
-title: "How to find and kill a process on any port (macOS and Linux)"
-description: "Every method to find and kill a process by port number on macOS and Linux — lsof, ss, netstat, fuser, and awk tricks for parsing their output."
+title: "How to find and kill a process on a port (Mac, Linux and Windows)"
+description: "Find what's using a port and kill it on macOS, Linux and Windows: lsof, ss, netstat, fuser, taskkill, PowerShell and npx kill-port, with the ports that are usually taken (3000, 5000, 8080)."
 date: 2026-03-06
+last_modified_at: 2026-11-12
 ---
 
 You start your dev server and get this:
@@ -12,7 +13,29 @@ Error: listen EADDRINUSE: address already in use :::3000
 
 Something is already bound to port 3000. Maybe a crashed process, a forgotten background job, or a previous run of the same server that didn't shut down cleanly. You need to find what's on the port, then kill it.
 
-This is one of the most common tasks in day-to-day development, and the commands are different depending on your OS, which tool is available, and what output format you need. This post covers every reliable method.
+This is one of the most common tasks in day-to-day development, and the commands are different depending on your OS, which tool is available, and what output format you need. This post covers every reliable method on macOS, Linux and Windows.
+
+## The short answer
+
+Swap `3000` for your port. Each block first shows what holds the port, then stops it.
+
+```bash
+# macOS and Linux
+lsof -i :3000 -sTCP:LISTEN
+kill 12345   # PID from column 2
+
+# Linux without lsof
+sudo ss -tlnp 'sport = :3000'
+sudo fuser -k -TERM 3000/tcp
+```
+
+```bat
+:: Windows (Command Prompt)
+netstat -ano | findstr :3000
+taskkill /PID 12345 /F
+```
+
+Each tool is explained below, with its quirks: what "Access is denied" means, why the port can stay busy after the process is gone, and which ports you shouldn't free by killing.
 
 ## lsof -i :PORT
 
@@ -217,6 +240,55 @@ fuser -k -TERM 3000/tcp   # Send SIGTERM instead of SIGKILL
 fuser -k -INT 3000/tcp    # Send SIGINT
 ```
 
+## Windows: netstat, taskkill and PowerShell
+
+Windows has neither `lsof` nor `ss`. Its `netstat` shows the owning PID with `-o`.
+
+### Command Prompt
+
+```bat
+netstat -ano | findstr :3000
+```
+
+```
+  TCP    0.0.0.0:3000           0.0.0.0:0              LISTENING       12345
+  TCP    [::]:3000              [::]:0                 LISTENING       12345
+```
+
+The last column is the PID. `findstr :3000` also matches ports 30000 to 30009 and connections *to* a remote port 3000, so read the local address (the second column) and the `LISTENING` state. To see what the PID is:
+
+```bat
+tasklist /FI "PID eq 12345"
+```
+
+Then stop it:
+
+```bat
+taskkill /PID 12345 /F
+```
+
+Without `/F`, `taskkill` asks the program to close, which a windowed app can honour but a console program such as `node` or `python` usually ignores. `/F` ends it immediately, like `kill -9`. Add `/T` to end its child processes too.
+
+### PowerShell
+
+PowerShell can ask for the listening socket directly instead of filtering text:
+
+```powershell
+# What's listening on port 3000, and which program it is
+Get-NetTCPConnection -LocalPort 3000 -State Listen
+Get-Process -Id (Get-NetTCPConnection -LocalPort 3000 -State Listen).OwningProcess
+
+# Stop it
+$ids = (Get-NetTCPConnection -LocalPort 3000 -State Listen).OwningProcess | Select-Object -Unique
+Stop-Process -Id $ids -Force
+```
+
+`Get-NetTCPConnection` reports an error when nothing listens on the port, which is also the answer: the port is free.
+
+### "Access is denied"
+
+A process started by another user, or by a service, can only be stopped from a terminal opened with **Run as administrator**. Services are better stopped as services (`net stop <name>` or the Services app), since their manager may restart a killed process.
+
 ## Extracting PIDs with awk
 
 Each tool has a different output format. Here's how to parse each one to get a clean PID.
@@ -284,6 +356,8 @@ fuser 3000/tcp 2>/dev/null | xargs -n1 echo
 | netstat | Linux | `netstat -tlnp \| grep :3000` | Table with PID/name column |
 | netstat | macOS | `netstat -anv \| grep '\.3000 '` | Table with a pid column |
 | fuser | Linux | `fuser 3000/tcp` | PID to stdout, label to stderr |
+| netstat | Windows | `netstat -ano \| findstr :3000` | Table, PID in the last column |
+| PowerShell | Windows | `Get-NetTCPConnection -LocalPort 3000 -State Listen` | Objects with `OwningProcess` |
 
 ## Killing the process
 
@@ -360,6 +434,15 @@ fuser -k -TERM 3000/tcp
 kill $(ss -tlnp 'sport = :3000' | grep -oP 'pid=\K[0-9]+')
 ```
 
+```powershell
+# PowerShell (Windows)
+Stop-Process -Id ((Get-NetTCPConnection -LocalPort 3000 -State Listen).OwningProcess | Select-Object -Unique) -Force
+```
+
+### npx kill-port
+
+If you're in a Node project, `npx kill-port 3000` is the one-liner people reach for (`npx kill-port 3000 8080` for several). It's handy, but know what it runs: on macOS and Linux it pipes `lsof` into `xargs kill -9`, and on Windows it runs `TaskKill /F`. So it force-kills whatever holds the port, with no look at what that is and no chance for the process to shut down cleanly. That's fine for your own dev server and risky for anything else on the port.
+
 ## Gotchas
 
 ### Root-owned processes require sudo
@@ -415,36 +498,46 @@ You can't kill a TIME_WAIT socket — there's no process to kill. You have two o
 
 If `netstat` or `ss` shows an entry with no PID in TIME_WAIT, that's what's happening. `lsof` never lists these sockets.
 
+## Ports that are usually taken
+
+The same few ports cause most "already in use" errors, and the right fix depends on who holds them:
+
+- **3000, 5173, 8000, 4200:** dev servers (Node, Next.js, React, Vite, Rails, Django, Angular). Usually your own server from an earlier run, a terminal tab you forgot, or a watcher that didn't exit: safe to stop once you've seen it's yours.
+- **5000 and 7000 on a Mac:** since macOS 12 Monterey, the AirPlay Receiver listens on both, in a process called `ControlCenter`. Killing it doesn't help: it comes back. Turn off **System Settings → General → AirDrop & Handoff → AirPlay Receiver** (on Monterey, **System Preferences → Sharing → AirPlay Receiver**), or run your app on another port.
+- **8080:** Java servers (Tomcat, Jenkins), proxies and the second dev server you started.
+- **5432 (Postgres), 3306 (MySQL), 6379 (Redis), 27017 (MongoDB):** databases, often run as services. A service manager restarts what you kill, so stop it through the manager instead (`brew services list`, then `brew services stop <name>`; `sudo systemctl stop redis`; or the Services app on Windows), or point your app at the one that's already running.
+
+If the process you killed keeps coming back on the same port, something is restarting it: a service manager, `nodemon`, a Docker container (`docker ps` shows its published ports) or a process supervisor. Stop that instead.
+
 ## The one-liner way
 
 All of the above works. But if you're doing this regularly — killing dev servers, checking what's on a port, freeing up ports — it's a lot of flags to remember, and the commands are different on macOS vs Linux.
 
-[proc](https://github.com/yazeed/proc-cli) is a cross-platform CLI that handles this with a consistent syntax:
+[proc](https://github.com/yazeed/proc-cli) is a cross-platform CLI that does this with one syntax, on macOS, Linux and Windows:
 
 ```bash
-# What's on port 3000?
+# What's on port 3000: the process, its command, directory and who's connected
 proc on :3000
 
-# Kill it (asks for confirmation)
+# Free the port: shows what it will stop and asks first, asks each holder to
+# exit, forces any still running after 5 seconds, then checks the port is free
+proc free :3000
+
+# Several ports at once
+proc free :3000 :8080 :4200
+
+# Kill immediately (also asks first)
 proc kill :3000
-
-# Kill without confirmation
-proc kill :3000 --yes
-
-# Kill multiple ports at once
-proc kill :3000 :8080 :4200
 ```
 
-`proc kill :3000` signals every process holding the port, including workers that share the socket.
-
-Same commands on macOS and Linux. No flags to remember, no awk pipelines to construct.
+`proc free` and `proc kill` stop every process holding the port, including workers that share the socket, and list them before they act, so you see whether it's your dev server or something you'd rather keep. Add `--yes` to skip the question in a script. No flags to remember, no awk pipelines to construct.
 
 ## Install
 
 ```bash
 brew install yazeed/proc/proc     # macOS
+npm install -g proc-cli           # npm/bun, any OS
 cargo install proc-cli            # Rust
-npm install -g proc-cli           # npm/bun
 ```
 
-See the [GitHub repo](https://github.com/yazeed/proc-cli) for all installation options.
+On Windows: `scoop bucket add proc https://github.com/yazeed/scoop-bucket-proc` and `scoop install proc`. The [install page](/install) lists every other way: apt, dnf, pip, Nix, Docker and more.

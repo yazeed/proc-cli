@@ -46,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Blog post: [how to find and kill a process on a port](https://proc-cli.com/posts/find-kill-process-on-port-macos-linux/) covers Windows and opens with the answer.** Searches for this name the OS ("kill port windows", "kill process on port mac") and the port ("kill port 3000"), and the post covered macOS and Linux only, starting with background. It now opens with the commands for each OS, adds Windows (`netstat -ano`, `taskkill`, PowerShell's `Get-NetTCPConnection`, and what "Access is denied" means), says what `npx kill-port` runs (SIGKILL, with no look at the process), lists the ports that are usually taken and how to free each (a dev server, the macOS AirPlay Receiver on 5000 and 7000, a database a service manager restarts), and shows `proc free`. Its address is unchanged.
+
 - **A name that's only in command lines gets the same answer from every command.** Given a name no process has but some command lines do (`proc kill mcp-server-kalshi`, where 6 processes ran `uv --directory …/mcp-server-kalshi`), the commands answered four ways: `kill`, `stop`, `freeze`, `thaw` and `wait` said it twice (`⚠ Not found:` with the hint, then the error); `by`, `on` and `tree` said it once; `info` and `why` printed a warning and no error; and `list` and `watch` printed `⚠ No processes found` with no hint at all. Every one now says:
 
   ```
