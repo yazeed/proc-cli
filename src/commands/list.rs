@@ -95,6 +95,8 @@ impl ListCommand {
         // marked, when its name matches; a match in its command line is left
         // out, and named
         let mut left_out: Vec<Ancestor> = Vec::new();
+        // the names that match no process by name but are in command lines
+        let mut command_line: Vec<(String, usize)> = Vec::new();
         let mut processes = if !self.name.is_empty() {
             let names = flatten_targets(&self.name);
             let mut all = Vec::new();
@@ -110,7 +112,7 @@ impl ListCommand {
                         left_out.extend(found.left_out);
                     }
                     Err(ProcError::AncestorsOnly { ancestors, .. }) => left_out.extend(ancestors),
-                    Err(_) => {}
+                    Err(error) => command_line.extend(error.command_line_match()),
                 }
             }
             all
@@ -122,7 +124,9 @@ impl ListCommand {
         if let Some(warning) = left_out_warning(&left_out) {
             printer.warning(&warning);
         }
-        let printer = printer.with_left_out(&left_out);
+        let printer = printer
+            .with_left_out(&left_out)
+            .with_command_line(&command_line);
 
         // Real CPU readings for the table, --min-cpu and --sort cpu
         Process::measure_cpu(&mut processes);

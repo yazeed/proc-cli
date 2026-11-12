@@ -147,6 +147,8 @@ impl OnCommand {
         let mut unseen: Vec<(String, UnseenPort)> = Vec::new();
         // the processes proc runs under that a name matched and left out
         let mut left_out: Vec<(String, Ancestor)> = Vec::new();
+        // the names that matched nothing but are in command lines
+        let mut command_line: Vec<(String, usize)> = Vec::new();
 
         for target in targets {
             let found = match parse_target(target) {
@@ -174,12 +176,22 @@ impl OnCommand {
                     left_out.extend(ancestors.into_iter().map(|a| (target.clone(), a)));
                     not_found.push(target.clone());
                 }
-                _ => not_found.push(target.clone()),
+                other => {
+                    if let Err(error) = &other {
+                        command_line.extend(error.command_line_match());
+                    }
+                    not_found.push(target.clone());
+                }
             }
         }
 
         if results.is_empty() {
-            return Err(nothing_resolved(&self.target, &unseen, &left_out));
+            return Err(nothing_resolved(
+                &self.target,
+                &unseen,
+                &left_out,
+                &command_line,
+            ));
         }
         let left_out = Resolved {
             left_out,

@@ -78,9 +78,12 @@ impl KillCommand {
         let mode = NameMatch::from_flag(self.cmd);
         let resolved = resolve_targets_excluding_self(&targets, mode);
 
-        // Warn about targets that weren't found
-        if let Some(warning) = resolved.warning() {
-            printer.warning(&warning);
+        // Warn about targets that weren't found; when nothing was found at
+        // all, the error says it instead
+        if !resolved.only_not_found() {
+            if let Some(warning) = resolved.warning() {
+                printer.warning(&warning);
+            }
         }
         // the JSON results list the targets that matched nothing, and the
         // processes proc runs under that a target matched and left out
@@ -105,6 +108,7 @@ impl KillCommand {
                 &self.target,
                 &resolved.unseen,
                 &resolved.left_out,
+                &resolved.command_line,
             ));
         }
 

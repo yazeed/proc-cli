@@ -55,7 +55,7 @@ One process is always one line. COMMAND takes the width the other columns leave 
 
 ## When nothing matches
 
-`⚠ No processes found`, exit 0: an empty list is still an answer. [Messages](messages) explains each message.
+`⚠ No processes found`, exit 0: an empty list is still an answer. A name that no process has but some command lines do gets a line saying how many (`1 process has 'serve' in its command line (add --cmd to match those)`) and `Try: proc by serve --cmd to see them`. [Messages](messages) explains each message.
 
 ## JSON
 

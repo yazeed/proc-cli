@@ -15,17 +15,20 @@ pub enum ProcError {
     /// Every target matched nothing. The message, reason and exit code are
     /// `error`'s; `not_found` lists the targets as typed (a comma list split),
     /// which the JSON error carries as `not_found`
-    #[error("{error}")]
+    #[error("{}", none_found(error, command_line))]
     NoneFound {
         /// The error for the targets: what proc said before it listed them
         error: Box<ProcError>,
         /// Each target, as typed
         not_found: Vec<String>,
+        /// The names among them that are in command lines, each with how many
+        /// (what `--cmd` would match), which the message lists
+        command_line: Vec<(String, usize)>,
     },
 
     /// No process has this name, but some have it in their command line, which
     /// `--cmd` would match
-    #[error("No process found matching '{name}'\n  {}\n  Try: proc list to list all processes", command_line_hint(.name, *.in_command_line))]
+    #[error("No process found matching '{name}'\n{}", command_line_lines(&[(.name.clone(), *.in_command_line)]))]
     NameNotFound {
         /// The name that was looked for
         name: String,
@@ -196,7 +199,48 @@ pub fn command_line_hint(name: &str, count: usize) -> String {
     format!("{count} {who} {has} '{name}' in {its} command line (add --cmd to match those)")
 }
 
+/// The lines under "No process found" for names that are only in command
+/// lines: how many command lines have each, then the command that lists them
+/// (`by` takes one name, `list` several)
+pub fn command_line_lines(names: &[(String, usize)]) -> String {
+    let mut lines: Vec<String> = names
+        .iter()
+        .map(|(name, count)| format!("  {}", command_line_hint(name, *count)))
+        .collect();
+    let typed: Vec<&str> = names.iter().map(|(name, _)| name.as_str()).collect();
+    let command = if typed.len() == 1 { "by" } else { "list" };
+    lines.push(format!(
+        "  Try: proc {command} {} --cmd to see them",
+        typed.join(" ")
+    ));
+    lines.join("\n")
+}
+
+/// The message when every target matched nothing: the targets' error, or,
+/// when names among them are in command lines, the error with those lines
+fn none_found(error: &ProcError, command_line: &[(String, usize)]) -> String {
+    match error {
+        ProcError::ProcessNotFound(targets) if !command_line.is_empty() => format!(
+            "No process found matching '{targets}'\n{}",
+            command_line_lines(command_line)
+        ),
+        _ => error.to_string(),
+    }
+}
+
 impl ProcError {
+    /// The name and how many command lines have it, when this error is a
+    /// name only in command lines
+    pub fn command_line_match(&self) -> Option<(String, usize)> {
+        match self {
+            ProcError::NameNotFound {
+                name,
+                in_command_line,
+            } => Some((name.clone(), *in_command_line)),
+            _ => None,
+        }
+    }
+
     /// The `--cmd` hint, when this error carries one
     pub fn command_line_hint(&self) -> Option<String> {
         match self {
@@ -416,7 +460,7 @@ mod tests {
                     name: "serve".to_string(),
                     in_command_line: 2,
                 },
-                "No process found matching 'serve'\n  2 processes have 'serve' in their command line (add --cmd to match those)\n  Try: proc list to list all processes",
+                "No process found matching 'serve'\n  2 processes have 'serve' in their command line (add --cmd to match those)\n  Try: proc by serve --cmd to see them",
                 2,
                 Some("command_line_only"),
             ),
@@ -584,6 +628,27 @@ mod tests {
         assert_eq!(REASON_COMMAND_LINE_ONLY, "command_line_only");
         assert_eq!(REASON_RULED_OUT, "ruled_out");
         assert_eq!(REASON_PERMISSION_DENIED, "permission_denied");
+    }
+
+    #[test]
+    fn several_names_in_command_lines_are_each_counted_and_listed_together() {
+        // `by` takes one name, so the command for several is `list`
+        assert_eq!(
+            command_line_lines(&[("serve".to_string(), 1), ("worker".to_string(), 3)]),
+            "  1 process has 'serve' in its command line (add --cmd to match those)\n  3 processes have 'worker' in their command line (add --cmd to match those)\n  Try: proc list serve worker --cmd to see them"
+        );
+        // every target in the message, then what is in command lines
+        let none = ProcError::NoneFound {
+            error: Box::new(ProcError::ProcessNotFound("ghost serve".to_string())),
+            not_found: vec!["ghost".to_string(), "serve".to_string()],
+            command_line: vec![("serve".to_string(), 2)],
+        };
+        assert_eq!(
+            none.to_string(),
+            "No process found matching 'ghost serve'\n  2 processes have 'serve' in their command line (add --cmd to match those)\n  Try: proc by serve --cmd to see them"
+        );
+        // the JSON reason is still the targets' own
+        assert_eq!(none.reason(), Some(REASON_NOT_FOUND));
     }
 
     #[test]

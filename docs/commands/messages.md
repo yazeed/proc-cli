@@ -15,7 +15,7 @@ No process has that PID or name, or it exited before proc looked. Run `proc list
 
 #### `3 processes have 'serve' in their command line (add --cmd to match those)`
 
-No process is named `serve`, but three have it in their command line, such as `python -m http.server`. Add `--cmd` to match those, with `--dry-run` first: a word in a command line matches far more than a name does.
+No process is named `serve`, but three have it in their command line, such as `python -m http.server`. Every command that takes a name says it the same way, under `No process found matching 'serve'` and above `Try: proc by serve --cmd to see them`, which lists them without touching them. Add `--cmd` to match those, with `--dry-run` first: a word in a command line matches far more than a name does.
 
 #### `No process found matching '1234' (ruled out by --by node)`
 
@@ -117,7 +117,7 @@ Under a card (`on`, `info`, `why`, `for`): the system showed proc this process o
 
 #### `⚠ No processes found`
 
-A search found nothing: `list`, or `in` (`⚠ No processes found in /path`). That is an answer, so the exit code is 0, as it is for `✓ No stuck processes found` and `✓ No orphaned processes found`.
+A search found nothing: `list`, or `in` (`⚠ No processes found in /path`). That is an answer, so the exit code is 0, as it is for `✓ No stuck processes found` and `✓ No orphaned processes found`. When `list` or `watch` was given a name that some command lines have, the lines under it say how many and the command that shows them, as the exit 2 error does.
 
 #### `Cancelled`
 

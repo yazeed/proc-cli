@@ -84,8 +84,11 @@ impl WaitCommand {
         let mode = NameMatch::from_flag(self.cmd);
         let resolved = resolve_targets_excluding_self(&targets, mode);
 
-        if let Some(warning) = resolved.warning() {
-            printer.warning(&warning);
+        // when nothing was found at all, the error says it instead
+        if !resolved.only_not_found() {
+            if let Some(warning) = resolved.warning() {
+                printer.warning(&warning);
+            }
         }
         let left_out = resolved.left_out_ancestors();
         let not_found = resolved.not_found;
@@ -100,6 +103,7 @@ impl WaitCommand {
                 &self.target,
                 &resolved.unseen,
                 &resolved.left_out,
+                &resolved.command_line,
             ));
         }
 

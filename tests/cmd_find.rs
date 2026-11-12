@@ -416,6 +416,72 @@ fn by_ignores_a_word_only_in_the_command_line_and_says_cmd_would_find_it() {
     assert!(lists(&json, "processes", p.pid()), "{json}");
 }
 
+/// A name that is only in a command line gets one answer from every command
+/// that takes a name: not found, how many command lines have it, and the
+/// command that shows them. Said once: no "Not found:" warning before the
+/// error, and no `proc list` advice. `list` and `watch` list nothing (exit 0)
+/// and say the same under "No processes found".
+#[test]
+fn a_name_only_in_a_command_line_gets_the_same_answer_everywhere() {
+    let word = unused_word();
+    let _p = Owned::with_args(&[&word]);
+    let hint = format!("1 process has '{word}' in its command line (add --cmd to match those)");
+    let try_line = format!("Try: proc by {word} --cmd to see them");
+
+    let mut errors: Vec<Vec<&str>> = vec![
+        vec!["by"],
+        vec!["on"],
+        vec!["tree"],
+        vec!["info"],
+        vec!["why"],
+        vec!["kill", "--dry-run"],
+        vec!["stop", "--dry-run"],
+        vec!["unstick", "--dry-run"],
+        vec!["wait", "--timeout", "1"],
+    ];
+    if cfg!(unix) {
+        errors.extend([vec!["freeze", "--dry-run"], vec!["thaw", "--dry-run"]]);
+    }
+    for args in errors {
+        let output = proc_cmd()
+            .arg(args[0])
+            .arg(&word)
+            .args(&args[1..])
+            .output()
+            .unwrap();
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let what = args.join(" ");
+        assert_eq!(output.status.code(), Some(2), "{what}: {text}");
+        assert_eq!(
+            text.matches(&format!("No process found matching '{word}'"))
+                .count(),
+            1,
+            "{what}: {text}"
+        );
+        assert_eq!(text.matches(&hint).count(), 1, "{what}: {text}");
+        assert!(text.contains(&try_line), "{what}: {text}");
+        assert!(!text.contains("Not found:"), "{what}: {text}");
+        assert!(!text.contains("Try: proc list"), "{what}: {text}");
+    }
+
+    for command in ["list", "watch"] {
+        let output = proc_cmd()
+            .args([command, &word])
+            .write_stdin("")
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&output.stdout);
+        assert_eq!(output.status.code(), Some(0), "{command}: {text}");
+        assert!(text.contains("No processes found"), "{command}: {text}");
+        assert_eq!(text.matches(&hint).count(), 1, "{command}: {text}");
+        assert!(text.contains(&try_line), "{command}: {text}");
+    }
+}
+
 #[test]
 fn by_an_empty_name_is_invalid_input_not_a_search() {
     // "" names nothing; it was a search that found nothing (exit 2), and every

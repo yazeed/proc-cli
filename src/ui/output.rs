@@ -116,6 +116,9 @@ pub struct Printer {
     /// The processes the preview listed, in its order, for the receipt of an
     /// action (see [`Printer::with_processes`])
     processes: Option<Vec<Process>>,
+    /// The names that matched nothing but are in command lines, with how
+    /// many (see [`Printer::with_command_line`])
+    command_line: Vec<(String, usize)>,
 }
 
 /// Detect terminal width, falling back to 120 when stdout is not a TTY.
@@ -149,7 +152,16 @@ impl Printer {
             not_found: None,
             left_out: Vec::new(),
             processes: None,
+            command_line: Vec::new(),
         }
+    }
+
+    /// Say which names matched nothing but are in command lines, each with
+    /// how many: an empty list then says so under "No processes found", with
+    /// the command that shows them (human output only)
+    pub fn with_command_line(mut self, command_line: &[(String, usize)]) -> Self {
+        self.command_line = command_line.to_vec();
+        self
     }
 
     /// Say which processes proc runs under a target matched and left out: the
@@ -308,10 +320,14 @@ impl Printer {
         whole_command: bool,
     ) -> std::io::Result<()> {
         if processes.is_empty() {
-            let msg = match context {
+            let mut msg = match context {
                 Some(ctx) => format!("No processes found {}", ctx),
                 None => "No processes found".to_string(),
             };
+            if !self.command_line.is_empty() {
+                msg.push('\n');
+                msg.push_str(&crate::error::command_line_lines(&self.command_line));
+            }
             return self.write_warning(out, &msg);
         }
 
@@ -961,6 +977,16 @@ mod tests {
         let out =
             written(|w| human().write_processes_human(w, screen(120), &[], Some("in /srv"), false));
         assert_eq!(out, "⚠ No processes found in /srv\n");
+    }
+
+    #[test]
+    fn no_processes_names_the_command_lines_a_name_is_in() {
+        let printer = human().with_command_line(&[("serve".to_string(), 2)]);
+        let out = written(|w| printer.write_processes_human(w, screen(120), &[], None, false));
+        assert_eq!(
+            out,
+            "⚠ No processes found\n  2 processes have 'serve' in their command line (add --cmd to match those)\n  Try: proc by serve --cmd to see them\n"
+        );
     }
 
     #[test]

@@ -702,17 +702,17 @@ fn why_warns_about_a_target_that_is_gone_and_still_answers_for_the_rest() {
 }
 
 #[test]
-fn why_a_target_nothing_matches_warns_and_exits_not_found() {
+fn why_a_target_nothing_matches_says_so_and_exits_not_found() {
+    // the error every command gives, said once
     let (out, stderr, code) = run_text(&["why", MISSING_PID]);
     assert_eq!(code, 2);
+    assert_eq!(out, "");
     assert_eq!(
-        out,
+        stderr,
         format!(
-            "⚠ No process found matching '{MISSING_PID}'\n  Try: proc list to list all processes\n"
+            "No process found matching '{MISSING_PID}'\n  Try: proc list to list all processes\n"
         )
     );
-    // The warning was the whole answer: nothing more goes to stderr
-    assert_eq!(stderr, "");
 }
 
 #[test]
@@ -1145,9 +1145,16 @@ fn info_shows_a_pid_given_twice_once() {
 
 #[test]
 fn info_with_nothing_found_for_several_targets_names_each_one_in_the_list() {
-    let (out, _, code) = run_text(&["info", MISSING_PID, "99999998"]);
+    // the error every command gives, said once
+    let (out, stderr, code) = run_text(&["info", MISSING_PID, "99999998"]);
     assert_eq!(code, 2);
-    assert_eq!(out, format!("⚠ Not found: {MISSING_PID}, 99999998\n"));
+    assert_eq!(out, "");
+    assert_eq!(
+        stderr,
+        format!(
+            "No process found matching '{MISSING_PID} 99999998'\n  Try: proc list to list all processes\n"
+        )
+    );
     let (json, code) = run_json(&["info", MISSING_PID, "99999998", "--json"]);
     assert_eq!(code, 2);
     assert_eq!(
@@ -1157,11 +1164,16 @@ fn info_with_nothing_found_for_several_targets_names_each_one_in_the_list() {
 }
 
 #[test]
-fn info_with_nothing_found_warns_and_exits_not_found() {
+fn info_with_nothing_found_says_so_and_exits_not_found() {
     let (out, stderr, code) = run_text(&["info", MISSING_PID]);
     assert_eq!(code, 2);
-    assert_eq!(out, format!("⚠ Not found: {MISSING_PID}\n"));
-    assert_eq!(stderr, "");
+    assert_eq!(out, "");
+    assert_eq!(
+        stderr,
+        format!(
+            "No process found matching '{MISSING_PID}'\n  Try: proc list to list all processes\n"
+        )
+    );
     let (json, code) = run_json(&["info", MISSING_PID, "--json"]);
     assert_eq!(code, 2);
     assert_eq!(json["success"], false);
@@ -1212,7 +1224,7 @@ fn info_name_is_the_whole_name_and_cmd_widens_it_to_the_command_line() {
     assert_eq!(code, 2, "{out}{err}");
     assert!(
         format!("{out}{err}").contains(&format!(
-            "Not found: {word}\n  1 process has '{word}' in its command line (add --cmd to match those)"
+            "No process found matching '{word}'\n  1 process has '{word}' in its command line (add --cmd to match those)\n  Try: proc by {word} --cmd to see them"
         )),
         "{out}{err}"
     );
@@ -1819,7 +1831,9 @@ fn a_missing_yes_with_json_lists_the_processes_that_would_change() {
 
 #[test]
 fn a_failure_the_command_already_reported_prints_nothing_more() {
-    let (out, stderr, code) = run_text(&["info", MISSING_PID]);
+    // `on` with several targets answers each one in turn, a warning for each
+    // that matched nothing; the exit code is all that is left to say
+    let (out, stderr, code) = run_text(&["on", MISSING_PID, "99999998"]);
     assert_eq!(code, 2);
     assert!(!out.is_empty());
     assert_eq!(stderr, "");

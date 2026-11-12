@@ -46,7 +46,7 @@ The process table [`proc list`](list) prints: PID, NAME, USER, CPU%, MEM, UPTIME
 
 ## When nothing matches
 
-A name no process has is `No process found matching 'node'`, exit 2, and when it is in some command lines the error says so: `3 processes have 'serve' in their command line (add --cmd to match those)`. A name that matches, but whose processes the filters leave out, is `⚠ No processes found by 'node'`, exit 0. [Messages](messages) explains each one.
+A name no process has is `No process found matching 'node'`, exit 2, and when it is in some command lines the error says so: `3 processes have 'serve' in their command line (add --cmd to match those)`, then `Try: proc by serve --cmd to see them`. Every command that takes a name says it this way. A name that matches, but whose processes the filters leave out, is `⚠ No processes found by 'node'`, exit 0. [Messages](messages) explains each one.
 
 ## JSON
 

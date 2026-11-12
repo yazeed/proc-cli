@@ -41,6 +41,8 @@ No process found matching '3000'
 
 Nothing was killed, which is the right outcome. But the hint sends you to the wrong place. It doesn't mention that you probably meant the port, `:3000`.
 
+*Update: from the release after 2.4.0, proc says it once. The `⚠ Not found: 3000` line is gone and the rest reads the same, so the hint still doesn't mention `:3000`.*
+
 ### "List everything": `proc ps aux`
 
 `ps aux` is how many people list every process. proc has a `ps` command that already lists everything, so it reads `aux` as the name of a process to look for. There's no process named `aux`, so it prints `⚠ No processes found` and exits with status 0, which means success. A person can tell something's off. A script can't: it carries on as if the machine had no processes. A wrong answer that looks like a right one is the worst kind of failure, and it's the kind we fix first.

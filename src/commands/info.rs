@@ -85,16 +85,18 @@ impl InfoCommand {
         let warning = resolved.warning();
         let note = resolved.note();
         let left_out_json = resolved.left_out_ancestors();
+        let only_not_found = resolved.only_not_found();
         let Resolved {
             processes: mut found,
             not_found,
             unseen,
             left_out,
+            command_line,
             ..
         } = resolved;
         // what nothing matching means: not found, or a port in use by a
         // process proc can't see
-        let nothing = nothing_resolved(&self.targets, &unseen, &left_out);
+        let nothing = nothing_resolved(&self.targets, &unseen, &left_out, &command_line);
 
         // Apply --in and --by: guards that rule out everything found say so
         let guards = Guards::new(&self.in_dir, &self.by_name, self.start_time);
@@ -153,7 +155,8 @@ impl InfoCommand {
                 ));
             }
 
-            if let Some(warning) = warning {
+            // when nothing was found at all, the error says it instead
+            if let Some(warning) = warning.filter(|_| !only_not_found) {
                 printer.warning(&warning);
             }
             if let Some(note) = note {
@@ -162,6 +165,11 @@ impl InfoCommand {
         }
 
         if found.is_empty() {
+            // as every other command says it: the targets, and the names among
+            // them that are in command lines
+            if only_not_found && !self.json {
+                return Err(nothing);
+            }
             let message = match &nothing {
                 ProcError::PortUnseen(_) | ProcError::AncestorsOnly { .. } => nothing.to_string(),
                 _ => format!("No process found matching '{}'", self.targets.join(" ")),
@@ -211,7 +219,7 @@ fn resolve_all(targets: &[String], resolve: impl Fn(&str) -> Result<NameLookup>)
                     _ => {}
                 }
                 resolved.not_found.push(target.clone());
-                resolved.hints.extend(error.command_line_hint());
+                resolved.command_line.extend(error.command_line_match());
             }
         }
     }
@@ -301,7 +309,7 @@ mod tests {
         });
         assert_eq!(resolved.processes.len(), 1);
         assert_eq!(resolved.not_found, vec!["b"]);
-        assert!(resolved.hints.is_empty());
+        assert!(resolved.command_line.is_empty());
         assert_eq!(resolved.warning().unwrap(), "Not found: b");
     }
 

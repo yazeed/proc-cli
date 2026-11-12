@@ -344,6 +344,7 @@ impl UnstickCommand {
                 typed,
                 &resolved.unseen,
                 &resolved.left_out,
+                &resolved.command_line,
             ))
         } else {
             Ok(resolved)

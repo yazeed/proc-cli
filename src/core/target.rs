@@ -7,7 +7,7 @@
 
 use crate::core::port::{parse_port, PortInfo, UnseenPort};
 use crate::core::{Ancestor, Ancestors, NameLookup, NameMatch, Process};
-use crate::error::{ProcError, Result};
+use crate::error::{command_line_hint, ProcError, Result};
 
 /// Resolved target type
 #[derive(Debug, Clone)]
@@ -247,9 +247,9 @@ pub struct Resolved {
     pub processes: Vec<Process>,
     /// The targets that matched nothing
     pub not_found: Vec<String>,
-    /// For a name that matched nothing, but is in some command lines: what
-    /// `--cmd` would find
-    pub hints: Vec<String>,
+    /// The names that matched nothing but are in some command lines, each
+    /// with how many: what `--cmd` would find
+    pub command_line: Vec<(String, usize)>,
     /// The targets that are ports whose holder proc can't see (another
     /// user's process, or a system that hides other users' sockets), each with
     /// its port and why. They are in `not_found` too, since they resolved to no
@@ -277,9 +277,9 @@ impl Resolved {
         let mut lines = Vec::new();
         if !missing.is_empty() {
             let mut warning = format!("Not found: {}", missing.join(", "));
-            for hint in &self.hints {
+            for (name, count) in &self.command_line {
                 warning.push_str("\n  ");
-                warning.push_str(hint);
+                warning.push_str(&command_line_hint(name, *count));
             }
             lines.push(warning);
         }
@@ -288,6 +288,13 @@ impl Resolved {
         }
         lines.extend(left_out_warning(&self.left_out_ancestors()));
         (!lines.is_empty()).then(|| lines.join("\n"))
+    }
+
+    /// Whether nothing was found and every target simply matched nothing (no
+    /// port proc can't see, nothing left out): then the error for it says all
+    /// the warning would, and a command prints only the error
+    pub fn only_not_found(&self) -> bool {
+        self.processes.is_empty() && self.unseen.is_empty() && self.left_out.is_empty()
     }
 
     /// The line for the processes proc runs under that a name matched and that
@@ -335,12 +342,14 @@ pub(crate) fn runs_this_proc(ancestors: &[Ancestor]) -> String {
 /// process: a port whose holder proc can't see when one of them was
 /// (`unseen`, from [`Resolved`]), since "not found" would be untrue; else the
 /// processes proc runs under that matched and were left out (`left_out`), when
-/// there were any; otherwise not found, with every target listed
+/// there were any; otherwise not found, with every target listed and the
+/// names among them that are in command lines (`command_line`)
 /// ([`ProcError::NoneFound`])
 pub fn nothing_resolved(
     targets: &[String],
     unseen: &[(String, UnseenPort)],
     left_out: &[(String, Ancestor)],
+    command_line: &[(String, usize)],
 ) -> ProcError {
     if let Some(&(_, port)) = unseen.first() {
         return ProcError::PortUnseen(port);
@@ -349,6 +358,7 @@ pub fn nothing_resolved(
         return ProcError::NoneFound {
             error: Box::new(ProcError::ProcessNotFound(targets.join(" "))),
             not_found: flatten_targets(targets),
+            command_line: command_line.to_vec(),
         };
     }
     let resolved = Resolved {
@@ -427,7 +437,7 @@ fn resolve_targets_impl(
                     _ => {}
                 }
                 resolved.not_found.push(target.clone());
-                resolved.hints.extend(error.command_line_hint());
+                resolved.command_line.extend(error.command_line_match());
             }
         }
     }
@@ -735,7 +745,7 @@ mod tests {
         // `kill zsh ghost`: ghost matched nothing, zsh only the shell
         let left_out = vec![("zsh".to_string(), zsh(81340))];
         assert!(matches!(
-            nothing_resolved(&typed(&["zsh", "ghost"]), &[], &left_out),
+            nothing_resolved(&typed(&["zsh", "ghost"]), &[], &left_out, &[]),
             ProcError::AncestorsOnly { ref name, .. } if name == "zsh"
         ));
         // two targets that each matched only the shell
@@ -744,7 +754,7 @@ mod tests {
             ("-zsh".to_string(), zsh(81340)),
         ];
         assert!(matches!(
-            nothing_resolved(&typed(&["zsh", "-zsh"]), &[], &both),
+            nothing_resolved(&typed(&["zsh", "-zsh"]), &[], &both, &[]),
             ProcError::AncestorsOnly { ref name, ref ancestors } if name == "zsh -zsh" && ancestors.len() == 1
         ));
     }
@@ -753,7 +763,7 @@ mod tests {
     fn nothing_resolved_names_the_ancestors_when_all_were_left_out() {
         let left_out = vec![("zsh".to_string(), zsh(81340))];
         assert!(matches!(
-            nothing_resolved(&typed(&["zsh"]), &[], &left_out),
+            nothing_resolved(&typed(&["zsh"]), &[], &left_out, &[]),
             ProcError::AncestorsOnly { ref name, ref ancestors }
                 if name == "zsh" && ancestors == &vec![zsh(81340)]
         ));
@@ -766,7 +776,7 @@ mod tests {
             },
         )];
         assert!(matches!(
-            nothing_resolved(&typed(&[":80", "zsh"]), &unseen, &left_out),
+            nothing_resolved(&typed(&[":80", "zsh"]), &unseen, &left_out, &[]),
             ProcError::PortUnseen(_)
         ));
     }
@@ -837,7 +847,7 @@ mod tests {
             "Port 80 is in use, but proc can't see which process holds it: it belongs to another user"
         );
         assert!(matches!(
-            nothing_resolved(&typed(&[":80"]), &unseen.unseen, &[]),
+            nothing_resolved(&typed(&[":80"]), &unseen.unseen, &[], &[]),
             ProcError::PortUnseen(port) if port == other
         ));
 
@@ -854,7 +864,7 @@ mod tests {
 
         // no port of another user's: not found, as before, with every target
         // listed for the JSON (a comma list split)
-        let none = nothing_resolved(&typed(&["ghost", "1,:3000"]), &[], &[]);
+        let none = nothing_resolved(&typed(&["ghost", "1,:3000"]), &[], &[], &[]);
         assert_eq!(
             none.to_string(),
             "No process found matching 'ghost 1,:3000'\n  Try: proc list to list all processes"
@@ -881,7 +891,7 @@ mod tests {
             "proc can't tell whether port 22 is in use: this system hides other users' sockets (security.curtain=1)"
         );
         assert!(matches!(
-            nothing_resolved(&typed(&[":22"]), &resolved.unseen, &[]),
+            nothing_resolved(&typed(&[":22"]), &resolved.unseen, &[], &[]),
             ProcError::PortUnseen(port) if port == hidden
         ));
     }

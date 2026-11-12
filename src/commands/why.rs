@@ -15,8 +15,8 @@ use crate::core::port::SocketReading;
 use crate::core::process::ProcessDetails;
 use crate::core::target::{includes_note, left_out_warning, lookup_target, resolve_port_in};
 use crate::core::{
-    flatten_targets, parse_target, Ancestor, Ancestors, NameLookup, NameMatch, PortInfo, Process,
-    ProcessStatus, Protocol, TargetType,
+    flatten_targets, nothing_resolved, parse_target, Ancestor, Ancestors, NameLookup, NameMatch,
+    PortInfo, Process, ProcessStatus, Protocol, TargetType,
 };
 use crate::error::{ExitCode, ProcError, Result};
 use crate::out_println;
@@ -67,6 +67,14 @@ impl WhyCommand {
         let mut found_any = false;
         let mut first_error: Option<ProcError> = None;
         let mut not_found: Vec<String> = Vec::new();
+        // the warning for each target that matched nothing, printed once the
+        // loop knows something was found (otherwise the error says it), and
+        // the names among them that are in command lines
+        let mut warnings: Vec<String> = Vec::new();
+        let mut command_line: Vec<(String, usize)> = Vec::new();
+        // whether every target that matched nothing simply wasn't found (no
+        // port proc can't see, nothing left out)
+        let mut plain_not_found = true;
         // The processes proc runs under that a name matched: left out (with
         // `--cmd`) or kept, marked
         let mut left_out: Vec<Ancestor> = Vec::new();
@@ -116,7 +124,12 @@ impl WhyCommand {
                     if let ProcError::AncestorsOnly { ref ancestors, .. } = error {
                         left_out.extend(ancestors.iter().cloned());
                     }
-                    printer.warning(&warning);
+                    warnings.push(warning);
+                    command_line.extend(error.command_line_match());
+                    plain_not_found &= matches!(
+                        error,
+                        ProcError::ProcessNotFound(_) | ProcError::NameNotFound { .. }
+                    );
                     first_error.get_or_insert(error);
                     not_found.push(target_str.clone());
                     shown.push(None);
@@ -166,11 +179,18 @@ impl WhyCommand {
 
         left_out.sort_by_key(|a| a.pid);
         left_out.dedup_by_key(|a| a.pid);
+        // nothing found, and every target simply not found: the error says it
+        let only_not_found = !found_any && plain_not_found && left_out.is_empty();
+        if !only_not_found {
+            for warning in &warnings {
+                printer.warning(warning);
+            }
+        }
         if let Some(warning) = left_out_warning(&left_out) {
             printer.warning(&warning);
         }
 
-        if !self.json {
+        if !self.json && !only_not_found {
             self.print_targets(&shown, &pid_map, read_if_done(&reading));
             included.sort_by_key(|p| p.pid);
             included.dedup_by_key(|p| p.pid);
@@ -189,12 +209,18 @@ impl WhyCommand {
                 ProcError::NoneFound {
                     error: Box::new(error),
                     not_found: flatten_targets(&self.target),
+                    command_line: Vec::new(),
                 }
             } else {
                 error
             };
             if self.json {
                 return Err(error);
+            }
+            // said once, every target and the names in command lines, as
+            // every other command says it
+            if only_not_found {
+                return Err(nothing_resolved(&self.target, &[], &[], &command_line));
             }
             // Humans already saw a warning per target
             return Err(ProcError::reported(

@@ -19,7 +19,7 @@ use crate::core::process::{
 use crate::core::target::{includes_note, left_out_warning};
 use crate::core::{
     flatten_targets, guard_targets, nothing_resolved, parse_target, resolve_in_dir,
-    resolve_targets, sort_processes, Ancestor, Guards, Hit, NameMatch, Process, SortKey,
+    resolve_targets, sort_processes, Ancestor, Ancestors, Guards, Hit, NameMatch, Process, SortKey,
     TargetType,
 };
 use crate::error::Result;
@@ -105,6 +105,12 @@ pub struct WatchCommand {
     /// `--in` as `execute` resolved it, absolute; every refresh uses this one
     #[arg(skip)]
     in_dir_path: Option<std::path::PathBuf>,
+
+    /// The names among the targets that matched no process by name at the
+    /// first look but are in command lines, each with how many: an empty view
+    /// says so, with the command that shows them
+    #[arg(skip)]
+    command_line: Vec<(String, usize)>,
 }
 
 /// Sort key for watch command (mirrors SortKey but with independent default)
@@ -212,9 +218,27 @@ impl WatchCommand {
         // never depends on the current directory still existing later
         let resolved = WatchCommand {
             in_dir_path,
+            command_line: self.names_in_command_lines(),
             ..self.clone()
         };
         resolved.run()
+    }
+
+    /// The names among the targets that match no process by name but are in
+    /// command lines, each with how many; none with `--cmd`, which matches them
+    fn names_in_command_lines(&self) -> Vec<(String, usize)> {
+        if self.cmd {
+            return Vec::new();
+        }
+        flatten_targets(&self.target)
+            .iter()
+            .filter(|t| matches!(parse_target(t), TargetType::Name(_)))
+            .filter_map(|name| {
+                Process::lookup_name(name, NameMatch::Exact, Ancestors::Mark)
+                    .err()?
+                    .command_line_match()
+            })
+            .collect()
     }
 
     /// PID targets are a fixed question: when no PID is held, or `--in` and
@@ -242,6 +266,7 @@ impl WatchCommand {
                 &self.target,
                 &resolved.unseen,
                 &resolved.left_out,
+                &resolved.command_line,
             ));
         }
         let guards = Guards::new(&self.in_dir, &self.by_name, None);
@@ -519,6 +544,10 @@ impl WatchCommand {
 
         if processes.is_empty() {
             output.push_str(" No matching processes found.");
+            if !self.command_line.is_empty() {
+                output.push('\n');
+                output.push_str(&crate::error::command_line_lines(&self.command_line));
+            }
             return output;
         }
 
@@ -623,7 +652,8 @@ impl WatchCommand {
 
         let printer = crate::ui::Printer::from_flags(false, self.verbose)
             .wide(self.wide)
-            .scoped_to_dir(self.in_dir.is_some());
+            .scoped_to_dir(self.in_dir.is_some())
+            .with_command_line(&self.command_line);
         if let Some(warning) = left_out_warning(&self.left_out(&sys)) {
             printer.warning(&warning);
         }
@@ -663,6 +693,7 @@ mod tests {
             limit: None,
             sort: WatchSortKey::Cpu,
             in_dir_path: None,
+            command_line: Vec::new(),
         }
     }
 
@@ -836,6 +867,34 @@ mod tests {
         );
         let none = plain(&watch_args().render_frame(&[], screen(120), 40));
         assert!(!none.contains("Left out"), "{none}");
+    }
+
+    #[test]
+    fn with_cmd_no_name_is_said_to_be_only_in_command_lines() {
+        // --cmd already matches command lines, so there is nothing to suggest
+        let watch = WatchCommand {
+            target: vec!["proc-no-such-name-anywhere".to_string()],
+            cmd: true,
+            ..watch_args()
+        };
+        assert!(watch.names_in_command_lines().is_empty());
+    }
+
+    #[test]
+    fn an_empty_frame_names_the_command_lines_a_name_is_in() {
+        let watch = WatchCommand {
+            command_line: vec![("serve".to_string(), 1)],
+            ..watch_args()
+        };
+        let frame = plain(&watch.render_frame(&[], screen(120), 40));
+        assert!(
+            frame.ends_with(
+                " No matching processes found.\n  1 process has 'serve' in its command line (add --cmd to match those)\n  Try: proc by serve --cmd to see them"
+            ),
+            "{frame}"
+        );
+        let none = plain(&watch_args().render_frame(&[], screen(120), 40));
+        assert!(none.ends_with(" No matching processes found."), "{none}");
     }
 
     fn frame_of(processes: Vec<Process>) -> WatchJsonOutput {

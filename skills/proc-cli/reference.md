@@ -56,7 +56,7 @@ On failure with `--json`, stdout carries the five fields below. `action` is the 
 }
 ```
 
-`on`, `by` and `why` say so when a name matches no process name but appears in some command lines: `reason` is `command_line_only` and the error text says `2 processes have 'serve' in their command line (add --cmd to match those)`. The commands that change processes (and `wait`, `info`, `tree`) report `not_found`; run `proc by <name> --json` to see the hint.
+`on`, `by`, `why` and `tree` say so when a name matches no process name but appears in some command lines: `reason` is `command_line_only` and the error text says `2 processes have 'serve' in their command line (add --cmd to match those)` and `Try: proc by serve --cmd to see them`. The commands that change processes (and `wait` and `info`) report `reason: "not_found"`; their error text names the command lines too, but branch on `reason`: run `proc by <name> --json` to get `command_line_only`. `list` and `watch` exit 0 with an empty list and say it in the human output only.
 
 A command that changes processes (`kill`, `stop`, `freeze`, `thaw`, `free`, `unstick`, `orphans --kill`, `stuck --kill`) run with `--json` or with no terminal, and without `--yes`, changes nothing and exits 4:
 
