@@ -8,7 +8,7 @@ Three tools, overlapping purposes, different strengths. If you've ever needed to
 
 That's fine until it isn't. Maybe you're debugging on a minimal Alpine container and `lsof` isn't there. Maybe you're writing a shell script that needs to work on both macOS and Linux. Maybe you're wondering why your port lookup takes 400ms when it should be instant.
 
-This post covers what each tool actually does under the hood, when to pick which, and how to parse their output.
+This post covers what each tool actually does under the hood, when to pick which, and how to parse their output. If you only need the list of open ports, [how to check open ports on Linux, Mac and Windows](/posts/check-open-ports-linux-mac-windows/) has the one command for each system.
 
 ## lsof: walking the file descriptor table
 
