@@ -414,23 +414,23 @@ fn lsof_holders_below(fields: &str, dir: &std::path::Path) -> Vec<u32> {
     pids
 }
 
-/// The PIDs using anything below `dir`, from `lsof`'s list of every open file
-/// on the system. An `lsof` that can't be started is an error naming it, as in
-/// `open_file_pids_with`
+/// The PIDs using anything below `dir`, from `program`'s (`lsof`'s) list of
+/// every open file on the system. A program that can't be started is an error
+/// naming it, as in `open_file_pids_with`
 #[cfg(all(
     unix,
     not(any(target_os = "freebsd", target_os = "netbsd", target_os = "linux"))
 ))]
-fn lsof_pids_below(dir: &std::path::Path) -> Result<Vec<u32>> {
+fn lsof_pids_below(program: &str, dir: &std::path::Path) -> Result<Vec<u32>> {
     use std::process::Command;
-    let mut command = Command::new(OPEN_FILE_PROGRAM);
+    let mut command = Command::new(program);
     // -n -P: no name lookups; -w: no warnings; -F pn: PID and name fields
     let output = crate::ui::interrupt::unblocked_in_child(&mut command)
         .args(["-n", "-P", "-w", "-Fpn"])
         .output()
         .map_err(|e| {
             ProcError::NotSupported(format!(
-                "proc reads open files with {OPEN_FILE_PROGRAM}, which could not be run ({e})"
+                "proc reads open files with {program}, which could not be run ({e})"
             ))
         })?;
     // lsof exits 1 when some process could not be read; what it listed holds
@@ -1556,7 +1556,7 @@ impl Process {
         #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
         let pids = fstat_filesystem_pids(dir)?;
         #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "netbsd")))]
-        let pids = lsof_pids_below(dir)?;
+        let pids = lsof_pids_below(OPEN_FILE_PROGRAM, dir)?;
         Ok(Self::records_of(pids))
     }
 
@@ -3590,6 +3590,21 @@ mod tests {
         let sub = dir.path().join("sub");
         std::fs::create_dir(&sub).unwrap();
         assert!(!is_mount_point(&sub));
+        // a path that isn't there is nothing, so not a mount point either
+        assert!(!is_mount_point(&dir.path().join("missing")));
+    }
+
+    #[cfg(all(
+        unix,
+        not(any(target_os = "freebsd", target_os = "netbsd", target_os = "linux"))
+    ))]
+    #[test]
+    fn a_missing_lsof_is_an_error_naming_it_below_a_directory_too() {
+        let found = lsof_pids_below("proc-no-such-lsof", std::path::Path::new("/"));
+        assert!(
+            matches!(&found, Err(ProcError::NotSupported(why)) if why.contains("proc-no-such-lsof")),
+            "{found:?}"
+        );
     }
 
     #[cfg(unix)]
