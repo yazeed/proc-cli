@@ -133,7 +133,7 @@ Update and verify all docs are complete:
 - [ ] The rest of the website: `docs/index.html`, `docs/install.md`, `docs/faq.md`, `docs/skill.md`, `docs/_data/`
 - [ ] `pkg/npm/README.md` (the npm page) and the `.claude-plugin/marketplace.json` descriptions
 - [ ] Every surface at once: for each entry in the release's CHANGELOG section, search all of the files above, `src/lib.rs` and the `--help` text for what the entry makes untrue (the old message, exit code or behaviour), and fix what is found. Check the search finds a known mention first
-- [ ] Verify `proc manpage` output includes new commands
+- [ ] Verify `proc manpage` output includes new commands, and `proc manpage --dir` writes a page for each
 - [ ] Verify `proc completions` includes new commands
 
 ## 5. Commit & Tag
@@ -313,7 +313,7 @@ Also verify:
 - [ ] https://proc-cli.com/install — the header pill and the install page show the new version (GitHub Pages rebuilds a minute or two after the push)
 - [ ] `proc --version` — prints exactly `proc X.Y.Z` from every channel (no `-dev`, no commit), Nix included (the `nix run` line above)
 - [ ] `flake.lock` — refresh it when it has gone stale or a build needs a newer nixpkgs (`nix flake update`, then `nix flake check -L`; without Nix installed, run both in the `nixos/nix` Docker image with `NIX_CONFIG="experimental-features = nix-command flakes"`). Commit it with the next change; the Nix jobs in CI check it on every push
-- [ ] `proc manpage` — Includes new commands
+- [ ] `proc manpage` — Includes new commands; `man proc-<command>` opens on the channels that install the pages
 - [ ] `proc completions bash` — Includes new commands
 - [ ] skills.sh is current: the check above prints `current` (the page at https://www.skills.sh/yazeed/proc-cli/proc-cli is cached for up to 5 minutes). If it's stale, run the install again the next day. If that doesn't help either, ask for a refresh with an issue on [vercel-labs/skills](https://github.com/vercel-labs/skills/issues), which runs skills.sh; many such requests there are unanswered. Agents installing the skill are unaffected either way: `skills add` reads the current SKILL.md from GitHub
 

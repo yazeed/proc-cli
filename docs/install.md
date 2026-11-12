@@ -220,6 +220,9 @@ proc completions fish > ~/.config/fish/completions/proc.fish  # fish
 ## Man page
 
 ```bash
-proc manpage | sudo tee /usr/local/share/man/man1/proc.1 > /dev/null
-man proc
+sudo proc manpage --dir /usr/local/share/man/man1
+man proc        # every command, and the examples
+man proc-kill   # one command, with all its flags
 ```
+
+`proc manpage` alone prints `proc.1`; `--dir` writes it and a page for each command.

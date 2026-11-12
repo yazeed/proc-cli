@@ -268,15 +268,19 @@ fn run() -> u8 {
             out::write_stdout(&script);
             Ok(())
         }
-        // The title takes the command's version: the version line alone, not
-        // the --version text with its URL and licence lines
-        Commands::Manpage => {
+        Commands::Manpage { dir: None } => {
             let mut page = Vec::new();
-            clap_mangen::Man::new(Cli::command().version(env!("PROC_VERSION")))
+            clap_mangen::Man::new(man_command())
                 .render(&mut page)
                 .map(|()| out::write_stdout(&page))
                 .map_err(ProcError::from)
         }
+        Commands::Manpage { dir: Some(dir) } => write_man_pages(&dir).map_err(|e| {
+            ProcError::SystemError(format!(
+                "can't write the man pages to {}: {e}",
+                dir.display()
+            ))
+        }),
     };
 
     if let Err(e) = result {
@@ -315,6 +319,32 @@ fn run() -> u8 {
     }
 
     0
+}
+
+/// The command the man pages describe. The title takes the version line alone,
+/// not the --version text with its URL and licence lines. `help` gets no page:
+/// it prints what `--help` does
+fn man_command() -> clap::Command {
+    let mut command = Cli::command()
+        .version(env!("PROC_VERSION"))
+        .disable_help_subcommand(true);
+    command.build();
+    command
+}
+
+/// `proc manpage --dir`: proc.1, and proc-<command>.1 for each command
+/// `proc --help` lists, each titled with proc's version
+fn write_man_pages(dir: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let proc = man_command();
+    let source = format!("proc {}", env!("PROC_VERSION"));
+    clap_mangen::Man::new(proc.clone()).generate_to(dir)?;
+    for command in proc.get_subcommands().filter(|c| !c.is_hide_set()) {
+        clap_mangen::Man::new(command.clone())
+            .source(source.clone())
+            .generate_to(dir)?;
+    }
+    Ok(())
 }
 
 /// Print an error as the standard JSON error object on stdout.

@@ -22,9 +22,10 @@ contents:
     file_info:
       mode: 0755
 
-  - src: ${NFPM_DOCS}/proc.1.gz
+  # proc.1 and a page per command (proc-kill.1, ...)
+  - src: ${NFPM_DOCS}/man/*.1.gz
     expand: true
-    dst: /usr/share/man/man1/proc.1.gz
+    dst: /usr/share/man/man1/
     file_info:
       mode: 0644
 

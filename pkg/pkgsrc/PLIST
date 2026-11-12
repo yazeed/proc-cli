@@ -1,5 +1,24 @@
 @comment $NetBSD$
 bin/proc
+man/man1/proc-by.1
+man/man1/proc-for.1
+man/man1/proc-free.1
+man/man1/proc-freeze.1
+man/man1/proc-in.1
+man/man1/proc-info.1
+man/man1/proc-kill.1
+man/man1/proc-list.1
+man/man1/proc-on.1
+man/man1/proc-orphans.1
+man/man1/proc-ports.1
+man/man1/proc-stop.1
+man/man1/proc-stuck.1
+man/man1/proc-thaw.1
+man/man1/proc-tree.1
+man/man1/proc-unstick.1
+man/man1/proc-wait.1
+man/man1/proc-watch.1
+man/man1/proc-why.1
 man/man1/proc.1
 share/bash-completion/completions/proc
 share/fish/vendor_completions.d/proc.fish

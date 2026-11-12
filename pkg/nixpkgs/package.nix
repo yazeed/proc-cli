@@ -48,8 +48,8 @@ rustPlatform.buildRustPackage (finalAttrs: {
   __darwinAllowLocalNetworking = true;
 
   postInstall = lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
-    $out/bin/proc manpage > proc.1
-    installManPage proc.1
+    $out/bin/proc manpage --dir man
+    installManPage man/*.1
     installShellCompletion --cmd proc \
       --bash <($out/bin/proc completions bash) \
       --zsh <($out/bin/proc completions zsh) \

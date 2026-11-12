@@ -24,7 +24,7 @@
 //! - **File Lookup**: `proc for ./server` - find by file path
 //! - **Cross-Platform**: macOS, Linux, Windows, FreeBSD and NetBSD
 //! - **Shell Completions**: bash, zsh, fish, elvish, PowerShell via `proc completions`
-//! - **Man Pages**: `proc manpage` generates the top-level page (commands and examples; per-command flags are in `proc <command> --help`)
+//! - **Man Pages**: `proc manpage` prints `proc.1`, and `proc manpage --dir <dir>` writes it and a page per command (`man proc-kill`)
 //!
 //! ## Quick Start
 //!

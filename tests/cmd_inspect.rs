@@ -1479,6 +1479,67 @@ fn manpage_prints_the_man_page() {
     assert!(out.contains("proc\\-why"), "the why command: {out}");
 }
 
+/// The pages `proc manpage --dir` writes: `proc.1`, and `proc-<command>.1` for
+/// each command `proc --help` lists, so `man proc-kill` finds its flags
+#[test]
+fn manpage_dir_writes_a_page_for_proc_and_each_command() {
+    let tmp = tempfile::tempdir().unwrap();
+    // a directory that isn't there yet is made
+    let dir = tmp.path().join("man1");
+    let dir_arg = dir.to_string_lossy().into_owned();
+    let (out, stderr, code) = run_text(&["manpage", "--dir", &dir_arg]);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(out, "", "the pages go to the directory, not stdout");
+
+    let mut written: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    written.sort();
+    let mut expected: Vec<String> = Cli::command()
+        .get_subcommands()
+        .filter(|c| !c.is_hide_set() && c.get_name() != "help")
+        .map(|c| format!("proc-{}.1", c.get_name()))
+        .collect();
+    expected.push("proc.1".to_string());
+    expected.sort();
+    assert_eq!(written, expected);
+
+    // proc.1 is the page `proc manpage` prints, and it points to the others
+    let proc_page = std::fs::read_to_string(dir.join("proc.1")).unwrap();
+    assert_eq!(proc_page, run_text(&["manpage"]).0);
+    assert!(proc_page.contains("proc\\-kill(1)"), "{proc_page}");
+    assert!(
+        !proc_page.contains("proc\\-help(1)"),
+        "no page for help: {proc_page}"
+    );
+
+    // a command's page has its title, its flags and proc's version
+    let kill = std::fs::read_to_string(dir.join("proc-kill.1")).unwrap();
+    let (version, _, _) = run_text(&["--version"]);
+    let version = version.lines().next().unwrap();
+    let title = kill.lines().find(|l| l.starts_with(".TH ")).unwrap();
+    assert!(title.starts_with(".TH proc-kill 1"), "{title}");
+    assert!(title.contains(version), "{title}");
+    for flag in ["\\-\\-yes", "\\-\\-dry\\-run", "\\-\\-graceful"] {
+        assert!(kill.contains(flag), "{flag}: {kill}");
+    }
+}
+
+#[test]
+fn manpage_dir_that_cannot_be_made_is_an_error_naming_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("a-file");
+    std::fs::write(&file, "").unwrap();
+    let dir = file.join("man1").to_string_lossy().into_owned();
+    let (out, stderr, code) = run_text(&["manpage", "--dir", &dir]);
+    assert_eq!(code, 1, "{out}{stderr}");
+    assert!(
+        stderr.contains(&format!("can't write the man pages to {dir}")),
+        "{stderr}"
+    );
+}
+
 /// The title line (`.TH`) names the version line of `--version` alone. The
 /// whole `--version` text has a URL and the licence on lines of their own,
 /// which left the title's quote open and showed them under the title in `man`

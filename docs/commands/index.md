@@ -133,7 +133,7 @@ proc completions bash > /etc/bash_completion.d/proc
 proc completions zsh > ~/.zsh/completions/_proc
 proc completions fish > ~/.config/fish/completions/proc.fish
 proc completions elvish        # also: powershell
-proc manpage | sudo tee /usr/local/share/man/man1/proc.1 > /dev/null
+sudo proc manpage --dir /usr/local/share/man/man1   # proc.1, and proc-kill.1 for man proc-kill
 ```
 
-`completions` and `manpage` print text, never JSON.
+`proc manpage` alone prints `proc.1`; `--dir` writes it and a page for each command into the directory. `completions` and `manpage` print text, never JSON.

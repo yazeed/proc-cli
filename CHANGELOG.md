@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A man page for each command: `man proc-kill`.** `proc manpage` wrote one page, `proc.1`, with the commands and the examples but no flags, and its SEE ALSO named `proc-on(1)`, `proc-kill(1)` and the rest, pages nothing installed (`man proc-kill`: "No manual entry"). `proc manpage --dir <dir>` now writes `proc.1` and `proc-<command>.1` for each of the 19 commands, each with that command's synopsis, description and every flag, titled with proc's version. It makes the directory if it isn't there, and a directory it can't write is exit 1, naming it. `proc manpage` alone still prints `proc.1`, which no longer lists a page for `help`. Every package that installed `proc.1` installs them all from the next release: the `.deb` and `.rpm` files and the apt repository, the Ubuntu PPA, COPR, Nix (the flake and the nixpkgs package), FreeBSD and pkgsrc. CI checks `proc-kill.1.gz` is installed beside `proc.1.gz`, and the docs test checks pkgsrc's and FreeBSD's file lists name every command's page
+
 - **Every command page has the same order, its JSON shape, and what happens when nothing matches.** The pages put changelog notes, internal timings and deprecation lists before the first example, and only `ports` showed its JSON.
   - **One order on all 19 pages:** what it does, examples (the two example lists merged into one), output, options, details, when nothing matches, JSON, see also.
   - **Each JSON section** shows the command's real top-level shape, taken from running it, with a link to the full schema in the agent reference. Deprecated keys are named there and nowhere else.

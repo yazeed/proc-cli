@@ -80,7 +80,7 @@ proc free :3000 --yes             # a port target: no question
 
 Every channel, with who maintains it and how it updates, is on [proc-cli.com/install](https://proc-cli.com/install). `--pid=host` lets proc in Docker see the host's processes, `--net=host` its ports (for `on :port`, `ports` and `free`), and `--cap-add SYS_PTRACE --security-opt apparmor=unconfined` which process holds a port or a file when that process isn't root's (Docker drops that capability, and on hosts with AppArmor, such as Ubuntu, its default profile blocks those reads too).
 
-The `.deb` and `.rpm` files install `proc`, its man page and its bash, zsh and fish completions. A file does not update with `apt upgrade` or `dnf upgrade`; the apt repository and COPR do.
+The `.deb` and `.rpm` files install `proc`, its man pages (`man proc`, and one per command: `man proc-kill`) and its bash, zsh and fish completions. A file does not update with `apt upgrade` or `dnf upgrade`; the apt repository and COPR do.
 
 Check it works:
 
@@ -325,8 +325,8 @@ proc completions fish > ~/.config/fish/completions/proc.fish
 
 # Elvish and PowerShell: proc completions elvish, proc completions powershell
 
-# Man page
-proc manpage | sudo tee /usr/local/share/man/man1/proc.1 > /dev/null
+# Man pages: proc.1, and one per command (man proc-kill)
+sudo proc manpage --dir /usr/local/share/man/man1
 ```
 
 ## Building from source

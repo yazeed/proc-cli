@@ -17,6 +17,8 @@
 //!   give every exit code and every `reason`
 //! - the proc version the agent skill asks for is no older than the release
 //!   that brought each flag it uses
+//! - the packages that list every file they install (pkgsrc, FreeBSD) list
+//!   the man page of every command
 
 use clap::CommandFactory;
 use proc_cli::cli::Cli;
@@ -197,6 +199,27 @@ fn the_commands_are_grouped_the_same_everywhere() {
         in_lib.sort();
         assert_eq!(in_lib, sorted_names, "src/lib.rs's {title} line");
     }
+}
+
+#[test]
+fn the_packages_that_list_their_files_list_a_man_page_per_command() {
+    // pkgsrc and FreeBSD name every file a package installs; one missing from
+    // the list fails their build, one extra is left behind
+    let pkgsrc = read("pkg/pkgsrc/PLIST");
+    let freebsd = read("pkg/freebsd/Makefile");
+    let mut misses = Vec::new();
+    for cmd in commands() {
+        let name = cmd.get_name();
+        if !pkgsrc.contains(&format!("man/man1/proc-{name}.1\n")) {
+            misses.push(format!("pkg/pkgsrc/PLIST: man/man1/proc-{name}.1"));
+        }
+        if !freebsd.contains(&format!("share/man/man1/proc-{name}.1.gz")) {
+            misses.push(format!(
+                "pkg/freebsd/Makefile: share/man/man1/proc-{name}.1.gz"
+            ));
+        }
+    }
+    assert_none_missing(misses);
 }
 
 #[test]

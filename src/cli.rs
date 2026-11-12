@@ -408,7 +408,12 @@ pub enum Commands {
         shell: Shell,
     },
 
-    /// Generate man page
+    /// Generate the man page, or with --dir one per command
     #[command(hide = true)]
-    Manpage,
+    Manpage {
+        /// Write proc.1 and a page per command (proc-kill.1, ...) into this
+        /// directory, made if it isn't there, instead of printing proc.1
+        #[arg(long, value_name = "DIR")]
+        dir: Option<std::path::PathBuf>,
+    },
 }

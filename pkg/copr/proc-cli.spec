@@ -62,8 +62,9 @@ cargo build --release --offline --locked
 
 %install
 install -Dpm 0755 %{procbin} %{buildroot}%{_bindir}/proc
-%{procbin} manpage > proc.1
-install -Dpm 0644 proc.1 %{buildroot}%{_mandir}/man1/proc.1
+%{procbin} manpage --dir man
+install -d %{buildroot}%{_mandir}/man1
+install -pm 0644 man/*.1 %{buildroot}%{_mandir}/man1/
 %{procbin} completions bash > proc.bash
 %{procbin} completions zsh > _proc
 %{procbin} completions fish > proc.fish
@@ -79,7 +80,7 @@ install -Dpm 0644 proc.fish %{buildroot}%{fish_completions_dir}/proc.fish
 %endif
 %doc README.md CHANGELOG.md
 %{_bindir}/proc
-%{_mandir}/man1/proc.1*
+%{_mandir}/man1/proc*.1*
 %{bash_completions_dir}/proc
 %{zsh_completions_dir}/_proc
 %{fish_completions_dir}/proc.fish
