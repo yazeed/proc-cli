@@ -28,7 +28,7 @@ use crate::core::{
     resolve_targets_excluding_self, Guards, NameMatch, Process, ProcessStatus, Resolved,
 };
 use crate::error::{ExitCode, ProcError, Result};
-use crate::ui::{format_duration, must_confirm, plural, prompt, Printer};
+use crate::ui::{must_confirm, plural, prompt, Printer};
 use crate::{out_print, out_println};
 use clap::Args;
 use colored::*;
@@ -61,7 +61,7 @@ pub struct UnstickCommand {
     #[arg(long)]
     dry_run: bool,
 
-    /// Show verbose output
+    /// Add PPID, STATUS and DIR to the table of processes it lists, and cut nothing
     #[arg(long, short = 'v')]
     verbose: bool,
 
@@ -240,7 +240,7 @@ impl UnstickCommand {
                 }
             };
             if !prompt::ask("unstick", &stuck, Some(&not_found), &question, show)? {
-                printer.warning("Aborted");
+                printer.warning("Cancelled");
                 return Ok(());
             }
         }
@@ -374,42 +374,10 @@ impl UnstickCommand {
         return recover_by_termination(proc, self.force);
     }
 
+    /// The list every command that changes processes shows: the headline and
+    /// the process table, with the whole command lines
     fn show_processes(&self, processes: &[Process]) {
-        let label = if !self.target.is_empty() {
-            "Target"
-        } else {
-            "Found stuck"
-        };
-
-        out_println!(
-            "\n{} {} {} process{}:\n",
-            "!".yellow().bold(),
-            label,
-            processes.len().to_string().cyan().bold(),
-            plural(processes.len())
-        );
-
-        for proc in processes {
-            let uptime = proc
-                .start_time
-                .map(|st| {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs().saturating_sub(st))
-                        .unwrap_or(0);
-                    format_duration(now)
-                })
-                .unwrap_or_else(|| "unknown".to_string());
-
-            out_println!(
-                "  {} {} [PID {}] - {:.1}% CPU, running for {}",
-                "→".bright_black(),
-                proc.name.white().bold(),
-                proc.pid.to_string().cyan(),
-                proc.cpu_percent,
-                uptime.yellow()
-            );
-        }
+        Printer::from_flags(false, self.verbose).print_confirmation("unstick", processes);
     }
 }
 

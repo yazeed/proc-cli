@@ -32,7 +32,7 @@ proc wait node --json --timeout 120 || echo "still running"
 | `--start-time <secs>` | | Wait only if the PID still belongs to the process that started then (its `start_time` from the JSON, to the second). One PID target. A PID a new process holds exits 2 |
 | `--cmd` | | Match name targets and `--by` as a substring of the process name or full command line (like `pkill -f`) |
 | `--json` | `-j` | Output as JSON |
-| `--verbose` | `-v` | Add each process's CPU and memory to the list of what it waits for |
+| `--verbose` | `-v` | List what it waits for in the process table, with PPID, STATUS and DIR |
 
 ## Details
 

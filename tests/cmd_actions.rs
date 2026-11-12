@@ -581,17 +581,29 @@ fn wait_quiet_prints_no_status_lines() {
 }
 
 #[test]
-fn wait_verbose_lists_each_process_with_its_cpu() {
+fn wait_verbose_lists_each_process_in_the_shared_table() {
     let mut owned = Owned::listener();
     let pid = owned.pid_arg();
     let r = run(&["wait", &pid, "--verbose", "--timeout", "1"]);
-    let line = r
+    // the table every list in proc prints, with -v's columns
+    let header = r
         .stdout
         .lines()
-        .find(|l| l.contains(&format!("[PID {pid}]")))
-        .unwrap_or_else(|| panic!("no verbose line for {pid}:\n{}", r.stdout));
-    assert!(line.contains("% CPU,"), "{line}");
-    assert!(line.contains(&owned.name), "{line}");
+        .find(|l| l.trim_start().starts_with("PID "))
+        .unwrap_or_else(|| panic!("no table:\n{}", r.stdout));
+    for column in ["PPID", "CPU%", "MEM", "STATUS", "COMMAND"] {
+        assert!(header.contains(column), "{column}: {header}");
+    }
+    let row = r
+        .stdout
+        .lines()
+        .find(|l| l.trim_start().starts_with(&format!("{pid} ")))
+        .unwrap_or_else(|| panic!("no row for {pid}:\n{}", r.stdout));
+    assert!(row.contains(&owned.name), "{row}");
+    assert!(!r.stdout.contains("->"), "{}", r.stdout);
+    // without -v, only the line that says what it waits for
+    let quiet = run(&["wait", &pid, "--timeout", "1"]);
+    assert!(!quiet.stdout.contains("COMMAND"), "{}", quiet.stdout);
     assert!(owned.alive());
 }
 
@@ -1853,18 +1865,25 @@ fn orphans_kill_yes_kills_the_orphan_and_says_so() {
 
 // ---- unstick ----
 
-/// The `NN.N` in the `NN.N% CPU` of the human line for this PID
+/// The CPU% cell of this PID's row in the process table (the header says
+/// which column it is: `--in` puts the directory second)
 fn cpu_in_line(stdout: &str, pid: u32) -> f64 {
-    let line = stdout
+    let header = stdout
         .lines()
-        .find(|l| l.contains(&format!("[PID {pid}]")))
-        .unwrap_or_else(|| panic!("no line for {pid}:\n{stdout}"));
-    let before = line.split("% CPU").next().unwrap();
-    before
-        .rsplit(' ')
-        .next()
+        .find(|l| l.trim_start().starts_with("PID "))
+        .unwrap_or_else(|| panic!("no table:\n{stdout}"));
+    let column = header
+        .split_whitespace()
+        .position(|cell| cell == "CPU%")
+        .unwrap_or_else(|| panic!("no CPU% column: {header}"));
+    let row = stdout
+        .lines()
+        .find(|l| l.split_whitespace().next() == Some(&pid.to_string()))
+        .unwrap_or_else(|| panic!("no row for {pid}:\n{stdout}"));
+    row.split_whitespace()
+        .nth(column)
         .and_then(|n| n.parse().ok())
-        .unwrap_or_else(|| panic!("no CPU figure in {line}"))
+        .unwrap_or_else(|| panic!("no CPU figure in {row}"))
 }
 
 #[test]
@@ -2018,7 +2037,20 @@ fn unstick_leaves_a_process_that_is_not_stuck_alone() {
     let pid = idle.pid_arg();
     let r = run(&["unstick", &pid, "--yes"]);
     assert_eq!(r.code, 0, "{}{}", r.stdout, r.stderr);
-    assert!(r.stdout.contains("Target 1 process"), "{}", r.stdout);
+    // the list every command that changes processes shows: the shared table
+    assert!(
+        r.stdout.contains("Found 1 process to unstick:"),
+        "{}",
+        r.stdout
+    );
+    assert!(
+        r.stdout
+            .lines()
+            .any(|l| l.trim_start().starts_with("PID ") && l.contains("COMMAND")),
+        "{}",
+        r.stdout
+    );
+    assert!(!r.stdout.contains("running for"), "{}", r.stdout);
     assert!(r.stdout.contains("not stuck"), "{}", r.stdout);
     assert!(r.stdout.contains("1 process was not stuck"), "{}", r.stdout);
     let (json, code) = run_json(&["unstick", &pid, "--yes", "--json"]);

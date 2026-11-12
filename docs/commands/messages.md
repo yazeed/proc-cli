@@ -121,7 +121,7 @@ A search found nothing: `list`, or `in` (`⚠ No processes found in /path`). Tha
 
 #### `Cancelled`
 
-You answered no at the `[y/N]` question (`free` and `unstick` say `Aborted`). Nothing was changed.
+You answered no at the `[y/N]` question. Nothing was changed.
 
 #### `note: comma-separated targets are deprecated …`
 

@@ -17,7 +17,7 @@ proc unstick 1234 :3000      # several targets
 
 ## Output
 
-The list of what it would try, then the question. After a yes, a line per process: `recovered`, `not stuck`, `still stuck`, `terminated` or `failed`.
+`⚠ Found 2 processes to unstick:` and the process table every list in proc prints, then the question. After a yes, a line per process: `recovered`, `not stuck`, `still stuck`, `terminated` or `failed`.
 
 ## Options
 
@@ -32,7 +32,7 @@ The list of what it would try, then the question. After a yes, a line per proces
 | `--start-time <secs>` | | Act only if the PID still belongs to the process that started then (its `start_time` from the JSON, to the second). One PID target (not with the search for stuck processes). A PID a new process holds exits 2 |
 | `--cmd` | | Match name targets and `--by` as a substring of the process name or full command line (like `pkill -f`) |
 | `--json` | `-j` | Output as JSON |
-| `--verbose` | `-v` | Accepted, as on every command; the list looks the same with it |
+| `--verbose` | `-v` | Add PPID, STATUS and DIR to the table of processes it lists, and cut nothing |
 
 ## Details
 

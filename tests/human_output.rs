@@ -409,14 +409,22 @@ fn wait_verbose_lists_cpu_and_memory_of_a_process_the_os_read() {
     let pid = owned.pid().to_string();
     let (out, _, code) = run(plain_cmd(), &["wait", &pid, "--timeout", "1", "--verbose"]);
     assert_eq!(code, 1, "{out}");
-    let line = out
+    // the table every list prints: the listener's row has its CPU and memory,
+    // not the `-` of a value the system didn't give
+    let row = out
         .lines()
-        .find(|line| line.contains(&format!("[PID {pid}]")))
-        .unwrap_or_else(|| panic!("no line for the listener in {out}"));
-    let figures = regex::Regex::new(r"\] - \d+\.\d% CPU, \d+(\.\d)?(KB|MB|GB)$").unwrap();
+        .find(|line| line.split_whitespace().next() == Some(pid.as_str()))
+        .unwrap_or_else(|| panic!("no row for the listener in {out}"));
+    let cells = cells(row);
     assert!(
-        figures.is_match(line),
-        "CPU and memory after the PID: {line}"
+        regex::Regex::new(r"^\d+\.\d$").unwrap().is_match(cells[3]),
+        "CPU% in {row}"
+    );
+    assert!(
+        regex::Regex::new(r"^\d+(\.\d)?(KB|MB|GB)$")
+            .unwrap()
+            .is_match(cells[4]),
+        "MEM in {row}"
     );
 }
 

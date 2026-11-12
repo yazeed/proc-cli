@@ -151,7 +151,7 @@ impl FreeCommand {
             if !prompt::ask("free", &processes, Some(&not_found), &question, || {
                 printer.print_confirmation("free", &processes)
             })? {
-                printer.warning("Aborted");
+                printer.warning("Cancelled");
                 return Ok(());
             }
         }

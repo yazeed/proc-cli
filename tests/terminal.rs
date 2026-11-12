@@ -939,11 +939,11 @@ fn free_asks_first() {
     let mut p = Owned::listener();
     let target = format!(":{}", p.port());
     let args = ["free", &target];
-    let run = answers_n(&args, "Kill 1 process to free 1 port", "Aborted");
+    let run = answers_n(&args, "Kill 1 process to free 1 port", "Cancelled");
     assert_ok(&run);
     assert!(p.alive());
 
-    let run = answers_enter(&args, "Kill 1 process to free 1 port", "Aborted");
+    let run = answers_enter(&args, "Kill 1 process to free 1 port", "Cancelled");
     assert_ok(&run);
     assert!(p.alive());
 
@@ -1005,11 +1005,11 @@ fn unstick_asks_first() {
     let mut p = Owned::busy();
     let dir = p.dir();
     let args = ["unstick", "--force", "--timeout", "0", "--in", &dir];
-    let run = answers_n(&args, "Unstick 1 process", "Aborted");
+    let run = answers_n(&args, "Unstick 1 process", "Cancelled");
     assert_ok(&run);
     assert!(p.alive());
 
-    let run = answers_enter(&args, "Unstick 1 process", "Aborted");
+    let run = answers_enter(&args, "Unstick 1 process", "Cancelled");
     assert_ok(&run);
     assert!(p.alive());
 
@@ -1027,7 +1027,7 @@ fn unstick_without_force_says_it_will_only_try_to_recover() {
     let mut p = Owned::busy();
     let dir = p.dir();
     let args = ["unstick", "--timeout", "0", "--in", &dir];
-    let run = answers_n(&args, "Unstick 1 process", "Aborted");
+    let run = answers_n(&args, "Unstick 1 process", "Cancelled");
     assert_ok(&run);
     assert!(
         run.output.contains("Will attempt recovery only"),
@@ -1603,13 +1603,18 @@ fn unstick_shows_its_list_on_the_terminal_when_stdout_is_a_file() {
         &redirect,
         &["unstick", "--force", "--timeout", "0", "--in", &dir],
         &[
-            Step::Expect("Found stuck 1 process"),
+            Step::Expect("Found 1 process to unstick"),
             Step::Expect("Unstick 1 process"),
             Step::Send("n"),
         ],
     );
     assert_ok(&run);
-    assert_list_beside_the_question(&run, "Found stuck 1 process", "Unstick 1 process", &file);
+    assert_list_beside_the_question(
+        &run,
+        "Found 1 process to unstick",
+        "Unstick 1 process",
+        &file,
+    );
     assert!(p.alive());
 }
 

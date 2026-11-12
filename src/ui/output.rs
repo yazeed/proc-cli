@@ -615,6 +615,12 @@ impl Printer {
         Ok(confirmed)
     }
 
+    /// Print the process table alone, with no headline: for a command whose own
+    /// line says what the list is (`wait -v`)
+    pub fn print_table(&self, processes: &[Process]) {
+        to_stdout(|out| self.write_process_rows(out, screen_now(), processes, false));
+    }
+
     /// Print a confirmation prompt showing processes about to be acted on:
     /// the process table, with the whole command lines
     pub fn print_confirmation(&self, action: &str, processes: &[Process]) {

@@ -18,7 +18,7 @@ use crate::core::{
 };
 use crate::error::{ExitCode, ProcError, Result};
 use crate::out_println;
-use crate::ui::{cpu_and_memory, format_duration, plural, Printer};
+use crate::ui::{format_duration, plural, Printer};
 use clap::Args;
 use colored::*;
 use serde::Serialize;
@@ -42,7 +42,7 @@ pub struct WaitCommand {
     #[arg(long, short = 'j')]
     json: bool,
 
-    /// Add each process's CPU and memory to the list of what it waits for
+    /// List what it waits for in the process table, with PPID, STATUS and DIR
     #[arg(long, short = 'v')]
     verbose: bool,
 
@@ -67,14 +67,6 @@ pub struct WaitCommand {
     /// Don't print the periodic still-running lines; the start, each exit and the result still print
     #[arg(long, short = 'q')]
     quiet: bool,
-}
-
-/// What the verbose list adds after `[PID n]`: `" - 0.3% CPU, 6.1MB"`, or nothing for a
-/// process the OS gave no figures for (not a 0.0% and 0KB nobody measured)
-fn verbose_figures(process: &Process) -> String {
-    cpu_and_memory(process).map_or_else(String::new, |(cpu, memory)| {
-        format!(" - {cpu} CPU, {memory}")
-    })
 }
 
 impl WaitCommand {
@@ -128,16 +120,10 @@ impl WaitCommand {
                 initial_count.to_string().cyan().bold(),
                 plural(initial_count)
             );
+            // -v lists them in the table every list in proc prints
             if self.verbose {
-                for proc in &processes {
-                    out_println!(
-                        "  {} {} [PID {}]{}",
-                        "->".bright_black(),
-                        proc.name.white().bold(),
-                        proc.pid.to_string().cyan(),
-                        verbose_figures(proc)
-                    );
-                }
+                out_println!();
+                printer.print_table(&processes);
             }
         }
 
@@ -394,52 +380,5 @@ impl LastReading {
             uptime_secs: p.uptime_secs,
             details: ProcessDetails::of(p),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A record with the figures given and no CPU time
-    fn process(cpu_percent: f32, memory_mb: f64) -> Process {
-        Process {
-            pid: 7,
-            name: "p7".to_string(),
-            exe_path: None,
-            cwd: None,
-            command: None,
-            argv0: None,
-            raw: None,
-            cpu_percent,
-            memory_mb,
-            status: ProcessStatus::Sleeping,
-            user: None,
-            parent_pid: None,
-            start_time: None,
-            uptime_secs: None,
-            parent_name: None,
-            cpu_time_secs: None,
-            open_files: None,
-            child_count: None,
-            runs_proc: false,
-        }
-    }
-
-    #[test]
-    fn a_process_the_os_gave_figures_for_shows_them() {
-        // memory in use is a reading on every OS
-        assert_eq!(verbose_figures(&process(1.5, 6.1)), " - 1.5% CPU, 6.1MB");
-    }
-
-    #[test]
-    fn a_process_the_os_gave_nothing_for_shows_no_zero() {
-        // 0% and 0KB with no CPU time: not read on macOS and Windows, a reading elsewhere
-        let expected = if cfg!(any(target_os = "macos", windows)) {
-            ""
-        } else {
-            " - 0.0% CPU, 0KB"
-        };
-        assert_eq!(verbose_figures(&process(0.0, 0.0)), expected);
     }
 }
