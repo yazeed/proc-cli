@@ -1471,6 +1471,28 @@ fn completions_for_an_unknown_shell_is_a_usage_error() {
 }
 
 #[test]
+fn the_help_names_the_setup_commands_it_hides_from_the_list() {
+    // `completions` and `manpage` are left out of the command list, which is
+    // proc's 19 process commands, so the help names them in a section of their own
+    for flag in ["--help", "-h"] {
+        let (out, _, code) = run_text(&[flag]);
+        assert_eq!(code, 0);
+        let setup = out
+            .split_once("Setup:\n")
+            .unwrap_or_else(|| panic!("{flag}: no Setup: section in\n{out}"))
+            .1;
+        assert!(
+            setup.contains("proc completions <shell>"),
+            "{flag}: {setup}"
+        );
+        assert!(
+            setup.contains("proc manpage [--dir <dir>]"),
+            "{flag}: {setup}"
+        );
+    }
+}
+
+#[test]
 fn manpage_prints_the_man_page() {
     let (out, stderr, code) = run_text(&["manpage"]);
     assert_eq!(code, 0, "{stderr}");

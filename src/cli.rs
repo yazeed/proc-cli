@@ -229,6 +229,22 @@ const NOTES: Section = Section {
     ],
 };
 
+/// The two commands the command list leaves out, since they set proc up
+/// rather than look at processes
+const SETUP: Section = Section {
+    header: "Setup:",
+    rows: &[
+        (
+            "proc completions <shell>",
+            "Shell completions: bash, zsh, fish and more",
+        ),
+        (
+            "proc manpage [--dir <dir>]",
+            "The man page; --dir writes one per command",
+        ),
+    ],
+};
+
 const REPOSITORY: &str = "https://github.com/yazeed/proc-cli";
 
 /// Sections in the look of clap's `Options:` list: the header in the header
@@ -290,6 +306,7 @@ fn more(what: &str) -> String {
 fn short_footer() -> StyledStr {
     let mut out = String::from("\n");
     out.push_str(&render_sections(&[&TARGETS]));
+    out.push_str(&render_sections(&[&SETUP]));
     out.push_str(&more(&format!("proc --help for examples, or {REPOSITORY}")));
     StyledStr::from(out)
 }
@@ -299,6 +316,8 @@ fn long_footer() -> StyledStr {
     let mut out = render_examples();
     out.push('\n');
     out.push_str(&render_sections(&[&TARGETS, &NAMES, &NOTES]));
+    // aligned on its own: its commands are wider than the targets above
+    out.push_str(&render_sections(&[&SETUP]));
     out.push_str(&more(REPOSITORY));
     StyledStr::from(out)
 }
