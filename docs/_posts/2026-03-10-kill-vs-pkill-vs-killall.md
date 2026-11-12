@@ -1,10 +1,26 @@
 ---
 title: "kill vs pkill vs killall: when to use each"
-description: "The differences between kill, pkill, and killall. Signal delivery, regex matching, portability gotchas, and when each is the right choice."
+description: "kill takes a PID, pkill a pattern, killall an exact name. What each does, why pkill sometimes kills nothing (or too much), killall on macOS, and the Windows equivalents."
 date: 2026-03-10
+last_modified_at: 2026-11-12
 ---
 
 Three commands, three different approaches to stopping processes. They look similar but behave differently in ways that matter.
+
+## The short answer
+
+- **`kill 12345`** signals one process by its **PID**. Nothing else.
+- **`pkill node`** finds processes whose **name matches a pattern** and signals them all. `node` also matches `nodemon`.
+- **`killall node`** signals every process with **exactly that name**. `node` doesn't match `nodemon`.
+
+All three send SIGTERM unless you name another signal (`-9` for SIGKILL). Which to use:
+
+| You have | Use | Preview first with |
+|----------|-----|--------------------|
+| a PID | `kill 12345` | `ps -p 12345` |
+| an exact process name | `pkill -x node` or `killall node` | `pgrep -lx node` |
+| part of a name or command line | `pkill -f "npm start"` | `pgrep -lf "npm start"` |
+| a port | none of them: find the PID first | [find and kill a process on a port](/posts/find-kill-process-on-port-macos-linux/) |
 
 ## kill: signal by PID
 
@@ -94,6 +110,21 @@ pgrep -lf "npm start" # list PIDs and full commands
 
 Always run `pgrep` before `pkill` if you're unsure what will match.
 
+### pkill by PID?
+
+`pkill` doesn't take PIDs: `pkill 12345` treats `12345` as a name pattern and matches nothing. Use `kill 12345`. What `pkill` can do with a PID is `-P`: `pkill -P 12345` signals the *children* of process 12345, which is handy when a parent (`npm run dev`) has left its workers running.
+
+### when pkill doesn't work
+
+`pkill` exits `0` when it signalled at least one process and `1` when nothing matched, so check `echo $?` first. If it matched nothing, or the process survived, it's usually one of these:
+
+- **The name is longer than 15 characters (Linux).** Linux keeps only the first 15 characters of a process name, so `pkill my-long-server-name` matches nothing (newer `pkill` warns about it). Use `pkill -f my-long-server-name`, which matches the full command line.
+- **The process is named after its interpreter.** `python3 manage.py runserver` is named `python3`, and `node server.js` is `node`. Match the script with `-f`: `pkill -f manage.py`.
+- **It belongs to another user, or to root.** You get "Operation not permitted". Use `sudo pkill …` if you mean to.
+- **It ignores SIGTERM.** Some programs catch it and keep going. Wait a few seconds, then `pkill -9 …`. A process stuck in the kernel, waiting on a disk or a network mount (state `D` in `ps`), ignores even that until the wait ends.
+- **It's a zombie.** A `<defunct>` process has already exited and can't be killed; its parent has to reap it. See [zombie processes, orphans and stuck processes](/posts/zombie-orphan-stuck-processes-guide/).
+- **`-f` matched more than you meant, including your own shell.** `pkill` never matches itself, but run as `ssh host 'pkill -f myapp'` or `bash -c 'pkill -f myapp'`, the shell's own command line contains `myapp`, so the shell that ran it can be killed too.
+
 ## killall: signal by exact name
 
 `killall` matches by process name — but unlike `pkill`, it matches the **exact process name** (on Linux and macOS), not a regex substring.
@@ -135,6 +166,31 @@ killall -w node && echo "all node processes stopped"
 
 Neither `kill` nor `pkill` has this built in.
 
+### killall by PID?
+
+Like `pkill`, `killall` takes names, not PIDs: `killall 12345` looks for a process named `12345`. Use `kill 12345`.
+
+### killall on macOS: the everyday uses
+
+Most people meet `killall` on a Mac, restarting a part of the system that's misbehaving. macOS starts each of these again by itself:
+
+```bash
+# Dock or Mission Control stuck
+killall Dock
+
+# Finder frozen or not showing changes
+killall Finder
+
+# no sound, or the wrong output device
+sudo killall coreaudiod
+
+# flush the DNS cache
+sudo dscacheutil -flushcache
+sudo killall -HUP mDNSResponder
+```
+
+Names are case-sensitive here: `killall dock` finds nothing, because the process is called `Dock`.
+
 ## when to use each
 
 **Use `kill`** when you know the exact PID and want maximum control. Best for interactive use where you've already identified the process.
@@ -143,25 +199,55 @@ Neither `kill` nor `pkill` has this built in.
 
 **Use `killall`** when you want exact name matching and, on Linux, the `-w` (wait) flag. Be aware of macOS/Linux differences. Avoid in cross-platform scripts.
 
-## with proc
+## on Windows
 
-[proc](https://github.com/yazeed/proc-cli) handles name matching, port targeting, and multi-target resolution with deduplication and confirmation prompts:
+Windows has none of the three. Its equivalents:
 
-```bash
-proc kill node            # processes named exactly node (add --cmd to match node anywhere in the command line), with confirmation
-proc stop :3000           # graceful stop by port
-proc kill :3000 webpack   # multiple targets, deduplicated
-proc kill node --dry-run  # preview what would be killed
+```bat
+:: like kill -9 12345
+taskkill /PID 12345 /F
+
+:: like killall -9 node
+taskkill /IM node.exe /F
 ```
 
-Explicit intent, no regex surprises, confirmation before anything dies.
+```powershell
+Stop-Process -Id 12345 -Force
+# like killall node; no .exe here
+Stop-Process -Name node -Force
+```
+
+Add `/T` to end each one's child processes too. Without `/F`, `taskkill` asks the program to close, which console programs like `node` usually ignore.
+
+## with proc
+
+[proc](https://github.com/yazeed/proc-cli) takes a PID, a name or a port in the same place, and shows you the list before anything is signalled:
+
+```bash
+# preview: processes named node
+proc kill node --dry-run
+
+# SIGTERM, SIGKILL after 10s
+proc stop node
+
+# node anywhere, like pkill -f
+proc kill node --cmd
+
+# a port and a name at once
+proc kill :3000 webpack
+
+# wait for exit, like killall -w
+proc wait node
+```
+
+A name matches the whole name (`node`, never `nodemon`), and proc leaves out the shell and agent it runs under, so `proc kill zsh` can't end the terminal you typed it in. The same commands work on macOS, Linux and Windows. No regex surprises, and nothing is signalled until you've seen the list.
 
 ## Install
 
 ```bash
 brew install yazeed/proc/proc     # macOS
+npm install -g proc-cli           # npm/bun, any OS
 cargo install proc-cli            # Rust
-npm install -g proc-cli           # npm/bun
 ```
 
-See the [GitHub repo](https://github.com/yazeed/proc-cli) for all installation options.
+On Windows: `scoop bucket add proc https://github.com/yazeed/scoop-bucket-proc` and `scoop install proc`. The [install page](/install) lists every other way.
