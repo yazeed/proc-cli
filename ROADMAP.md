@@ -161,6 +161,42 @@ One health check after a crash or a messy session: port conflicts, orphans, stuc
 
 **Feature test:** deepens proc's command of its domain. **Open:** whether `tree` alone should differ from `list --sort pid`, or a `tree --sort` flag is better than changing the default (a sort flag on a hierarchy only orders siblings, which is easy to misread).
 
+### Stop a process and everything it started
+
+```bash
+proc stop 4821 --tree          # 4821 and every process below it, as `proc tree 4821` shows them
+proc kill :3000 --tree -y      # what holds the port, and everything it started
+```
+
+`kill`, `stop`, `freeze` and `thaw` act on the processes their targets name, never on those processes' children. A child outlives its parent and is adopted by PID 1, still running, still holding its port, files and memory. Measured on macOS (2026-11-12):
+
+- `proc kill` on `npm run dev` leaves its `node` running under PID 1: SIGKILL can't be passed on, so npm never tells its child.
+- `proc stop` on `npm run dev` leaves nothing, because npm passes SIGTERM on to its child. But `proc stop` on `sh -c 'a & b & wait'` leaves both children running, because `sh` doesn't. Whether `stop` cleans up depends on whether the parent passes signals on, which the person stopping it can't see. `stop` also escalates to SIGKILL after `--timeout`, which no parent can pass on.
+
+**Who needs it.** People rarely name the problem: "kill process tree", "kill all child processes" and "kill process group" get about 10 US searches a month each. They meet its symptoms instead: a port still in use after the server was stopped (what the site's EADDRINUSE and "kill process on port" posts answer), or old servers found weeks later (the zombie post's MCP servers: launchers whose children ran for 19 days). Programs need it more, and know it: npm's `tree-kill`, which does exactly this, is downloaded about 69 million times a week (npm's count, 2026-11-12), mostly as a dependency of other tools, since it is a library rather than a command, against 2.7 million for `kill-port`. An agent that starts a server and later stops it is in the same position, and today its options are poor: `pkill -P` reaches only direct children, `kill -- -<pgid>` needs the process group and misses children that left it, and `pkill -f <pattern>` on Linux also kills the shell it runs in (measured on Ubuntu 24.04: the shell exits 143). Windows has it built in (`taskkill /T`); Linux and macOS have no single command.
+
+**Against the feature test:**
+
+1. *Fits the domain:* yes. Parentage is already proc's subject (`tree`, `why`, `orphans`, `--parent`), and stopping processes is its main job. Stopping a service's tree is still not service management: proc stops what is running now, and doesn't restart, supervise or know about units.
+2. *One obvious command:* `--tree`, because `proc tree <target>` already shows exactly the set it would act on, so the preview is a command people know. Not `--recursive` (`for -r` means "below a directory" from 2.5.0) and not `--children` (it reaches grandchildren).
+3. *Common case effortless:* the common case stays flag-free and unchanged. `--tree` is for the cases above, where a flag is right. A cheaper first step serves the common case directly: when a stopped process leaves children running, say so in the receipt ("2 processes it started are still running: `proc stop 4821 --tree`") and add the count to the JSON (each process already carries `child_count`). That alone turns a silent leftover into a visible one.
+4. *Explicit:* the preview and the confirmation list every process in the tree, drawn as `tree` draws it, with the count. `--json` without `--yes` exits 4 with that list, as today. Never the default.
+5. *Deepens the domain:* yes. It is the difference between stopping a process and stopping the work it was doing.
+6. *Conventions:* a flag that refines a verb (PHILOSOPHY.md, "Semantic"). Every target kind works, and several targets' trees are merged, deduplicated by PID. proc and the processes it runs under are left out of every tree, as 2.4.0 leaves them out of names, so `proc stop <my terminal> --tree` can't end the shell that ran it.
+7. *Both readers:* people get the tree in the preview and a receipt that says how many were stopped. Programs get every process in `processes` with its outcome, and each descendant names the target whose tree it came from (a key such as `tree_of`, to be settled with the JSON naming rules).
+
+**What makes it hard, and must be decided first:**
+
+- **PID reuse and late children.** The tree is read once for the preview and acted on later. Each process keeps the start-time check every signal already has, so a reused PID is never hit. A child started after the preview isn't in the list a person approved: proc must not act on it silently, but should say it exists.
+- **Order of signals.** Stopping the parent first gives it the chance to restart children (supervisors do); stopping children first can make a parent respawn them. One answer is to pause the whole tree (SIGSTOP), send the signal to all of it, then resume it (SIGCONT) so each process can handle its SIGTERM. systemd's answer for a unit is to send the signal to every process at once, followed by SIGCONT. Windows: `taskkill /T`.
+- **What a tree can't see.** A process that daemonized (forked twice) or was already orphaned has PID 1 as its parent and is no longer in any tree: `--tree` doesn't find it, and the docs must say so, pointing to `orphans --in`. Process groups and cgroups would find more but exist only on some systems and aren't something people can see; parentage works on all five OSes proc supports.
+- **A tree too big to mean.** `--tree` on PID 1, launchd or a login session is the whole system. Refuse a root like that with a clear error, rather than rely on the confirmation alone.
+- **Which verbs.** `kill`, `stop`, `freeze` and `thaw` clearly (freezing a build and its compilers together is useful). `free :port` probably not: it already stops every holder of the port, and a holder's children rarely matter to the port. `unstick` no.
+
+**Related, smaller and independent:** `--parent` on `list`, `by` and `in` takes only a PID, where every other target takes `:port` or a name too. And `--parent 999999` (no such process) prints "No processes found" with exit 0, so a mistyped PID looks like a parent with no children; it should say the parent doesn't exist.
+
+**Verdict so far:** valuable, and within the philosophy. Programs need it most, and people need it through its symptoms. Ship the notice for leftover children first (small, no new flag), then `--tree` on `kill` and `stop` once the order of signals and the rule for late children are settled, then `freeze` and `thaw`. **Open:** the four questions above, and whether the notice alone is enough for people, leaving `--tree` mainly for programs.
+
 ### `--sort uptime`
 
 ```bash
