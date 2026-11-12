@@ -245,9 +245,14 @@ A name matches the whole name (`node`, never `nodemon`), and proc leaves out the
 ## Install
 
 ```bash
-brew install yazeed/proc/proc     # macOS
-npm install -g proc-cli           # npm/bun, any OS
-cargo install proc-cli            # Rust
+# macOS
+brew install yazeed/proc/proc
+
+# npm or bun, any OS
+npm install -g proc-cli
+
+# Rust
+cargo install proc-cli
 ```
 
 On Windows: `scoop bucket add proc https://github.com/yazeed/scoop-bucket-proc` and `scoop install proc`. The [install page](/install) lists every other way.
