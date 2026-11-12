@@ -15,6 +15,7 @@
 //!   inside each target
 //! - `tree` gives one order in its human and JSON forms
 
+mod built;
 mod contract;
 
 use assert_cmd::Command;
@@ -62,13 +63,7 @@ fn serial() -> MutexGuard<'static, ()> {
 }
 
 fn listener_path() -> PathBuf {
-    let mut path = std::env::current_exe().unwrap();
-    path.pop();
-    path.pop();
-    path.push("examples");
-    path.push(format!("listener{}", std::env::consts::EXE_SUFFIX));
-    assert!(path.exists(), "build the example first: {}", path.display());
-    path
+    built::example("listener")
 }
 
 /// Copies of the listener under one name no other process has

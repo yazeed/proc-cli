@@ -14,6 +14,8 @@
 //! signals (`freeze`, `thaw`), a real orphan (Windows has no PID 1 to adopt
 //! one), exact escape sequences, or a resize stay Unix only.
 
+mod built;
+
 #[cfg(windows)]
 use portable_pty::CommandBuilder;
 use portable_pty::{native_pty_system, PtySize};
@@ -800,16 +802,9 @@ impl Drop for Orphan {
     }
 }
 
-/// `target/debug/examples/listener`, found relative to this test binary
-/// (`target/debug/deps/terminal-<hash>`)
+/// `target/debug/examples/listener`
 fn listener_path() -> PathBuf {
-    let mut path = std::env::current_exe().unwrap();
-    path.pop();
-    path.pop();
-    path.push("examples");
-    path.push(format!("listener{}", std::env::consts::EXE_SUFFIX));
-    assert!(path.exists(), "build the example first: {}", path.display());
-    path
+    built::example("listener")
 }
 
 // ---- prompt cases ----

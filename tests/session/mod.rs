@@ -79,14 +79,8 @@ impl Session {
     }
 }
 
-/// `target/debug/examples/session`, found relative to the test binary
-/// (`target/debug/deps/<name>-<hash>`)
+/// `target/debug/examples/session` (every test binary that uses this module
+/// declares `mod built`)
 fn session_path() -> PathBuf {
-    let mut path = std::env::current_exe().unwrap();
-    path.pop();
-    path.pop();
-    path.push("examples");
-    path.push("session");
-    assert!(path.exists(), "build the example first: {}", path.display());
-    path
+    crate::built::example("session")
 }

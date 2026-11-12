@@ -16,6 +16,7 @@
 //! - `{name}`: the owned process's name, for name targets and `--by`
 //! - `{part}`: the start of that name, which matches only with `--cmd`
 
+mod built;
 mod contract;
 
 use assert_cmd::Command;
@@ -712,16 +713,9 @@ impl Drop for Fixture {
     }
 }
 
-/// `target/debug/examples/listener[.exe]`, found relative to this test binary
-/// (`target/debug/deps/flags-<hash>`)
+/// `target/debug/examples/listener[.exe]`
 fn listener_path() -> PathBuf {
-    let mut path = std::env::current_exe().unwrap();
-    path.pop();
-    path.pop();
-    path.push("examples");
-    path.push(format!("listener{}", std::env::consts::EXE_SUFFIX));
-    assert!(path.exists(), "build the example first: {}", path.display());
-    path
+    built::example("listener")
 }
 
 /// The argument list for a case, placeholders filled and `--json` added

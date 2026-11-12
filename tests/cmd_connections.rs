@@ -6,22 +6,17 @@
 //! connection's peer is the test itself. The listeners are killed and reaped on
 //! drop, and the clients closed before a test ends.
 
+mod built;
+
 use proc_cli::core::connections::{connections_to, Connections};
 use std::io::{BufRead, BufReader};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, Stdio};
 
-/// `target/debug/examples/listener`, found relative to this test binary
-/// (`target/debug/deps/cmd_connections-<hash>`)
+/// `target/debug/examples/listener`
 fn listener_path() -> PathBuf {
-    let mut path = std::env::current_exe().unwrap();
-    path.pop();
-    path.pop();
-    path.push("examples");
-    path.push(format!("listener{}", std::env::consts::EXE_SUFFIX));
-    assert!(path.exists(), "build the example first: {}", path.display());
-    path
+    built::example("listener")
 }
 
 /// One listener the test started. Killed and reaped on drop.

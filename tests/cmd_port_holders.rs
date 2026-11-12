@@ -6,6 +6,7 @@
 //! see both holders. Both are killed and reaped on drop; destructive commands
 //! only run against them.
 
+mod built;
 mod contract;
 mod skip;
 
@@ -42,16 +43,9 @@ fn run_text(args: &[&str]) -> (String, i32) {
     )
 }
 
-/// `target/debug/examples/listener`, found relative to this test binary
-/// (`target/debug/deps/cmd_port_holders-<hash>`)
+/// `target/debug/examples/listener`
 fn listener_path() -> PathBuf {
-    let mut path = std::env::current_exe().unwrap();
-    path.pop();
-    path.pop();
-    path.push("examples");
-    path.push(format!("listener{}", std::env::consts::EXE_SUFFIX));
-    assert!(path.exists(), "build the example first: {}", path.display());
-    path
+    built::example("listener")
 }
 
 /// One listener the test started. Killed and reaped on drop.

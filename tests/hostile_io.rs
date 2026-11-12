@@ -24,6 +24,8 @@
 //! and Rust reports it as the same `BrokenPipe`). `/dev/full` exists only on
 //! Linux.
 
+mod built;
+
 use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -192,15 +194,9 @@ impl Drop for Fixture {
     }
 }
 
-/// `target/debug/examples/listener[.exe]`, found relative to this test binary
+/// `target/debug/examples/listener[.exe]`
 fn listener_path() -> PathBuf {
-    let mut path = std::env::current_exe().unwrap();
-    path.pop();
-    path.pop();
-    path.push("examples");
-    path.push(format!("listener{}", std::env::consts::EXE_SUFFIX));
-    assert!(path.exists(), "build the example first: {}", path.display());
-    path
+    built::example("listener")
 }
 
 fn needs_fixture(args: &[&str]) -> bool {

@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+mod built;
 #[cfg(unix)]
 mod session;
 
@@ -62,16 +63,9 @@ fn strip_colours(text: &str) -> String {
         .into_owned()
 }
 
-/// `target/debug/examples/listener`, found relative to this test binary
-/// (`target/debug/deps/human_output-<hash>`)
+/// `target/debug/examples/listener`
 fn listener_path() -> PathBuf {
-    let mut path = std::env::current_exe().unwrap();
-    path.pop();
-    path.pop();
-    path.push("examples");
-    path.push(format!("listener{}", std::env::consts::EXE_SUFFIX));
-    assert!(path.exists(), "build the example first: {}", path.display());
-    path
+    built::example("listener")
 }
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);

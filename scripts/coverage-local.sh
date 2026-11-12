@@ -55,9 +55,11 @@ set -e
 
 "$bin/llvm-profdata" merge -sparse /out/profiles/*.profraw -o /out/coverage.profdata
 objects=()
-for f in /out/target/debug/deps/*; do
+# Test programs: target/debug/deps up to Rust 1.99,
+# target/debug/build/proc-cli/<hash>/out from 1.100 (beside the build script)
+for f in /out/target/debug/deps/* /out/target/debug/build/proc-cli/*/out/*; do
   [ -f "$f" ] && [ -x "$f" ] || continue
-  case "$(basename "$f")" in *.*) continue ;; esac
+  case "$(basename "$f")" in *.*|build_script_build*) continue ;; esac
   objects+=(-object "$f")
 done
 objects+=(-object /out/target/debug/proc)
@@ -66,7 +68,7 @@ objects+=(-object /out/target/debug/proc)
 
 # Timing tests, one at a time, from the same instrumented build.
 export LLVM_PROFILE_FILE=/out/timing-profiles/%p-%m.profraw
-timing_bin="$(ls -t /out/target/debug/deps/timing-* | grep -v "\\." | head -1)"
+timing_bin="$( (ls -t /out/target/debug/deps/timing-* /out/target/debug/build/proc-cli/*/out/timing-* 2>/dev/null || true) | grep -v "\\." | head -1)"
 echo "== timing tests under instrumentation =="
 for t in $("$timing_bin" --list 2>/dev/null | sed -n "s/: test$//p"); do
   res="$("$timing_bin" --exact "$t" --test-threads=1 2>&1 | grep -E "^test result" || true)"

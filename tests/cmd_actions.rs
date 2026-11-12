@@ -8,6 +8,7 @@
 //! reaped on drop. Timing assertions live in tests/timing.rs; the limits here
 //! are only there to stop a broken command from hanging the test.
 
+mod built;
 mod contract;
 
 use assert_cmd::Command;
@@ -105,16 +106,9 @@ fn measured(json: &Value) -> bool {
         .is_some_and(|cpu| cpu > MEASURED)
 }
 
-/// `target/debug/examples/listener`, found relative to this test binary
-/// (`target/debug/deps/cmd_actions-<hash>`)
+/// `target/debug/examples/listener`
 fn listener_path() -> PathBuf {
-    let mut path = std::env::current_exe().unwrap();
-    path.pop();
-    path.pop();
-    path.push("examples");
-    path.push(format!("listener{}", std::env::consts::EXE_SUFFIX));
-    assert!(path.exists(), "build the example first: {}", path.display());
-    path
+    built::example("listener")
 }
 
 /// A fresh temp directory, as processes report paths: symlinks resolved and no

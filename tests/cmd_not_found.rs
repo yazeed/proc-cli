@@ -6,6 +6,7 @@
 //! for `--yes`. Every process these tests act on is a listener the test
 //! started; the missing target is a PID above every OS maximum.
 
+mod built;
 mod contract;
 
 use assert_cmd::Command;
@@ -34,15 +35,9 @@ fn run_json(args: &[&str]) -> (Value, i32) {
     (json, code)
 }
 
-/// `target/debug/examples/listener`, found relative to this test binary
+/// `target/debug/examples/listener`
 fn listener_path() -> PathBuf {
-    let mut path = std::env::current_exe().unwrap();
-    path.pop();
-    path.pop();
-    path.push("examples");
-    path.push(format!("listener{}", std::env::consts::EXE_SUFFIX));
-    assert!(path.exists(), "build the example first: {}", path.display());
-    path
+    built::example("listener")
 }
 
 /// A process the test owns. Killed and reaped on drop.

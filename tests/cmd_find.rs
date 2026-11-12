@@ -6,6 +6,7 @@
 //! process, and `stuck` is always scoped with `--in <that directory>`. Each
 //! process is killed and reaped on drop.
 
+mod built;
 mod contract;
 mod skip;
 
@@ -80,16 +81,9 @@ fn run_text_until(args: &[&str], saw_busy: impl Fn(&str) -> bool) -> (String, i3
     }
 }
 
-/// `target/debug/examples/listener`, found relative to this test binary
-/// (`target/debug/deps/cmd_find-<hash>`)
+/// `target/debug/examples/listener`
 fn listener_path() -> PathBuf {
-    let mut path = std::env::current_exe().unwrap();
-    path.pop();
-    path.pop();
-    path.push("examples");
-    path.push(format!("listener{}", std::env::consts::EXE_SUFFIX));
-    assert!(path.exists(), "build the example first: {}", path.display());
-    path
+    built::example("listener")
 }
 
 /// A fresh temp directory, as processes report paths: symlinks resolved (/var

@@ -7,6 +7,8 @@
 //! own.
 #![cfg(unix)]
 
+mod built;
+
 use assert_cmd::cargo::CommandCargoExt;
 use std::os::unix::process::CommandExt;
 use std::process::Command;
@@ -60,15 +62,9 @@ fn from_inside_a_shell(name: &str, dir: &std::path::Path, args: &[&str]) -> Insi
     }
 }
 
-/// `target/debug/examples/listener`, found relative to this test binary
+/// `target/debug/examples/listener`
 fn listener_path() -> std::path::PathBuf {
-    let mut path = std::env::current_exe().unwrap();
-    path.pop();
-    path.pop();
-    path.push("examples");
-    path.push("listener");
-    assert!(path.exists(), "build the example first: {}", path.display());
-    path
+    built::example("listener")
 }
 
 /// A copy of the listener example running as `name` in `dir`: a process that

@@ -7,6 +7,7 @@
 //! Every case here only reads, runs `--dry-run`, or acts on a process the test
 //! started.
 
+mod built;
 mod contract;
 
 use clap::CommandFactory;
@@ -36,15 +37,9 @@ fn run_json(args: &[&str]) -> (Value, i32) {
     (json, code)
 }
 
-/// `target/debug/examples/listener[.exe]`, found relative to this test binary
+/// `target/debug/examples/listener[.exe]`
 fn listener_path() -> PathBuf {
-    let mut path = std::env::current_exe().unwrap();
-    path.pop();
-    path.pop();
-    path.push("examples");
-    path.push(format!("listener{}", std::env::consts::EXE_SUFFIX));
-    assert!(path.exists(), "build the example first: {}", path.display());
-    path
+    built::example("listener")
 }
 
 /// A listener the test owns, running in `dir`; killed and reaped on drop

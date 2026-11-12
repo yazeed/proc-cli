@@ -4,6 +4,7 @@
 //! listener example, `examples/listener.rs`), named as `:<port>`. Each process
 //! is killed and reaped on drop.
 
+mod built;
 mod contract;
 
 use assert_cmd::Command;
@@ -40,16 +41,9 @@ fn run_text(args: &[&str]) -> (String, i32) {
     )
 }
 
-/// `target/debug/examples/listener`, found relative to this test binary
-/// (`target/debug/deps/cmd_free-<hash>`)
+/// `target/debug/examples/listener`
 fn listener_path() -> PathBuf {
-    let mut path = std::env::current_exe().unwrap();
-    path.pop();
-    path.pop();
-    path.push("examples");
-    path.push(format!("listener{}", std::env::consts::EXE_SUFFIX));
-    assert!(path.exists(), "build the example first: {}", path.display());
-    path
+    built::example("listener")
 }
 
 /// A port nothing listens on, from below every OS's ephemeral range (Linux
