@@ -99,6 +99,7 @@ Update version in ALL of these files:
 - [ ] `pkg/npm/package.json` — version field
 - [ ] `.claude-plugin/marketplace.json` — `metadata.version` field
 - [ ] `docs/_data/release.yml` — `version` field (the website's header, footer, install page and structured data read it)
+- [ ] `README.md` — the Nix row's tag (`github:yazeed/proc-cli/vX.Y.Z`; the docs test fails until it names `Cargo.toml`'s version, since a bare `github:yazeed/proc-cli` installs `main`)
 - [ ] `Cargo.lock` — rebuild after the bump so its `proc-cli` entry changes, and commit it (`flake.nix` reads its version from `Cargo.toml` and its dependencies from `Cargo.lock`, so it needs no bump of its own)
 
 `pkg/aur/PKGBUILD` is not bumped. Both AUR packages are community packages, kept by their own maintainer: `proc-cli` (built from source) and `proc-cli-bin` (the release binaries); they moved from `proc` and `proc-bin`, which are orphaned at 2.1.1, with 2.2.0. The project has no AUR account yet, so the README points Arch users to those packages, and the PKGBUILD stays in the repo for the day the project can co-maintain them (see "After the tag: AUR" below). `pkg/copr/proc-cli.spec` and `pkg/winget/*.yaml` are not bumped either: COPR's `sources.sh` sets the spec's version at build time, and the release's `update-winget` writes the winget manifests (`pkg/winget/move-pr.sh` while the first version waits for a moderator, which `commit-package-files` brings to `main`; winget-releaser in the winget-pkgs pull request after that).

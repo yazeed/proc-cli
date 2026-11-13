@@ -74,7 +74,7 @@ proc free :3000 --yes             # a port target: no question
 | npm / bun | `npm install -g proc-cli` | `npm update -g proc-cli` |
 | PyPI | `pip install proc-cli`, `pipx install proc-cli` or `uv tool install proc-cli` | `pip install --upgrade proc-cli` |
 | Rust | `cargo install proc-cli` (or `cargo binstall proc-cli` for the pre-built binary) | run it again |
-| Nix | `nix profile install github:yazeed/proc-cli` | no |
+| Nix | `nix profile install github:yazeed/proc-cli/v2.4.0` (the flake at the release's tag) | install the next release's tag |
 | Docker | `docker run --rm -it --pid=host --net=host --cap-add SYS_PTRACE --security-opt apparmor=unconfined yazeed/proc-cli` | `docker pull yazeed/proc-cli` |
 | Release files | `.deb`, `.rpm` and binaries on the [releases page](https://github.com/yazeed/proc-cli/releases/latest) | download the new file |
 

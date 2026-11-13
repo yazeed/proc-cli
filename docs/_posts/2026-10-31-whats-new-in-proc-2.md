@@ -70,8 +70,8 @@ Exit codes keep one meaning on every command: `0` success, `1` error, `2` not fo
 
 ## More ways to install
 
-- **Nix:** `nix profile install github:yazeed/proc-cli` installs proc with its man page and shell completions, and `nix run github:yazeed/proc-cli -- on :3000` runs it once without installing. The flake builds proc and runs its whole test suite in Nix's sandbox, checked in CI on Linux and macOS. A nixpkgs package is in review.
-- **Arch Linux:** the AUR has `proc` (built from source) next to `proc-bin` (the release binaries), both maintained by Rafael Dominiquini.
+- **Nix:** `nix profile install github:yazeed/proc-cli/vX.Y.Z`, with a release's tag ([the install page](/install#nix) has the current one), installs proc with its man page and shell completions, and `nix run github:yazeed/proc-cli/vX.Y.Z -- on :3000` runs it once without installing. The flake builds proc and runs its whole test suite in Nix's sandbox, checked in CI on Linux and macOS. A nixpkgs package is in review.
+- **Arch Linux:** the AUR has `proc` (built from source) next to `proc-bin` (the release binaries), both maintained by Rafael Dominiquini, their community packager.
 - **Windows:** the binary no longer needs the Visual C++ runtime, so it starts on a machine that never installed it.
 
 ## Upgrading from 1.x

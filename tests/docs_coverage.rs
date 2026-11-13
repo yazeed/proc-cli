@@ -418,6 +418,26 @@ fn every_exit_code_and_reason_is_explained() {
     assert_none_missing(misses);
 }
 
+/// The README's Nix row installs the release the rest of it describes: a
+/// bare `github:yazeed/proc-cli` installs `main`, unreleased code that calls
+/// itself the last release. The release bump changes `Cargo.toml`, so this
+/// fails until the row names the new tag too
+#[test]
+fn the_readme_installs_the_flake_at_the_release_tag() {
+    let readme = read("README.md");
+    let flake = "github:yazeed/proc-cli";
+    let tagged = format!("{flake}/v{}", env!("CARGO_PKG_VERSION"));
+    assert!(
+        readme.contains(&tagged),
+        "README.md's Nix row should install {tagged}"
+    );
+    assert_eq!(
+        readme.matches(flake).count(),
+        readme.matches(&tagged).count(),
+        "every {flake} in README.md names the release tag ({tagged})"
+    );
+}
+
 /// `x.y.z` as numbers, for comparing versions
 fn version(text: &str) -> (u32, u32, u32) {
     let mut parts = text.split('.').map(|p| p.parse::<u32>().unwrap());
