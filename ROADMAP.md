@@ -18,7 +18,7 @@ It also marks `proc_cli::core::Process` `#[non_exhaustive]`, so a later field ne
 
 ### Spellings that mean one thing
 
-Decided with the convention for guesses; 2.5.0 prints a notice on each spelling that changes, and this release changes them:
+Decided with the convention for guesses; 2.6.0 prints a notice on each spelling that changes, and this release changes them:
 
 - **`-n` is `--limit` everywhere.** Today it is `--limit` in `list`, `by`, `in`, `for` and `ports` but `--interval` in `watch` and `wait`. The interval keeps `--interval` and gets no new short letter (`-d` is `tree --depth`), and `watch`'s `-l` for its limit goes.
 - **`ports -l` stops being `--local`.** Every row of `ports` is a listening port, so `-l` is then accepted as `ss`'s "listening", with a note.
@@ -59,7 +59,7 @@ The flake is done (see the CHANGELOG): it reads its version from Cargo.toml, has
 - `proc kill 3000` and `proc on 3000` read 3000 as a PID and say "Try: proc list". Nothing mentions `:3000`, though freeing a port is proc's main job and `kill-port 3000` is the habit people bring.
 - `proc kill -9 node`, `proc stop --force node` and `proc kill --all node` stop at a parser error with no tip.
 - Some tips match the spelling, not the meaning: `proc list --port 5000` suggests `--sort`, `proc kill node --signal 9` suggests `--in`, and `proc what :5000` and `proc who :5000` suggest `wait`, `watch` and `why` instead of `on`.
-- `proc ps aux` takes `aux` as a name and exits 0 with "No processes found".
+- `proc ps aux` takes `aux` as a name and exits 0 with "No processes found". (Since 2.5.0 it adds that a process has `aux` in its command line and suggests `--cmd`; it still reads `aux` as a name.)
 - `p` is `ports` while `ps` is `list`, and `i` (`info`) sits next to `in`. `-n` is `--limit` in five commands and `--interval` in two. `list aux` exits 0 where `by aux` exits 2 (documented, but a second rule to learn).
 
 Already right: `info :5000`, `list node`, `list --sort mem`, `free 5000` (its error names `:5000`), `help kill`, and `proc port` (did you mean `ports`).
@@ -73,7 +73,7 @@ These get fixed together, from one convention, not one error message at a time:
 
 This takes in the candidates "Errors that name what you meant", "Signal words, not numbers" and "`proc :3000`" below (and "One meaning for `-n`", now decided for the next major release), and the human clock is how it is measured: time to a correct answer for someone new, before and after.
 
-**Feature test:** obvious, explicit, and one spelling per intent with habits kept (PHILOSOPHY.md, "Easy to Remember"). **Decided (2026-11-03, moved 2026-11-10):** the convention ships in 2.5.0 (2.4.0 went out first with fixes), everything that only adds (tips, notes, `kill -9`, `proc :3000`); the changes to existing spellings are in "Spellings that mean one thing" under the next major release. A hint names proc's spelling for each likely reading and reports at most one cheap read-only fact; it never runs a reading, never offers a `--yes` line, and never becomes a JSON key a script could act on.
+**Feature test:** obvious, explicit, and one spelling per intent with habits kept (PHILOSOPHY.md, "Easy to Remember"). **Decided (2026-11-03, moved 2026-11-10 and 2026-11-12):** the convention ships in 2.6.0 (2.4.0 went out with fixes, and 2.5.0 with what was on main), everything that only adds (tips, notes, `kill -9`, `proc :3000`). Its research is redone first, against 2.5.0: of the guesses above, re-tried on 2026-11-12, `ps aux` now names the command-line match and `proc :3000` gets clap's "did you mean 'on'?", and the rest still read as listed; the first-try evals and the list of guesses are run again before the plan is updated, and any guess a release has since answered leaves it; the changes to existing spellings are in "Spellings that mean one thing" under the next major release. A hint names proc's spelling for each likely reading and reports at most one cheap read-only fact; it never runs a reading, never offers a `--yes` line, and never becomes a JSON key a script could act on.
 
 ## Candidates
 
