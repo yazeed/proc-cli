@@ -98,23 +98,22 @@ proc on :3000 --json
 **A word to branch on.** Every error in `--json` carries a `reason` (`not_found`, `ruled_out`, `permission_denied`, `needs_confirmation`, `invalid_input`, `not_supported`, `system_error`), so the agent never has to parse a sentence. A loop that frees a port looks like this:
 
 ```bash
-proc free :3000 --yes --json \
-  > out.json
+proc free :3000 -y --json > r.json
 case $? in
   # free (or nobody held it)
   0) echo "port 3000 is free" ;;
   # still in use
-  1) jq -r .error out.json ;;
+  1) jq -r .error r.json ;;
   # can't see the holder
   3) echo "ask the user" ;;
   # e.g. invalid_input
-  *) jq -r .reason out.json ;;
+  *) jq -r .reason r.json ;;
 esac
 ```
 
 `free` checks the port really is free afterwards, so exit 0 is the answer the agent wanted, whether something held the port or not.
 
-**It never acts on itself or on what runs it.** A name is matched against the whole process name, not any part of the command line; `--cmd` widens it to command lines, and even then a match in proc's own arguments doesn't count. So the `pkill -f` case above, as `proc kill --cmd "sleep 4242" -y`, kills the `sleep` and the shell carries on. A process proc runs under (the shell, the agent) is never acted on even when its name matches: it's left out and named in the JSON's `left_out`, and if it was the only match, nothing happens and proc exits 2 with `"reason": "ruled_out"`.
+**It never acts on itself or on what runs it.** A name is matched against the whole process name, not any part of the command line; `--cmd` widens it to command lines, and even then a match in proc's own arguments doesn't count. So in the `pkill -f` case above, `proc kill --cmd "sleep 4242"` matches the `sleep` and not the shell running it, and the shell carries on. A process proc runs under (the shell, the agent) is never acted on even when its name matches: it's left out and named in the JSON's `left_out`, and if it was the only match, nothing happens and proc exits 2 with `"reason": "ruled_out"`.
 
 **It checks the PID is still the same process.** Every process proc reports carries its `start_time`. Pass it back with `--start-time` and proc acts only if that PID still belongs to the process that started then; if the PID was reused, the answer is exit 2 with `"reason": "ruled_out"` and nothing is signalled. proc also checks start times itself right before each signal, so a PID that changed hands between the preview and the signal is never hit.
 
