@@ -176,7 +176,13 @@ docker run --rm --cpus 4 -v "$PWD":/work -w /work -e NIX_CONFIG="experimental-fe
 
 Before the tag, make the tarball first and pass it: `git archive --format=tar.gz --prefix=proc-cli-X.Y.Z/ -o source.tar.gz HEAD`, then add `-e PROC_SOURCE=/work/source.tar.gz` to the `docker run`.
 
-Once the package is merged, `update-fork.sh` does nothing, and nixpkgs' update bot opens `proc-cli: A -> B` after a release: check its hashes match the job's and its build passes, and approve it as the package's maintainer.
+Once the package is merged, `update-fork.sh` does nothing, and nixpkgs' update bot (r-ryantm) opens `proc-cli: A -> B` after a release, finding the version from the GitHub release and the package's `nix-update-script`. Don't open that pull request ourselves: the bot skips a version that already has one with that title, and only a committer could merge ours. When the bot's pull request is open:
+
+1. Check its version and both hashes match the `package.nix` the release committed to `main`, and its checks pass.
+2. Review it as nixpkgs-update's maintainer FAQ asks (the diff, the changelog, its "Instructions to test this update"), and approve it.
+3. Merge it as the package's maintainer by commenting `@NixOS/nixpkgs-merge-bot merge` on it (nixpkgs' CONTRIBUTING.md, "How to merge pull requests yourself": the bot merges a pull request from r-ryantm when a maintainer of a `pkgs/by-name` package asks).
+
+A NixOS stable release takes the version on nixpkgs' `master` when its branch is cut (`release-YY.MM`, in May and November); after that, a release reaches it only through a backport pull request.
 
 ### After the tag: Ubuntu PPA
 
