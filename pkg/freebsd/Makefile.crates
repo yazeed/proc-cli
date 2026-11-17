@@ -15,11 +15,11 @@ CARGO_CRATES=	aho-corasick-1.1.5 \
 		cfg-if-1.0.5 \
 		cfg_aliases-0.1.1 \
 		cfg_aliases-0.2.2 \
-		clap-4.6.7 \
+		clap-4.6.8 \
 		clap_builder-4.6.7 \
-		clap_complete-4.6.11 \
-		clap_derive-4.6.7 \
-		clap_lex-1.1.1 \
+		clap_complete-4.6.12 \
+		clap_derive-4.6.8 \
+		clap_lex-1.1.2 \
 		clap_mangen-0.2.33 \
 		colorchoice-1.0.5 \
 		colored-3.1.1 \
@@ -37,7 +37,7 @@ CARGO_CRATES=	aho-corasick-1.1.5 \
 		document-features-0.2.12 \
 		downcast-rs-1.2.1 \
 		encode_unicode-1.0.0 \
-		errno-0.3.14 \
+		errno-0.3.15 \
 		fastrand-2.5.0 \
 		filedescriptor-0.8.3 \
 		float-cmp-0.10.0 \
@@ -52,9 +52,9 @@ CARGO_CRATES=	aho-corasick-1.1.5 \
 		lock_api-0.4.14 \
 		log-0.4.35 \
 		memchr-2.8.3 \
-		mio-1.2.4 \
+		mio-1.2.5 \
 		nix-0.28.0 \
-		nix-0.31.3 \
+		nix-0.31.4 \
 		normalize-line-endings-0.3.0 \
 		ntapi-0.4.3 \
 		num-traits-0.2.19 \
