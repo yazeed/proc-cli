@@ -161,13 +161,13 @@ Nothing to publish: the AUR's `proc-cli` and `proc-cli-bin` belong to their comm
 
 ### After the tag: nixpkgs
 
-nixpkgs builds proc from the tag, with its tests, as `proc-cli`. `pkg/nixpkgs/package.nix` is the file nixpkgs carries at `pkgs/by-name/pr/proc-cli/package.nix`. Until the package is merged, the pull request on NixOS/nixpkgs ([#581248](https://github.com/NixOS/nixpkgs/pull/581248), from `yazeed/nixpkgs`, branch `proc-cli-init`) carries two commits, `maintainers: add yazeed` and `proc-cli: init at X.Y.Z`, and the release's `update-nixpkgs` job moves it to each release:
+nixpkgs builds proc from the tag, with its tests, as `proc-cli`. `pkg/nixpkgs/package.nix` is the file nixpkgs carries at `pkgs/by-name/pr/proc-cli/package.nix`. It was merged on 2026-11-13 at 2.4.0 ([#581248](https://github.com/NixOS/nixpkgs/pull/581248)), so `nix run nixpkgs#proc-cli` works (it reads nixpkgs-unstable), and NixOS 26.11 takes what `master` holds when it branches. nixpkgs' update bot opens each new version's pull request (below); the release's `update-nixpkgs` job builds the same update first, so a packaging problem shows in our run and its hashes are there to check the bot's against:
 
 1. `pkg/nixpkgs/update.sh X.Y.Z` sets the version, puts `lib.fakeHash` in both hashes and builds with `pkg/nixpkgs/build.nix` (the nixpkgs in `flake.lock`, plus the maintainer entry nixpkgs may not have yet): the first build fails naming the source hash, the second the cargo hash. It puts each in, then builds once more, which runs the whole test suite in the sandbox, and checks the result prints `proc X.Y.Z`.
-2. `pkg/nixpkgs/update-fork.sh X.Y.Z --push` amends `proc-cli: init at …` on the fork's branch to that `package.nix` and the new version, keeping its author and its `Assisted-by:` trailer (nixpkgs asks commits written with an AI assistant for one), force-pushes it with a lease on the commit it replaced, and retitles the pull request. It stops if the branch isn't those two commits, or if `package.nix` differs from the branch in more than the version and hash lines: bring such a change to the pull request by hand. If the retitle is refused, the job warns with the `gh pr edit` command.
+2. `pkg/nixpkgs/update-fork.sh X.Y.Z --push` finds `proc-cli` in nixpkgs and leaves the fork alone. (Before the merge it amended `proc-cli: init at …` on `yazeed/nixpkgs`, branch `proc-cli-init`, to the new version and retitled #581248.)
 3. The release's `commit-package-files` job commits that `package.nix` to `main` ("chore: package files for vX.Y.Z"), with the FreeBSD and pkgsrc files; it is also the run's `nixpkgs-package` artifact.
 
-A dry run does steps 1 and 2 for the version in `Cargo.toml`, from a tarball of the checkout (`PROC_SOURCE`, step 1 of this file), and pushes nothing. To run them locally, in the `nixos/nix` image:
+A dry run does step 1 for the version in `Cargo.toml`, from a tarball of the checkout (`PROC_SOURCE`, step 1 of this file), and pushes nothing. To run it locally, in the `nixos/nix` image:
 
 ```bash
 docker run --rm --cpus 4 -v "$PWD":/work -w /work -e NIX_CONFIG="experimental-features = nix-command flakes" \
@@ -176,7 +176,7 @@ docker run --rm --cpus 4 -v "$PWD":/work -w /work -e NIX_CONFIG="experimental-fe
 
 Before the tag, make the tarball first and pass it: `git archive --format=tar.gz --prefix=proc-cli-X.Y.Z/ -o source.tar.gz HEAD`, then add `-e PROC_SOURCE=/work/source.tar.gz` to the `docker run`.
 
-Once the package is merged, `update-fork.sh` does nothing, and nixpkgs' update bot (r-ryantm) opens `proc-cli: A -> B` after a release, finding the version from the GitHub release and the package's `nix-update-script`. Don't open that pull request ourselves: the bot skips a version that already has one with that title, and only a committer could merge ours. When the bot's pull request is open:
+nixpkgs' update bot (r-ryantm) opens `proc-cli: A -> B` after a release, finding the version from the GitHub release and the package's `nix-update-script`. Don't open that pull request ourselves: the bot skips a version that already has one with that title, and only a committer could merge ours. When the bot's pull request is open:
 
 1. Check its version and both hashes match the `package.nix` the release committed to `main`, and its checks pass.
 2. Review it as nixpkgs-update's maintainer FAQ asks (the diff, the changelog, its "Instructions to test this update"), and approve it.
@@ -231,12 +231,12 @@ After tag push, monitor GitHub Actions:
 - [ ] Docker image pushed
 - [ ] "Update the apt repository" passed: https://proc-cli.com/apt/dists/stable/main/binary-amd64/Packages lists the new version; the job checks it itself, for amd64 and arm64, and fails if it doesn't. Pages keeps only the first deploy of a commit, and the tagged commit was deployed by its own push, before the release had its `.deb` files, so the job deploys main's newest commit instead: the one "Commit the package files" pushed. If that job pushed nothing, this one fails and says so: deploy after the next push to main with `gh workflow run pages.yml --ref main`
 - [ ] "Update winget" passed. Until a moderator merges the first version, microsoft/winget-pkgs#469298, it moves that pull request to the new version (`pkg/winget/move-pr.sh`: one commit replacing the version folder's three manifests, then the title and description), so it lands at the current release; it was opened at 2.2.0 and stayed there through 2.3.0 until it was moved to 2.4.0 by hand on 2026-11-11. Once winget-pkgs has the package, the job opens the new version's own pull request (winget-releaser). If the first version is merged between two releases, rerun this job in the latest release's run so winget catches up: `gh run rerun <run id> --job <job id>` (the ids are in `gh run view <run id> --json jobs`)
-- [ ] Every submission still waiting for review offers the new version, in its title, its files and what its description says: the winget pull request (#469298, while unmerged), the nixpkgs pull request (#581248: title, `package.nix`, and each claim in the description, such as which platforms it was built on), FreeBSD bug 300492 (the newest patch is the new version's, the older ones obsolete) and the pkgsrc problem report. A job that skipped with a notice is not a pass: open each one
+- [ ] Every submission still waiting for review offers the new version, in its title, its files and what its description says: the winget pull request (#469298, while unmerged), nixpkgs' update pull request (`proc-cli: A -> B` from the update bot: its version and both hashes against the `package.nix` the release committed, see "After the tag: nixpkgs"), FreeBSD bug 300492 (the newest patch is the new version's, the older ones obsolete) and the pkgsrc problem report. A job that skipped with a notice is not a pass: open each one
 - [ ] The PPA's builds for the new version succeeded on every release and both architectures (https://launchpad.net/~yazeedaloyoun/+archive/ubuntu/proc-cli/+packages)
 - [ ] "Update COPR" passed: the build for the new version succeeded on every chroot (https://copr.fedorainfracloud.org/coprs/yazeed/proc-cli/builds/)
 - [ ] The "Install the PyPI wheel" jobs passed (Linux x86_64 and aarch64, Alpine, macOS arm64 and x86_64, Windows)
 - [ ] PyPI published: https://pypi.org/project/proc-cli/ shows the new version
-- [ ] "Update nixpkgs" passed: https://github.com/NixOS/nixpkgs/pull/581248 is titled `proc-cli: init at X.Y.Z` and its checks pass; the job's `package.nix` is committed to `main`
+- [ ] "Update nixpkgs" passed: it built X.Y.Z with its tests and left the fork alone; the job's `package.nix` is committed to `main`. The update bot's `proc-cli: A -> B` pull request is checked and merged by the steps in "After the tag: nixpkgs" (`gh pr list -R NixOS/nixpkgs --author r-ryantm --search "proc-cli in:title" --state all`)
 - [ ] "Update the FreeBSD port" passed: the patch for the new version is on https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=300492 (or its own update bug, once the port is committed) with `maintainer-approval+`; the job's `pkg/freebsd/` files are committed to `main`
 - [ ] "Update pkgsrc" passed, and its `pkgsrc-update` artifact has the diff and `gnats-fields.json`
 - [ ] "Commit the package files" passed: `main` has `chore: package files for vX.Y.Z`, with the files of each of the package jobs that passed, winget's manifests among them until its first version is merged (a job that failed leaves its folder as it was, with a warning). It pushes with the workflow's own token, so the commit starts no CI run of its own
@@ -261,8 +261,8 @@ nix run github:yazeed/proc-cli/vX.Y.Z -- --version  # Nix: builds the tag from t
 # The same without Nix installed, in the nixos/nix image (afterwards: docker rmi nixos/nix, then the prunes in step 8)
 docker run --rm -e NIX_CONFIG="experimental-features = nix-command flakes" nixos/nix nix run github:yazeed/proc-cli/vX.Y.Z -- --version
 
-# nixpkgs: the open pull request (or, once merged, the update bot's) builds the new version and passes;
-# after it reaches nixos-unstable, `nix run nixpkgs#proc-cli -- --version` prints proc X.Y.Z
+# nixpkgs: the update bot's pull request builds the new version and passes; once it is merged
+# and reaches nixpkgs-unstable, `nix run nixpkgs#proc-cli -- --version` prints proc X.Y.Z
 
 # AUR (the community maintainer's packages): both should reach the new version within a few days
 curl -s 'https://aur.archlinux.org/rpc/v5/info?arg[]=proc-cli&arg[]=proc-cli-bin' | jq -r '.results[] | "\(.Name) \(.Version)"'
@@ -366,7 +366,7 @@ On tag push, GitHub Actions handles:
 
 The GitHub Release, and so every job after it, waits on `check-credentials`, which runs on every tag and dry run (step 1). Docker's workflow runs on its own and logs in itself.
 
-Nix has nothing to publish: the flake lives in the repository, so `nix run github:yazeed/proc-cli/vX.Y.Z` works as soon as the tag is pushed, and CI's Nix jobs have already built and tested the flake on main. The nixpkgs package (`nix run nixpkgs#proc-cli`) is moved to each release by `update-nixpkgs` until it is merged, and by the nixpkgs update bot after (see "After the tag: nixpkgs").
+Nix has nothing to publish: the flake lives in the repository, so `nix run github:yazeed/proc-cli/vX.Y.Z` works as soon as the tag is pushed, and CI's Nix jobs have already built and tested the flake on main. The nixpkgs package (`nix run nixpkgs#proc-cli`) reaches each release through nixpkgs' update bot, after `update-nixpkgs` has built it (see "After the tag: nixpkgs").
 
 nfpm is pinned in `release.yml` (`NFPM_VERSION`) with the SHA-256 of its Linux x86_64 tarball (`NFPM_SHA256`, from that release's `checksums.txt`). To update it, change both together, then rebuild the packages and run the install check in step 7.
 
@@ -419,6 +419,6 @@ Grouped by system, as docs/install.md and the README list them. "Updates" says h
 | Any | npm | proc-cli | `npm install -g proc-cli` | `npm update -g proc-cli` |
 | Any | PyPI | proc-cli | `pip install proc-cli`, `pipx install proc-cli`, `uv tool install proc-cli` | `pip install --upgrade proc-cli`; `publish-pypi`, first published with 2.3.0 |
 | Any | Nix (flake in this repo) | proc-cli | `nix profile install github:yazeed/proc-cli` | no |
-| Any | nixpkgs (not live yet) | proc-cli | `nix run nixpkgs#proc-cli` | step 5; waits to be merged: NixOS/nixpkgs#581248. Not in install.md or the README until merged |
+| Linux, macOS (Apple silicon) | nixpkgs | proc-cli | `nix profile install nixpkgs#proc-cli`, `nix run nixpkgs#proc-cli`, `pkgs.proc-cli` | `nix profile upgrade proc-cli`; the update bot opens each release's pull request and the maintainer merges it (step 5). In nixpkgs since 2.4.0 (NixOS/nixpkgs#581248) |
 | Any | Docker | yazeed/proc-cli (also yazeed/proc) | `docker run yazeed/proc-cli` | `docker pull yazeed/proc-cli` |
 | Any | install script, release files | | `install.sh`, the GitHub release | run again, download each release |

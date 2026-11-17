@@ -161,7 +161,18 @@ Update with `pip install --upgrade proc-cli`, `pipx upgrade proc-cli` or `uv too
 
 ## Nix
 
-The flake in this repository. The nixpkgs package is not merged yet, so `nixpkgs#proc-cli` does not exist.
+nixpkgs has proc as `proc-cli`, built for Linux and Apple-silicon Macs, with the man page and shell completions:
+
+```bash
+# install it
+nix profile install nixpkgs#proc-cli
+# or run it once without installing
+nix run nixpkgs#proc-cli -- on :3000
+```
+
+On NixOS or with home-manager, add `pkgs.proc-cli` to `environment.systemPackages` or `home.packages`. `nixpkgs#` in a command reads the nixpkgs-unstable channel, which has it; NixOS gets it with the nixos-unstable channel's next update and in NixOS 26.11. Update with `nix profile upgrade proc-cli` (or your system's rebuild). nixpkgs' update bot brings each release, so a new version arrives there after its update is merged, not the moment it is tagged.
+
+The flake in this repository installs a release as soon as it is tagged:
 
 ```bash
 # install the latest release, with the man page and shell completions
