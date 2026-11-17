@@ -76,7 +76,7 @@ proc free :3000 --yes             # a port target: no question
 | PyPI | `pip install proc-cli`, `pipx install proc-cli` or `uv tool install proc-cli` | `pip install --upgrade proc-cli` |
 | Rust | `cargo install proc-cli` (or `cargo binstall proc-cli` for the pre-built binary) | run it again |
 | Nix (nixpkgs) | `nix profile install nixpkgs#proc-cli`, or `pkgs.proc-cli` in a NixOS or home-manager config (Linux and Apple-silicon macOS) | `nix profile upgrade proc-cli`; nixpkgs' update bot brings each release |
-| Nix (flake) | `nix profile install github:yazeed/proc-cli/v2.5.0` (the flake at the release's tag; on Intel Macs, 2.5.0 is the last version it builds) | install the next release's tag |
+| Nix (flake) | `nix profile install github:yazeed/proc-cli/v2.5.0` (the flake at the release's tag; Linux and Apple-silicon macOS, and on an Intel Mac `v2.5.0`, the last it builds there) | install the next release's tag |
 | Docker | `docker run --rm -it --pid=host --net=host --cap-add SYS_PTRACE --security-opt apparmor=unconfined yazeed/proc-cli` | `docker pull yazeed/proc-cli` |
 | Release files | `.deb`, `.rpm` and binaries on the [releases page](https://github.com/yazeed/proc-cli/releases/latest) | download the new file |
 

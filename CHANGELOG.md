@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The Nix flake no longer builds for Intel Macs; 2.5.0 is their last.** nixpkgs dropped Intel Macs after 26.05, and 2.5.0's flake built them from a second input pinned to nixpkgs 26.05, tested on an Intel Mac in CI. That input, the `x86_64-darwin` system and CI's `macos-15-intel` Nix job are gone; on an Intel Mac, `nix profile install github:yazeed/proc-cli/v2.5.0` keeps working with that release's lock, and later versions come from Homebrew, the release binary, PyPI, npm or cargo. The install page, the README and RELEASE.md say so. Nothing changed in proc
+
 - **The nixpkgs package installs a man page per command.** `pkg/nixpkgs/package.nix` ran `proc manpage > proc.1`, so nixpkgs' `proc-cli` installs `man proc` alone, and its update bot changes only the version and hashes. Now at 2.5.0, it installs every page as the flake does (`proc manpage --dir man`, then `installManPage man/*.1`), and CI's nixpkgs build checks `proc-kill.1.gz` is installed. A pull request of our own brings it to nixpkgs once the bot's 2.5.0 update is merged (ROADMAP.md)
 
 ### Fixed

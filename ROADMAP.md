@@ -44,10 +44,6 @@ PHILOSOPHY.md's "Easy for People, Complete for Programs" (added in 2.3.0) is the
 
 nixpkgs' `proc-cli` installs `proc.1` alone (`proc manpage > proc.1`), and its update bot changes only the version and hashes. Once the release has moved `pkg/nixpkgs/package.nix` to 2.5.0, it installs every page as the flake does (`proc manpage --dir man`, then `installManPage man/*.1`), and CI builds and tests that against 2.5.0 (before the move, CI would build 2.4.0, which has no `--dir`). Once the bot's 2.5.0 pull request is merged, a pull request of our own brings that change to nixpkgs. It needs a committer to merge it. If it lands after 26.11 branches (2026-11-23), 26.11 keeps one page unless it is backported.
 
-### The flake drops Intel Macs
-
-nixpkgs dropped Intel Macs after 26.05, so the flake builds them from nixpkgs 26.05 (a second input, `nixpkgs-intel-mac`) and CI's Nix job runs on `macos-15-intel`. 2.5.0 is the last release whose flake builds for Intel Macs: after its tag, `x86_64-darwin`, that input and that CI row go, and the install page points Intel Macs to `github:yazeed/proc-cli/v2.5.0`, Homebrew or the release binary.
-
 ### The FreeBSD port keeps our changes once it is in the tree
 
 `update-port.sh` builds from `pkg/freebsd/` while the port waits for a committer, but from the ports tree's own port once it is committed, so a change made in `pkg/freebsd/` would then be left out of the update, as 2.5.0's man pages were from pkgsrc's (CHANGELOG, 2.5.0's "The NetBSD update carries this repository's package changes"). When the port is committed, it gets pkgsrc's rule: the update ends at this repository's files, and stops if the tree's port changed since the last update was sent.
