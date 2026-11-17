@@ -218,7 +218,7 @@ The other way, re-adding the version to pkgsrc-wip for a committer to take, stay
 
 ## 6. Verify CI
 
-After tag push, monitor GitHub Actions. The release is done only when every channel below offers the new version and no job of the tag's run (or of CI on the release commit) is red: for each failed job, find the cause, fix it on `main` if it is ours, rerun the job (`gh run rerun <run id> --job <job id>`) and check the channel again. A job that published its files and failed afterwards still needs its rerun (2.5.0's "Update winget" moved the manifests, then failed on the pull request's title).
+After tag push, monitor GitHub Actions. The release is done only when every channel below offers the new version and no job of the tag's run (or of CI on the release commit) is red: for each failed job, find the cause, fix it on `main` if it is ours, rerun the job (`gh run rerun <run id> --job <job id>`) and check the channel again. A job that published its files and failed afterwards still needs its rerun (2.5.0's "Update winget" moved the manifests, then failed on the pull request's title). A rerun also reruns the jobs that depend on it, "Commit the package files" and "Update the apt repository" among them, with the tag's scripts: check `main` afterwards and revert what it undid (2.5.0's rerun committed the tag's `package.nix` and pkgsrc files again, over the man-page changes made since).
 - [ ] "Check credentials" passed: it gates the GitHub Release, so nothing publishes without it
 - [ ] Build succeeds for all platforms, including each build's "Check the binary reports the tag's version" step
 - [ ] Both "Build freebsd/netbsd" jobs pass: each BSD binary is built in its own OS and prints the tag's version there (the GitHub Release needs them)

@@ -17,8 +17,8 @@ RUST_REQ=	1.88.0
 PROC=		${WRKSRC}/target/release/proc
 
 post-build:
-	@${STEP_MSG} "Creating manual page..."
-	${RUN}${PROC} manpage > ${WRKDIR}/proc.1
+	@${STEP_MSG} "Creating manual pages..."
+	${RUN}${PROC} manpage --dir ${WRKDIR}/man
 	@${STEP_MSG} "Creating completion rules..."
 	${RUN}${PROC} completions bash > ${WRKDIR}/proc-completion.bash
 	${RUN}${PROC} completions fish > ${WRKDIR}/proc-completion.fish
@@ -30,8 +30,8 @@ INSTALLATION_DIRS+=	share/fish/vendor_completions.d
 INSTALLATION_DIRS+=	share/zsh/site-functions
 
 post-install:
-	${INSTALL_MAN} ${WRKDIR}/proc.1 \
-	  ${DESTDIR}${PREFIX}/${PKGMANDIR}/man1/proc.1
+	${INSTALL_MAN} ${WRKDIR}/man/*.1 \
+	  ${DESTDIR}${PREFIX}/${PKGMANDIR}/man1
 	${INSTALL_DATA} ${WRKDIR}/proc-completion.bash \
 	  ${DESTDIR}${PREFIX}/share/bash-completion/completions/proc
 	${INSTALL_DATA} ${WRKDIR}/proc-completion.fish \
