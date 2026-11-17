@@ -333,7 +333,7 @@ fn man_command() -> clap::Command {
     command
 }
 
-/// `proc manpage --dir`: proc.1, and proc-<command>.1 for each command
+/// `proc manpage --dir`: `proc.1`, and `proc-<command>.1` for each command
 /// `proc --help` lists, each titled with proc's version
 fn write_man_pages(dir: &std::path::Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;

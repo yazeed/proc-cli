@@ -24,7 +24,7 @@
       aliases: [f]
       try: "for ./server"
       short: running a program
-      summary: "Processes running a program or holding a file open"
+      summary: "Processes running a program or holding a file open, or with <code>-r</code> anything below a directory (what keeps a mount busy)"
     - name: by
       aliases: [b]
       try: "by node"

@@ -1,8 +1,8 @@
-sysutils/proc-cli: update to 2.4.0
+sysutils/proc-cli: update to 2.5.0
 
-Changes since 2.3.0:
-- daemons like sshd are named after their program, not their title
-- with security.curtain=1, a port proc can't see is never called free
-- a name that matches the shell proc runs in is said, not skipped
-- ports says when other users' ports are hidden from it
-- for leaves proc itself out
+Changes since 2.4.0:
+- for -r finds what keeps a mount point busy, for umount
+- a man page for each command: man proc-kill
+- each command's --help ends with examples and its exit codes
+- a refused kill says why, and a mistyped number what to write
+- unstick JSON: a failure is "outcome": "failed", reason in "error"

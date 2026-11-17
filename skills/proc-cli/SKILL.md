@@ -67,6 +67,7 @@ Give several targets as separate arguments: `proc stop <pid> <pid> :<port> --dry
 | What does a PID use or hold? | `proc info <pid> --json`, `proc on <pid> --json` (each lists its ports, each with `exposure` and a connection count). Answer who can reach a port from `exposure` (`exposed` or `local`), not from `address`; proc does not check firewalls |
 | What runs in a directory? | `proc in <dir> --json`, add `--by <name>` |
 | What has this file open? | `proc for <file> --json` |
+| What keeps a directory or mount busy (`umount: target is busy`, `Device or resource busy`)? | `proc for <dir> -r --json` (proc 2.5 or later; on FreeBSD and NetBSD, a mount point only) |
 | Where did it come from? | `proc why :<port> --json`, `proc tree <pid> --ancestors --json` |
 | Children of a process | `proc tree <pid> --json` |
 | Busiest processes | `proc list --sort cpu --limit 10 --json` |

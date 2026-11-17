@@ -42,7 +42,7 @@ PHILOSOPHY.md's "Easy for People, Complete for Programs" (added in 2.3.0) is the
 
 ### nixpkgs installs every man page
 
-nixpkgs' `proc-cli` installs `proc.1` alone (`proc manpage > proc.1`), and its update bot changes only the version and hashes. With 2.5.0, `pkg/nixpkgs/package.nix` installs every page as the flake does (`proc manpage --dir man`, then `installManPage man/*.1`), so the release run builds and tests it; once the bot's 2.5.0 pull request is merged, a pull request of our own brings that change to nixpkgs. It needs a committer to merge it. If it lands after 26.11 branches (2026-11-23), 26.11 keeps one page unless it is backported.
+nixpkgs' `proc-cli` installs `proc.1` alone (`proc manpage > proc.1`), and its update bot changes only the version and hashes. Once the release has moved `pkg/nixpkgs/package.nix` to 2.5.0, it installs every page as the flake does (`proc manpage --dir man`, then `installManPage man/*.1`), and CI builds and tests that against 2.5.0 (before the move, CI would build 2.4.0, which has no `--dir`). Once the bot's 2.5.0 pull request is merged, a pull request of our own brings that change to nixpkgs. It needs a committer to merge it. If it lands after 26.11 branches (2026-11-23), 26.11 keeps one page unless it is backported.
 
 ### The flake drops Intel Macs
 

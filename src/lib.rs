@@ -21,7 +21,7 @@
 //! - **Port Freeing**: `proc free :3000` - stop what holds the port (SIGTERM, then SIGKILL after up to 5 seconds) and verify it is available
 //! - **Ancestry Tracing**: `proc why :3000` - trace why a port is busy
 //! - **Orphan Detection**: `proc orphans --in .` - find processes whose parent has exited (candidates: on macOS every app launchd started has parent 1 too)
-//! - **File Lookup**: `proc for ./server` - find by file path
+//! - **File Lookup**: `proc for ./server` - find by file path; `proc for /mnt/usb -r` - everything keeping a directory or mount busy
 //! - **Cross-Platform**: macOS, Linux, Windows, FreeBSD and NetBSD
 //! - **Shell Completions**: bash, zsh, fish, elvish, PowerShell via `proc completions`
 //! - **Man Pages**: `proc manpage` prints `proc.1`, and `proc manpage --dir <dir>` writes it and a page per command (`man proc-kill`)
@@ -37,6 +37,9 @@
 //!
 //! # What has this file open, or runs it as its program?
 //! proc for ./server
+//!
+//! # What keeps this mount busy (umount: target is busy)?
+//! proc for /mnt/usb -r
 //!
 //! # Kill multiple targets
 //! proc kill :3000 :8080 node

@@ -4,10 +4,10 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 2.4.x   | :white_check_mark: |
-| < 2.4   | :x:                |
+| 2.5.x   | :white_check_mark: |
+| < 2.5   | :x:                |
 
-1.x and 2.0.x to 2.2.x are no longer supported. Upgrade to 2.4.x; see the [CHANGELOG](CHANGELOG.md) for what changed.
+1.x and 2.0.x to 2.4.x are no longer supported. Upgrade to 2.5.x; see the [CHANGELOG](CHANGELOG.md) for what changed.
 
 ## Reporting a Vulnerability
 

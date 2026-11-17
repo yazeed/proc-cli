@@ -7,10 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-11-17
 
 ### Added
 
-- **`proc for <dir> --recursive` (`-r`) finds what keeps a directory or mount busy.** `proc for` checked one path, so it couldn't answer why `umount` says "target is busy" or `rm` says "Device or resource busy" (together about 1,000 searches a month in the US): a file open three folders down didn't count. With `--recursive` on a directory, it counts every process using anything below it: a file open anywhere under it, or a process working in it or running a program from it. Below means by whole folder names, so `/srv/app2` isn't below `/srv/app`; on a file the flag changes nothing. Linux reads `/proc`. macOS lists every open file once with `lsof` and keeps those below the directory: under a second, where `lsof +D` walking a home folder took over five minutes. FreeBSD's and NetBSD's `fstat` reports the filesystem a file is on but not its path, so there `--recursive` answers for a mount point, which is the unmount case, and any other directory exits 4 (`not_supported`) instead of answering for the whole filesystem. Windows finds the processes working in the directory or running a program from it. JSON is unchanged.
+- **`proc for <dir> --recursive` (`-r`) finds what keeps a directory or mount busy.** `proc for` checked one path, so it couldn't answer why `umount` says "target is busy" or `rm` says "Device or resource busy" (together about 1,000 searches a month in the US): a file open three folders down didn't count. With `--recursive` on a directory, it counts every process using anything below it: a file open anywhere under it, or a process working in it or running a program from it. Below means by whole folder names, so `/srv/app2` isn't below `/srv/app`; on a file the flag changes nothing. Linux reads `/proc`. macOS lists every open file once with `lsof` and keeps those below the directory: under a second, where `lsof +D` walking a home folder took over five minutes. FreeBSD's and NetBSD's `fstat` reports the filesystem a file is on but not its path, so there `--recursive` answers for a mount point, which is the unmount case, and any other directory exits 4 (`not_supported`) instead of answering for the whole filesystem. Windows finds the processes working in the directory or running a program from it. JSON is unchanged. The README's and the website's task tables, the docs.rs page, the agent skill (a task row, and an eval that checks an agent lists before it stops anything) and the [umount post](https://proc-cli.com/posts/device-or-resource-busy-target-is-busy/) show it.
 
 - **Blog post: [why AI agents trip over lsof, kill and pkill](https://proc-cli.com/posts/why-agents-trip-over-kill-lsof-pkill/).** What goes wrong when an agent stops a server or frees a port with the usual tools, measured on macOS 15.7 and Ubuntu 24.04: `lsof` exits 1 both when it finds nothing and when its arguments are wrong, `kill` exits 1 both when the process is gone and when it isn't yours, `pkill -f` on Linux kills the shell running it (macOS's doesn't), the Ubuntu container image has none of `lsof`, `ss` and `netstat`, a PID comes back to a new process (on NetBSD after about 5,850 others), and nothing previews what it's about to stop. Then what proc 2.4.0 does for each: one exit code per kind of answer, a `reason` word, never acting on itself or what runs it, `--start-time`, needing `--yes`, the same behaviour on five systems, and the agent skill.
 
@@ -102,7 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Every workflow action runs on Node 24.** Six still ran on Node 20, which GitHub is retiring: `actions/download-artifact` 4.3.0 to 8.0.2, `actions/upload-artifact` 4.6.2 to 7.0.2, `actions/setup-node` 4.4.0 to 6.5.0, `docker/build-push-action` 5.4.0 to 7.4.0, `docker/login-action` 3.7.0 to 4.8.0 and `docker/setup-qemu-action` 3.7.0 to 4.4.0. `cachix/install-nix-action` moved to 31.11.4 and `vmactions/freebsd-vm` to 1.6.0 (FreeBSD 15.1's image now has a UFS root, not ZFS). `setup-node` stays on 6.x: 7.0 no longer exports the placeholder `NODE_AUTH_TOKEN` the npm job's trusted publishing was tested with, so Dependabot leaves 7.x alone until a release's dry run passes on it. CI and the release's dry run passed on the branch before it was merged. Nothing changed in proc
 
-- **Dependabot updates.** The Docker image builds on `rust:1-alpine` at digest `44819b2` (was `27cd9be`); `vmactions/netbsd-vm` moved to 1.5.3, `taiki-e/install-action` to 2.90.3 and `softprops/action-gh-release` to 3.0.4. Nothing changed in proc.
+- **Dependency updates.** The release's `cargo update` moved clap to 4.6.8 (with `clap_complete` 4.6.12, `clap_derive` 4.6.8 and `clap_lex` 1.1.2), `nix` to 0.31.4, `mio` to 1.2.5 and `errno` to 0.3.15, all patch releases; the whole suite passed on them. Dependabot moved the Docker image's `rust:1-alpine` to digest `44819b2` (was `27cd9be`), `vmactions/netbsd-vm` to 1.5.3, `taiki-e/install-action` to 2.90.3 and `softprops/action-gh-release` to 3.0.4. Nothing changed in proc.
 
 ### Fixed
 
@@ -1116,7 +1117,8 @@ All commands accept **targets**: `:port`, `PID`, or `name` where applicable.
 
 ---
 
-[Unreleased]: https://github.com/yazeed/proc-cli/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/yazeed/proc-cli/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/yazeed/proc-cli/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/yazeed/proc-cli/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/yazeed/proc-cli/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/yazeed/proc-cli/compare/v2.1.1...v2.2.0

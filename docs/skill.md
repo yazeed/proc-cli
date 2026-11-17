@@ -73,6 +73,7 @@ Once it's installed, ask your agent things like:
 - "What's on port 3000?"
 - "Port 3000 is taken, free it"
 - "Why is port 8080 busy?"
+- "umount says the drive is busy, what's using it?"
 - "What is PID 4321, and can anything outside this machine reach it?"
 - "What did you leave running in this project?"
 - "My machine is slow, what's using the CPU?"
