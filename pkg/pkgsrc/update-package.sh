@@ -3,8 +3,13 @@
 # copies its files back to pkg/pkgsrc/ and writes the diff and the text for
 # the gnats problem report (RELEASE.md, "After the tag: pkgsrc"):
 #   pkg/pkgsrc/update-package.sh VERSION QUARTER OUT_DIR
-# It starts from the package as it is on pkgsrc trunk (NetBSD/pkgsrc's GitHub
-# mirror), so the diff applies there, and builds it in the QUARTER branch
+# The diff starts from the package as it is on pkgsrc trunk (NetBSD/pkgsrc's
+# GitHub mirror), so it applies there, and ends at this repository's DESCR,
+# Makefile and PLIST, so changes made here (2.5.0's man page per command) reach
+# pkgsrc. PKGSRC_BASE names a directory with the DESCR, Makefile and PLIST
+# sent for the version trunk has: if trunk's differ from those, a pkgsrc
+# developer changed them, and the script stops rather than undo it (bring the
+# change into pkg/pkgsrc/ first). It builds in the QUARTER branch
 # (e.g. 2026Q3), the one NetBSD's binary packages, rust among them, come
 # from: a branch whose lang/rust differs would build Rust itself. OUT_DIR
 # gets proc-cli-VERSION-pkgsrc.diff (patch -p1 from the pkgsrc root),
@@ -25,6 +30,10 @@ out=${3:?usage: update-package.sh VERSION QUARTER OUT_DIR}
 here=$(cd "$(dirname "$0")" && pwd)
 tree=${PKGSRCDIR:-/usr/pkgsrc}
 files="DESCR Makefile PLIST cargo-depends.mk distinfo"
+# Written here; cargo-depends.mk and distinfo are generated below
+ours="DESCR Makefile PLIST"
+base=${PKGSRC_BASE:?PKGSRC_BASE names the DESCR, Makefile and PLIST sent for the version pkgsrc trunk has}
+base=$(cd "$base" && pwd)
 trunk=https://raw.githubusercontent.com/NetBSD/pkgsrc/trunk/sysutils/proc-cli
 
 fail() { echo "update-package.sh: $*" >&2; exit 1; }
@@ -75,6 +84,27 @@ mkdir -p "$a" "$b" "$pkg"
 for f in $files; do
     ftp -V -o "$a/$f" "$trunk/$f"
     cp "$a/$f" "$pkg/$f"
+done
+
+# Trunk must still be what was sent last time ($NetBSD$ IDs aside), so
+# starting from this repository's files undoes nobody's change
+for f in $ours; do
+    # shellcheck disable=SC2016 # the $ signs are pkgsrc's, not the shell's
+    if ! sed 's/\$NetBSD:[^$]*\$/$NetBSD$/' "$a/$f" | diff -u "$base/$f" - >&2; then
+        fail "pkgsrc trunk's $f differs from the one sent for its version (above): bring that change into pkg/pkgsrc/$f, then run this again"
+    fi
+done
+
+# This repository's copies, with trunk's expanded $NetBSD$ ID where they have
+# the bare one, so the diff applies
+for f in $ours; do
+    id=$(grep -o '\$NetBSD:[^$]*\$' "$a/$f" | head -n 1 || true)
+    if [ -n "$id" ]; then
+        # shellcheck disable=SC2016
+        awk -v id="$id" '{ sub(/\$NetBSD\$/, id) } 1' "$here/$f" > "$pkg/$f"
+    else
+        cp "$here/$f" "$pkg/$f"
+    fi
 done
 
 [ "$(grep -c '^DISTNAME=' "$pkg/Makefile")" -eq 1 ] || fail "expected one DISTNAME= line in the package's Makefile"

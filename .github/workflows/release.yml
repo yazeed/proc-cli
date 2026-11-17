@@ -1046,7 +1046,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
+      # The whole history, to find what was sent for trunk's version
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       # The quarter is where NetBSD 11.0's package repository points
       # (…/11.0 -> …/11.0_2026Q3)
@@ -1069,13 +1072,28 @@ jobs:
             *) echo "::error::could not read the pkgsrc quarter from '$location'"; exit 1 ;;
           esac
 
+      # The DESCR, Makefile and PLIST sent for the version pkgsrc trunk has,
+      # from the release commit that wrote them (chore: package files for
+      # vX.Y.Z): update-package.sh stops if trunk's differ, so a pkgsrc
+      # developer's change there is never undone
+      - name: What was sent for trunk's version
+        run: |
+          trunk=$(curl -fsSL https://raw.githubusercontent.com/NetBSD/pkgsrc/trunk/sysutils/proc-cli/Makefile |
+            sed -n 's/^DISTNAME=[[:space:]]*proc-cli-//p')
+          commit=$(git log -1 --format=%H --grep="^chore: package files for v$trunk\$" origin/main)
+          [ -n "$commit" ] || { echo "::error::no 'chore: package files for v$trunk' commit on main"; exit 1; }
+          mkdir pkgsrc-base
+          for f in DESCR Makefile PLIST; do git show "$commit:pkg/pkgsrc/$f" > "pkgsrc-base/$f"; done
+          echo "PKGSRC_BASE=$GITHUB_WORKSPACE/pkgsrc-base" >> "$GITHUB_ENV"
+          echo "trunk has $trunk, sent in $commit"
+
       - name: Move the package to the release, build and check it
         uses: vmactions/netbsd-vm@5957cf330aef2e6ddc63c604364c99ce2e02b91d # v1.5.3
         with:
           release: "11.0"
           cpu: 4
           mem: 8192
-          envs: VERSION QUARTER PROC_SOURCE
+          envs: VERSION QUARTER PROC_SOURCE PKGSRC_BASE
           # A mirror can cut a download short (CI, 2026-11-04), so a failed
           # pkg_add is tried twice more. digest is what make makesum checksums
           # with: without it, makesum writes a distinfo with no checksums
