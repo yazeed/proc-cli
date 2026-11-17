@@ -2,9 +2,18 @@
   description = "Semantic CLI tool for process management. Target by port, PID, name or path.";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  # nixpkgs dropped Intel Macs after 26.05 (26.11 release notes), and its
+  # unstable branch refuses to evaluate for x86_64-darwin. 26.05 keeps them
+  # until the end of 2026, so Intel Macs build from it; proc 2.5.0 is the last
+  # release whose flake does
+  inputs.nixpkgs-intel-mac.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
 
   outputs =
-    { self, nixpkgs }:
+    {
+      self,
+      nixpkgs,
+      nixpkgs-intel-mac,
+    }:
     let
       systems = [
         "x86_64-linux"
@@ -12,7 +21,13 @@
         "x86_64-darwin"
         "aarch64-darwin"
       ];
-      forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+      pkgsFor =
+        system:
+        if system == "x86_64-darwin" then
+          nixpkgs-intel-mac.legacyPackages.${system}
+        else
+          nixpkgs.legacyPackages.${system};
+      forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f (pkgsFor system));
       cargoToml = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package;
     in
     {
