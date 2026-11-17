@@ -49,8 +49,22 @@ head=$(gh api "repos/$fork/branches/$branch" --jq .commit.sha)
 from=${PR_HEAD:-$head}
 old=$(gh api "repos/$fork/contents/$dir?ref=$from" --jq '[.[] | select(.type == "dir") | .name] | if length == 1 then .[0] else error("not one version folder") end') ||
     fail "$fork's $branch at $from does not hold one version folder under $dir"
+title="New package: yazeed.proc-cli version $version"
 if [ "$old" = "$version" ]; then
-    echo "$upstream#$number already offers $version"
+    # The files can have moved while the title and description didn't (2.5.0's
+    # run failed between the two): bring those to the version too
+    shown=$(echo "$prs" | jq -r '.[0].title' | sed 's/^New package: yazeed.proc-cli version //')
+    if [ "$shown" != "$version" ] && [ "$push" = --push ]; then
+        s=$(echo "$shown" | sed 's/\./\\./g')
+        gh pr view "$number" -R "$upstream" --json body --jq .body | sed "s/$s/$version/g" |
+            gh api -X PATCH "repos/$upstream/pulls/$number" -f title="$title" -F body=@- > /dev/null ||
+            fail "$upstream#$number offers $version's files, but its title and description still say $shown"
+        echo "$upstream#$number offers $version; its title and description moved from $shown"
+    elif [ "$shown" != "$version" ]; then
+        echo "not pushed: with --push, $upstream#$number's title and description move from $shown to $version"
+    else
+        echo "$upstream#$number already offers $version"
+    fi
     exit 0
 fi
 
@@ -87,7 +101,6 @@ done
 grep -qx "  InstallerUrl: https://github.com/yazeed/proc-cli/releases/download/v$version/$zip" "$work/yazeed.proc-cli.installer.yaml" ||
     fail "the installer manifest's InstallerUrl is not v$version's $zip"
 
-title="New package: yazeed.proc-cli version $version"
 gh pr view "$number" -R "$upstream" --json body --jq .body > "$work/old-body"
 sed "s/$o/$version/g" "$work/old-body" > "$work/body"
 
@@ -120,5 +133,9 @@ newtree=$(gh api -X POST "repos/$fork/git/trees" --input "$work/tree.json" --jq 
 commit=$(gh api -X POST "repos/$fork/git/commits" -f message="$title" -f tree="$newtree" -f "parents[]=$head" --jq .sha)
 gh api -X PATCH "repos/$fork/git/refs/heads/$branch" -f sha="$commit" -F force=false > /dev/null ||
     fail "$branch moved while this ran: nothing was changed, run it again"
-gh pr edit "$number" -R "$upstream" --title "$title" --body-file "$work/body" > /dev/null
+# The REST call, not `gh pr edit`: that one also reads the pull request's
+# projects through GraphQL, which needs read:org, a scope WINGET_TOKEN doesn't
+# have (2.5.0's run moved the files, then failed here)
+gh api -X PATCH "repos/$upstream/pulls/$number" -f title="$title" -F body=@"$work/body" > /dev/null ||
+    fail "the files moved to $version, but the title and description didn't: rerun this job"
 echo "$upstream#$number moved from $old to $version ($commit)"

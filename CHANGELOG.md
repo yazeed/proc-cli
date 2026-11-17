@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The winget job retitles the submission it moves.** 2.5.0's release moved microsoft/winget-pkgs#469298's manifests to 2.5.0, then failed: `gh pr edit` also reads the pull request's projects through GitHub's GraphQL API, which needs a token scope (`read:org`) the winget token doesn't have, so the title and description still said 2.4.0. `pkg/winget/move-pr.sh` now edits them through the REST API, which the token may, and when the files already offer the version but the title doesn't, it moves the title and description instead of saying there is nothing to do. Nothing changed in proc
+- **The NetBSD package files on `main` install every man page again.** The release's `commit-package-files` job writes the pkgsrc files `update-package.sh` built from pkgsrc's own copy, which installs `proc.1` alone, so 2.5.0's run put that back over this repository's `Makefile` and `PLIST`, which install a page per command, and the docs test failed on `main`. They are restored at 2.5.0. Nothing changed in proc
+
 ## [2.5.0] - 2026-11-17
 
 ### Added
