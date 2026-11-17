@@ -347,7 +347,11 @@ jobs:
       # longer builds for Intel Macs, so not there
       - name: Build the nixpkgs package
         if: matrix.os != 'macos-15-intel'
-        run: nix build -L --impure -f pkg/nixpkgs/build.nix -o result-nixpkgs && ./result-nixpkgs/bin/proc --version
+        run: |
+          nix build -L --impure -f pkg/nixpkgs/build.nix -o result-nixpkgs
+          ./result-nixpkgs/bin/proc --version
+          test -f result-nixpkgs/share/man/man1/proc.1.gz
+          test -f result-nixpkgs/share/man/man1/proc-kill.1.gz
 
       - name: Build the package
         run: nix build -L

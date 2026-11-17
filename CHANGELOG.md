@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The nixpkgs package installs a man page per command.** `pkg/nixpkgs/package.nix` ran `proc manpage > proc.1`, so nixpkgs' `proc-cli` installs `man proc` alone, and its update bot changes only the version and hashes. Now at 2.5.0, it installs every page as the flake does (`proc manpage --dir man`, then `installManPage man/*.1`), and CI's nixpkgs build checks `proc-kill.1.gz` is installed. A pull request of our own brings it to nixpkgs once the bot's 2.5.0 update is merged (ROADMAP.md)
+
 ### Fixed
 
 - **The winget job retitles the submission it moves.** 2.5.0's release moved microsoft/winget-pkgs#469298's manifests to 2.5.0, then failed: `gh pr edit` also reads the pull request's projects through GitHub's GraphQL API, which needs a token scope (`read:org`) the winget token doesn't have, so the title and description still said 2.4.0. `pkg/winget/move-pr.sh` now edits them through the REST API, which the token may, and when the files already offer the version but the title doesn't, it moves the title and description instead of saying there is nothing to do. Nothing changed in proc
