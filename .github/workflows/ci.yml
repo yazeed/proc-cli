@@ -324,7 +324,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # macos-15-intel: the flake builds Intel Macs from nixpkgs 26.05 until
+        # proc 2.5.0 ships, its last release for them; this row goes with it
+        os: [ubuntu-latest, macos-latest, macos-15-intel]
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -341,8 +343,10 @@ jobs:
         run: nix flake check -L
 
       # The package as nixpkgs carries it (pkg/nixpkgs/package.nix), which
-      # builds the release it names, with that release's tests
+      # builds the release it names, with that release's tests. nixpkgs no
+      # longer builds for Intel Macs, so not there
       - name: Build the nixpkgs package
+        if: matrix.os != 'macos-15-intel'
         run: nix build -L --impure -f pkg/nixpkgs/build.nix -o result-nixpkgs && ./result-nixpkgs/bin/proc --version
 
       - name: Build the package

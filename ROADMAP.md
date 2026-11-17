@@ -38,17 +38,15 @@ Decided with the convention for guesses; 2.6.0 prints a notice on each spelling 
 
 PHILOSOPHY.md's "Easy for People, Complete for Programs" (added in 2.3.0) is the bar every command meets in this release, at 100%. An audit of every command and every shape (results, previews, prompts, receipts, errors) checks the default output answers first, in words, fits the terminal and shows everything with `-v`, and checks the JSON is stable, complete enough to decide without a second call, leaves an unknown value out instead of faking it, and carries facts, never instructions. Each gap it finds is fixed here or, where fixing it breaks a 2.x script, joins this list. The JSON-name changes above are part of it.
 
-## Decided: after the 2.1.0 tag
+## Decided: after the 2.5.0 tag
 
-### Nix as an official install method: the nixpkgs package
+### nixpkgs installs every man page
 
-The flake is done (see the CHANGELOG): it reads its version from Cargo.toml, has a lock, installs the man page and completions, and builds proc with its whole test suite in the sandbox on Linux and macOS in CI. What is left:
+nixpkgs' `proc-cli` installs `proc.1` alone (`proc manpage > proc.1`), and its update bot changes only the version and hashes. With 2.5.0, `pkg/nixpkgs/package.nix` installs every page as the flake does (`proc manpage --dir man`, then `installManPage man/*.1`), so the release run builds and tests it; once the bot's 2.5.0 pull request is merged, a pull request of our own brings that change to nixpkgs. It needs a committer to merge it. If it lands after 26.11 branches (2026-11-23), 26.11 keeps one page unless it is backported.
 
-- A nixpkgs package, `proc-cli` (`pkgs/by-name/pr/proc-cli/package.nix`), with `passthru.updateScript = nix-update-script { }` so the update bot follows releases, and a maintainer entry. The file lives in this repo as `pkg/nixpkgs/package.nix`, and each release moves it and the pull request to the new version (RELEASE.md, "After the tag: nixpkgs"). The first pull request is for 2.1.1, the first release whose tests pass wherever Nix builds them.
-- The README and website install rows say `nix profile install github:yazeed/proc-cli` already; they change to `nix run nixpkgs#proc-cli` once nixpkgs merges the package.
-- With 2.2.0, the package's `meta.platforms` widens from `linux ++ darwin` to the BSDs as well (`freebsd ++ netbsd`), since proc runs there from that release.
+### The flake drops Intel Macs
 
-**Open:** when nixpkgs merges the package. (The macOS Nix job passes with nothing skipped: its sandbox needed Apple's `ps` and nixpkgs' `lsof` as check inputs.)
+nixpkgs dropped Intel Macs after 26.05, so the flake builds them from nixpkgs 26.05 (a second input, `nixpkgs-intel-mac`) and CI's Nix job runs on `macos-15-intel`. 2.5.0 is the last release whose flake builds for Intel Macs: after its tag, `x86_64-darwin`, that input and that CI row go, and the install page points Intel Macs to `github:yazeed/proc-cli/v2.5.0`, Homebrew or the release binary.
 
 ## Decided, not yet scheduled
 
