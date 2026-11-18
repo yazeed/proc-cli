@@ -244,7 +244,10 @@ After tag push, monitor GitHub Actions. The release is done only when every chan
 
 ## 7. Post-Release Verification
 
+First, every channel at once: `scripts/check-channels.sh X.Y.Z` prints, for each place proc is published (the Page column of "Package Distribution" below), the version it offers. It exits 1 when a channel the release publishes itself doesn't offer X.Y.Z yet; the ones that wait on someone else (AUR, nixpkgs, winget, FreeBSD, pkgsrc, skills.sh) show as `waiting`, with whom, and catch up on their own. Run it again until the first group is all `ok`; the checks below then try each install for real.
+
 ```bash
+scripts/check-channels.sh X.Y.Z   # every channel's version; exit 1 if one the release publishes lags
 # Verify packages (after CI completes)
 cargo install proc-cli                    # crates.io
 npm info proc-cli version                 # npm
@@ -401,24 +404,26 @@ If the repository or the workflow file is renamed, all three trusted publishers 
 
 Grouped by system, as docs/install.md and the README list them. "Updates" says how an installed proc gets the next release. A channel that is not live yet is marked, and its install command is not in the user-facing docs.
 
-| System | Channel | Package Name | Install Command | Updates |
-|--------|---------|-------------|-----------------|---------|
-| macOS | Homebrew | proc | `brew install yazeed/proc/proc` | `brew upgrade`; the release job updates the tap |
-| Windows | Scoop | proc | `scoop bucket add proc https://github.com/yazeed/scoop-bucket-proc && scoop install proc` | `scoop update proc`; the release job updates the bucket |
-| Windows | winget (not live yet) | yazeed.proc-cli | `winget install yazeed.proc-cli` | `update-winget`; the first version waits for a moderator: microsoft/winget-pkgs#469298. Not in install.md or the README until merged |
-| Debian, Ubuntu | apt repository | proc-cli | see https://proc-cli.com/apt/ | `apt upgrade`; `update-apt` adds every release |
-| Ubuntu | PPA | proc-cli | `sudo add-apt-repository ppa:yazeedaloyoun/proc-cli` then `sudo apt install proc-cli` | `apt upgrade`; one command on the maintainer's Mac per release (step 5) |
-| Debian, Ubuntu | release file | proc-cli | `sudo apt install ./proc-cli_X.Y.Z_amd64.deb` | download each release |
-| Fedora, RHEL and rebuilds, Amazon Linux | COPR | proc-cli | `sudo dnf copr enable yazeed/proc-cli && sudo dnf install proc-cli` | `dnf upgrade`; `update-copr` builds every release |
-| Fedora, RHEL | release file | proc-cli | `sudo dnf install ./proc-cli-X.Y.Z-1.x86_64.rpm` | download each release |
-| Arch | AUR (community-maintained) | proc-cli, proc-cli-bin | `yay -S proc-cli` (from source), `yay -S proc-cli-bin` (release binary) | when the maintainer publishes it |
-| FreeBSD | ports (not live yet) | proc-cli | `pkg install proc-cli` | step 5; waits for a committer: bug 300492. Not in install.md or the README until it is in the tree; install.md says it is submitted |
-| FreeBSD, NetBSD | release binaries | proc-freebsd-x86_64, proc-netbsd-x86_64 | `install.sh`, `cargo binstall proc-cli`, `npm install -g proc-cli` | run again |
-| NetBSD | pkgsrc | sysutils/proc-cli | from a pkgsrc tree; `pkgin` once pkgsrc's binary packages include it | the maintainer sends each release as a gnats diff (step 5) |
-| Any | crates.io | proc-cli | `cargo install proc-cli` | run again |
-| Any | npm | proc-cli | `npm install -g proc-cli` | `npm update -g proc-cli` |
-| Any | PyPI | proc-cli | `pip install proc-cli`, `pipx install proc-cli`, `uv tool install proc-cli` | `pip install --upgrade proc-cli`; `publish-pypi`, first published with 2.3.0 |
-| Linux, macOS (Apple silicon; Intel up to v2.5.0) | Nix (flake in this repo) | proc-cli | `nix profile install github:yazeed/proc-cli` | no |
-| Linux, macOS (Apple silicon) | nixpkgs | proc-cli | `nix profile install nixpkgs#proc-cli`, `nix run nixpkgs#proc-cli`, `pkgs.proc-cli` | `nix profile upgrade proc-cli`; the update bot opens each release's pull request and the maintainer merges it (step 5). In nixpkgs since 2.4.0 (NixOS/nixpkgs#581248) |
-| Any | Docker | yazeed/proc-cli (also yazeed/proc) | `docker run yazeed/proc-cli` | `docker pull yazeed/proc-cli` |
-| Any | install script, release files | | `install.sh`, the GitHub release | run again, download each release |
+| System | Channel | Package Name | Install Command | Updates | Page |
+|--------|---------|-------------|-----------------|---------|------|
+| macOS | Homebrew | proc | `brew install yazeed/proc/proc` | `brew upgrade`; the release job updates the tap | https://github.com/yazeed/homebrew-proc |
+| Windows | Scoop | proc | `scoop bucket add proc https://github.com/yazeed/scoop-bucket-proc && scoop install proc` | `scoop update proc`; the release job updates the bucket | https://github.com/yazeed/scoop-bucket-proc |
+| Windows | winget (not live yet) | yazeed.proc-cli | `winget install yazeed.proc-cli` | `update-winget`; the first version waits for a moderator: microsoft/winget-pkgs#469298. Not in install.md or the README until merged | https://github.com/microsoft/winget-pkgs/pull/469298 (https://github.com/microsoft/winget-pkgs/tree/master/manifests/y/yazeed/proc-cli once merged) |
+| Debian, Ubuntu | apt repository | proc-cli | see https://proc-cli.com/apt/ | `apt upgrade`; `update-apt` adds every release | https://proc-cli.com/apt/ |
+| Ubuntu | PPA | proc-cli | `sudo add-apt-repository ppa:yazeedaloyoun/proc-cli` then `sudo apt install proc-cli` | `apt upgrade`; one command on the maintainer's Mac per release (step 5) | https://launchpad.net/~yazeedaloyoun/+archive/ubuntu/proc-cli |
+| Debian, Ubuntu | release file | proc-cli | `sudo apt install ./proc-cli_X.Y.Z_amd64.deb` | download each release | https://github.com/yazeed/proc-cli/releases |
+| Fedora, RHEL and rebuilds, Amazon Linux | COPR | proc-cli | `sudo dnf copr enable yazeed/proc-cli && sudo dnf install proc-cli` | `dnf upgrade`; `update-copr` builds every release | https://copr.fedorainfracloud.org/coprs/yazeed/proc-cli/ |
+| Fedora, RHEL | release file | proc-cli | `sudo dnf install ./proc-cli-X.Y.Z-1.x86_64.rpm` | download each release | https://github.com/yazeed/proc-cli/releases |
+| Arch | AUR (community-maintained) | proc-cli, proc-cli-bin | `yay -S proc-cli` (from source), `yay -S proc-cli-bin` (release binary) | when the maintainer publishes it | https://aur.archlinux.org/packages/proc-cli, https://aur.archlinux.org/packages/proc-cli-bin |
+| FreeBSD | ports (not live yet) | proc-cli | `pkg install proc-cli` | step 5; waits for a committer: bug 300492. Not in install.md or the README until it is in the tree; install.md says it is submitted | https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=300492 (https://www.freshports.org/sysutils/proc-cli/ once committed) |
+| FreeBSD, NetBSD | release binaries | proc-freebsd-x86_64, proc-netbsd-x86_64 | `install.sh`, `cargo binstall proc-cli`, `npm install -g proc-cli` | run again | https://github.com/yazeed/proc-cli/releases |
+| NetBSD | pkgsrc | sysutils/proc-cli | from a pkgsrc tree; `pkgin` once pkgsrc's binary packages include it | the maintainer sends each release as a gnats diff (step 5) | https://pkgsrc.se/sysutils/proc-cli |
+| Any | crates.io | proc-cli | `cargo install proc-cli` | run again | https://crates.io/crates/proc-cli |
+| Any | npm | proc-cli | `npm install -g proc-cli` | `npm update -g proc-cli` | https://www.npmjs.com/package/proc-cli |
+| Any | PyPI | proc-cli | `pip install proc-cli`, `pipx install proc-cli`, `uv tool install proc-cli` | `pip install --upgrade proc-cli`; `publish-pypi`, first published with 2.3.0 | https://pypi.org/project/proc-cli/ |
+| Linux, macOS (Apple silicon; Intel up to v2.5.0) | Nix (flake in this repo) | proc-cli | `nix profile install github:yazeed/proc-cli` | no | https://github.com/yazeed/proc-cli/blob/main/flake.nix |
+| Linux, macOS (Apple silicon) | nixpkgs | proc-cli | `nix profile install nixpkgs#proc-cli`, `nix run nixpkgs#proc-cli`, `pkgs.proc-cli` | `nix profile upgrade proc-cli`; the update bot opens each release's pull request and the maintainer merges it (step 5). In nixpkgs since 2.4.0 (NixOS/nixpkgs#581248) | https://search.nixos.org/packages?channel=unstable&show=proc-cli&query=proc-cli |
+| Any | Docker | yazeed/proc-cli (also yazeed/proc) | `docker run yazeed/proc-cli` | `docker pull yazeed/proc-cli` | https://hub.docker.com/r/yazeed/proc-cli, https://hub.docker.com/r/yazeed/proc |
+| Any | install script, release files | | `install.sh`, the GitHub release | run again, download each release | https://github.com/yazeed/proc-cli/releases |
+
+The Page column is where each channel shows the version it offers. `scripts/check-channels.sh` reads the same pages, plus docs.rs (https://docs.rs/proc-cli), the agent skill on skills.sh (https://www.skills.sh/yazeed/proc-cli/proc-cli), the Claude plugin (https://github.com/yazeed/proc-cli/blob/main/.claude-plugin/marketplace.json) and the website (https://proc-cli.com/install), and prints the version each offers (step 7). A docs test fails when a page the script checks is missing from this file.

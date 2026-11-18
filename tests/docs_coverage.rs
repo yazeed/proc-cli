@@ -506,3 +506,28 @@ fn the_skill_asks_for_a_proc_that_has_every_flag_it_uses() {
         too_new.join(", ")
     );
 }
+
+/// Every channel page `scripts/check-channels.sh` reads is listed in
+/// RELEASE.md, so the one list of where proc is published can't drift from
+/// the package table a release is checked against
+#[test]
+fn release_md_lists_every_page_the_channel_check_reads() {
+    let script = read("scripts/check-channels.sh");
+    let release = read("RELEASE.md");
+    let page = Regex::new(r"(?m)^page_[a-z_]+='([^']+)'$").unwrap();
+    let pages: Vec<&str> = page
+        .captures_iter(&script)
+        .map(|c| c.get(1).unwrap().as_str())
+        .collect();
+    assert!(
+        pages.len() >= 20,
+        "found {} page_ lines in scripts/check-channels.sh",
+        pages.len()
+    );
+    let misses = pages
+        .into_iter()
+        .filter(|url| !release.contains(url))
+        .map(|url| format!("RELEASE.md: {url}"))
+        .collect();
+    assert_none_missing(misses);
+}
