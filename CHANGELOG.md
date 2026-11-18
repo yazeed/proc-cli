@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Dependabot updates.** The Docker image's base, `distroless/static-debian13`, moved to digest `1a64f46` (was `4488103`); `cachix/install-nix-action` moved to 31.11.5 and `taiki-e/install-action` to 2.90.4. CI passed on each before it was merged. Nothing changed in proc
+
 - **RELEASE.md: a release is done when every channel has it and its run is green.** Step 6 now says to fix and rerun each failed job of the tag's run, including one that published and failed afterwards, before the release counts as done. Nothing changed in proc
 
 - **The Nix flake no longer builds for Intel Macs; 2.5.0 is their last.** nixpkgs dropped Intel Macs after 26.05, and 2.5.0's flake built them from a second input pinned to nixpkgs 26.05, tested on an Intel Mac in CI. That input, the `x86_64-darwin` system and CI's `macos-15-intel` Nix job are gone; on an Intel Mac, `nix profile install github:yazeed/proc-cli/v2.5.0` keeps working with that release's lock, and later versions come from Homebrew, the release binary, PyPI, npm or cargo. The install page, the README and RELEASE.md say so. Nothing changed in proc
