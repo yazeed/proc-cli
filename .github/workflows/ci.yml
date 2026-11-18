@@ -333,7 +333,7 @@ jobs:
       # stops passed here and failed for nixpkgs reviewers (sandbox = relaxed,
       # as nixpkgs-review-gha builds on macOS); Linux always sandboxes
       - name: Install Nix
-        uses: cachix/install-nix-action@91f6a0f59e94dfb2cfed0f4000f36a68ead1d20c # v31.11.4
+        uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
         with:
           extra_nix_config: ${{ runner.os == 'macOS' && 'sandbox = relaxed' || '' }}
 
@@ -397,7 +397,7 @@ jobs:
           components: llvm-tools-preview
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
         with:
           tool: cargo-llvm-cov@0.9.1
 
