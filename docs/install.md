@@ -170,7 +170,7 @@ nix profile install nixpkgs#proc-cli
 nix run nixpkgs#proc-cli -- on :3000
 ```
 
-On NixOS or with home-manager, add `pkgs.proc-cli` to `environment.systemPackages` or `home.packages`. `nixpkgs#` in a command reads the nixpkgs-unstable channel, which has it; NixOS gets it with the nixos-unstable channel's next update and in NixOS 26.11. Update with `nix profile upgrade proc-cli` (or your system's rebuild). nixpkgs' update bot brings each release, so a new version arrives there after its update is merged, not the moment it is tagged.
+On NixOS or with home-manager, add `pkgs.proc-cli` to `environment.systemPackages` or `home.packages`. `nixpkgs#` in a command reads the nixpkgs-unstable channel; NixOS has it on the nixos-unstable channel, and NixOS 26.11 will have it. Update with `nix profile upgrade proc-cli` (or your system's rebuild). nixpkgs' update bot brings each release, so a new version arrives there after its update is merged, not the moment it is tagged.
 
 The flake in this repository installs a release as soon as it is tagged, on Linux and Apple-silicon Macs. nixpkgs no longer builds for Intel Macs, so on an Intel Mac the last version the flake builds is 2.5.0 (`nix profile install github:yazeed/proc-cli/v2.5.0`, built from nixpkgs 26.05, which nixpkgs supports until the end of 2026); later versions come from Homebrew or the release binary.
 
