@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The nixpkgs package installs a man page per command.** `pkg/nixpkgs/package.nix` ran `proc manpage > proc.1`, so nixpkgs' `proc-cli` installs `man proc` alone, and its update bot changes only the version and hashes. Now at 2.5.0, it installs every page as the flake does (`proc manpage --dir man`, then `installManPage man/*.1`), and CI's nixpkgs build checks `proc-kill.1.gz` is installed. A pull request of our own brings it to nixpkgs once the bot's 2.5.0 update is merged (ROADMAP.md)
 
+- **The website's header stays at the top of the screen.** On a computer or tablet, where it is one row, it stays in place as you scroll, and headings you jump to and the commands sidebar sit below it. On a phone it wraps to three rows, so it slides away while you scroll down and comes back as soon as you scroll up, or when you tab to it. Nothing changed in proc
+
 - **NixOS has proc-cli.** The nixos-unstable channel took it in its 2026-11-17 update (at 2.4.0), so the install page now says NixOS has it there rather than that it would arrive with the channel's next update. Nothing changed in proc
 
 ### Fixed

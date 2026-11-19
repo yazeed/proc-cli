@@ -1,4 +1,4 @@
-// proc website: copy buttons, heading anchors, sidebar scroll tracking, and the command reader on the home page.
+// proc website: copy buttons, heading anchors, the stuck header, sidebar scroll tracking, and the command reader on the home page.
 (function () {
   "use strict";
 
@@ -187,6 +187,54 @@
     update();
   }
 
+  // The header stays at the top of the screen (style.css). On one row it is
+  // always there, and the page keeps headings and the sidebar clear of it.
+  // Where it wraps (phones) it would cover a sixth of the screen, so it slides
+  // away while you scroll down and comes back as soon as you scroll up
+  function setupHeader() {
+    var header = document.querySelector(".site-header");
+    if (!header) return;
+    var wordmark = header.querySelector(".wordmark");
+    var nav = header.querySelector(".site-nav");
+    var root = document.documentElement;
+    var wraps = false;
+    var lastY = window.scrollY;
+    function measure() {
+      wraps = nav.offsetTop >= wordmark.offsetTop + wordmark.offsetHeight;
+      root.style.setProperty("--header-offset", wraps ? "0px" : header.offsetHeight + "px");
+      if (!wraps) header.classList.remove("is-tucked");
+    }
+    function follow() {
+      var y = window.scrollY;
+      // past either end (iOS's bounce) is not a direction
+      if (y < 0 || y > root.scrollHeight - window.innerHeight) return;
+      if (wraps) {
+        if (y > lastY && y > header.offsetHeight) header.classList.add("is-tucked");
+        else if (y < lastY) header.classList.remove("is-tucked");
+      }
+      lastY = y;
+    }
+    // a jump to a heading leaves the header tucked, so it doesn't cover the heading
+    function tuck() {
+      if (wraps && window.scrollY > header.offsetHeight) header.classList.add("is-tucked");
+      lastY = window.scrollY;
+    }
+    measure();
+    tuck();
+    if (window.ResizeObserver) new ResizeObserver(measure).observe(header);
+    else window.addEventListener("resize", measure);
+    var queued = false;
+    window.addEventListener("scroll", function () {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(function () {
+        queued = false;
+        follow();
+      });
+    }, { passive: true });
+    window.addEventListener("hashchange", tuck);
+  }
+
   // The command reader: pick a command and a target, and read what that exact command does
   function setupReader() {
     var reader = document.querySelector("[data-reader]");
@@ -296,6 +344,7 @@
     fitWideContent();
     addCopyButtons();
     addHeadingAnchors();
+    setupHeader();
     setupScrollSpy();
     setupReader();
   });

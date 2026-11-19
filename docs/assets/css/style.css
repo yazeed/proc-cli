@@ -78,7 +78,11 @@
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
-  scroll-padding-top: 1.5rem;
+  /* the part of the screen the stuck header covers: site.js sets the real
+     height on one row, and 0 where the header wraps (phones), since there it
+     hides while you scroll down; 4rem is the one-row header without the script */
+  --header-offset: 4rem;
+  scroll-padding-top: calc(var(--header-offset) + 1.5rem);
 }
 
 body {
@@ -138,8 +142,24 @@ code, kbd, pre { font-family: var(--font-mono); }
 /* ---------- header ---------- */
 
 .site-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--paper);
   border-bottom: 1px solid var(--rule);
+  transition: transform 0.25s ease;
 }
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .site-header {
+    background: color-mix(in srgb, var(--paper) 85%, transparent);
+    -webkit-backdrop-filter: blur(12px) saturate(1.4);
+    backdrop-filter: blur(12px) saturate(1.4);
+  }
+}
+/* site.js: where the header wraps (phones), it slides away while you scroll
+   down and comes back when you scroll up */
+.site-header.is-tucked { transform: translateY(-100%); }
+.site-header.is-tucked:focus-within { transform: none; }
 
 .header-inner {
   max-width: var(--wide);
@@ -243,9 +263,9 @@ code, kbd, pre { font-family: var(--font-mono); }
 
 .page-aside {
   position: sticky;
-  top: 1.5rem;
+  top: calc(var(--header-offset) + 1.5rem);
   align-self: start;
-  max-height: calc(100vh - 3rem);
+  max-height: calc(100vh - var(--header-offset) - 3rem);
   overflow-y: auto;
   padding-top: 0.6rem;
 }
