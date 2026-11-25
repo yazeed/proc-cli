@@ -38,7 +38,7 @@ RUN rustc --version && touch src/main.rs && cargo build --release \
 # process another user owns also needs --cap-add SYS_PTRACE, and on a host
 # with AppArmor --security-opt apparmor=unconfined. proc reads
 # processes, ports and open files from /proc, so it needs no other program
-FROM gcr.io/distroless/static-debian13@sha256:1a64f46364620465ef9e9a8f5413757dfdf22695e050bbfd7303eeaf17a59383
+FROM gcr.io/distroless/static-debian13@sha256:4c2cd1dee442c9a99924a378c7c126fac8fef14771579ef567c3f2bdd7a5122a
 
 # Copy binary from builder
 COPY --from=builder /app/target/release/proc /usr/local/bin/proc
