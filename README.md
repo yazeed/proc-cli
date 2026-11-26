@@ -217,7 +217,7 @@ Not every filter is on every command. `--in`, `--by` (short `-b`) and `--cmd` wo
 | `--path <path>`, `-p` | Executable path | `list` |
 | `--min-cpu <n>` | Processes using >n% CPU | `by`, `in`, `for`, `list`, `tree`, `watch` |
 | `--min-mem <n>` | Processes using >n MB memory | `by`, `in`, `for`, `list`, `tree`, `watch` |
-| `--min-uptime <s>` | Processes running longer than s seconds | `by`, `in`, `for`, `list`, `tree` |
+| `--min-uptime <s>` | Processes running longer than s seconds | `by`, `in`, `for`, `list`, `tree`, `orphans` |
 | `--status <s>` | running, sleeping, stopped, zombie, idle (Linux), starting (macOS, FreeBSD, NetBSD), disk-wait (Linux) | `by`, `in`, `for`, `list`, `tree` |
 | `--parent <pid>` | Children of a specific parent PID | `by`, `in`, `list` |
 | `--exposed`, `-e` / `--local`, `-l` | Only network-exposed / localhost ports | `ports` |

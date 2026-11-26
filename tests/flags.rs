@@ -388,6 +388,7 @@ const CASES: &[Case] = &[
     per_os("orphans", &["-k", "-y", "-i", "{dir}"], 0, 4),
     per_os("orphans", &["--kill", "--dry-run", "--in", "{dir}"], 0, 4),
     per_os("orphans", &["--kill", "--in", "{dir}", "--json"], 0, 4),
+    per_os("orphans", &["--in", "{dir}", "--min-uptime", "0"], 0, 4),
     // ---- stuck ----
     code("stuck", &["--in", "{dir}"], 0),
     code("stuck", &["--in", "{dir}", "--json"], 0),

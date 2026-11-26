@@ -152,7 +152,8 @@ Filters (a command takes only those its `--help` lists):
 | `--cmd` (substring of name or command line) | every command that takes a name or `--by` |
 | `--start-time <secs>` (one PID target; the `start_time` from its JSON) | `kill`, `stop`, `freeze`, `thaw`, `wait`, `info`, `unstick` |
 | `--min-cpu <pct>`, `--min-mem <MB>` | `list`, `by`, `in`, `for`, `tree`, `watch` |
-| `--status <s>` (running, sleeping, stopped, zombie, idle, starting, disk-wait), `--min-uptime <secs>` | `list`, `by`, `in`, `for`, `tree` |
+| `--status <s>` (running, sleeping, stopped, zombie, idle, starting, disk-wait) | `list`, `by`, `in`, `for`, `tree` |
+| `--min-uptime <secs>` | `list`, `by`, `in`, `for`, `tree`, `orphans` |
 | `--parent <pid>` | `list`, `by`, `in` |
 | `--path <path>` (`-p`) | `list` |
 | `--sort` (`-s`): cpu, mem (biggest first), pid, name (`ports`: port, pid, name; ascending) | `list`, `by`, `in`, `for`, `watch`, `ports` |

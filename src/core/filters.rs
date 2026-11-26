@@ -163,6 +163,21 @@ fn cwd_within_with(
     }
 }
 
+/// Whether a process passes `--min-uptime`: started at least `secs` seconds
+/// ago. A process whose start time can't be read is left out, since its age
+/// can't be confirmed. Only `orphans` calls it, and `orphans` doesn't run on Windows.
+#[cfg_attr(windows, allow(dead_code))]
+pub(crate) fn running_at_least(process: &Process, secs: u64) -> bool {
+    let Some(start_time) = process.start_time else {
+        return false;
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    now.saturating_sub(start_time) >= secs
+}
+
 /// Apply `--in` and `--by` filters to a list of processes (in a single pass).
 ///
 /// This replaces the 14-line retain block duplicated across commands.
@@ -613,6 +628,26 @@ mod match_tests {
             child_count: None,
             runs_proc: false,
         }
+    }
+
+    #[test]
+    fn min_uptime_keeps_a_process_running_at_least_that_long() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let mut p = bare_process();
+        p.start_time = Some(now - 100);
+        assert!(super::running_at_least(&p, 0));
+        assert!(super::running_at_least(&p, 90));
+        assert!(!super::running_at_least(&p, 100_000));
+    }
+
+    /// An age that can't be read can't be confirmed, so it's left out, as
+    /// on `list`, `by`, `in`, `for` and `tree`
+    #[test]
+    fn min_uptime_leaves_out_a_process_whose_start_time_is_unknown() {
+        assert!(!super::running_at_least(&bare_process(), 0));
     }
 
     #[test]

@@ -1857,6 +1857,59 @@ fn orphans_kill_yes_kills_the_orphan_and_says_so() {
     assert!(second.gone_within(Duration::from_secs(10)));
 }
 
+#[cfg(unix)]
+#[test]
+fn orphans_min_uptime_drops_an_orphan_that_is_younger() {
+    let orphan = Orphan::sleeping();
+    let pid = orphan.pid as u32;
+    let (json, code) = run_json(&[
+        "orphans",
+        "--in",
+        &orphan.dir(),
+        "--min-uptime",
+        "0",
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{json}");
+    assert!(lists(&json, "processes", pid), "{json}");
+
+    // Younger than asked: nothing found, which is exit 0 for orphans
+    let (json, code) = run_json(&[
+        "orphans",
+        "--in",
+        &orphan.dir(),
+        "--min-uptime",
+        "99999999",
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{json}");
+    assert_eq!(json["success"], true, "{json}");
+    assert!(!lists(&json, "processes", pid), "{json}");
+    let r = run(&["orphans", "--in", &orphan.dir(), "--min-uptime", "99999999"]);
+    assert_eq!(r.code, 0, "{}{}", r.stdout, r.stderr);
+    assert!(!r.stdout.contains(&pid.to_string()), "{}", r.stdout);
+    assert!(orphan.alive());
+}
+
+#[cfg(unix)]
+#[test]
+fn orphans_kill_leaves_an_orphan_younger_than_min_uptime() {
+    let orphan = Orphan::sleeping();
+    let (json, code) = run_json(&[
+        "orphans",
+        "--kill",
+        "--yes",
+        "--in",
+        &orphan.dir(),
+        "--min-uptime",
+        "99999999",
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{json}");
+    assert!(!lists(&json, "processes", orphan.pid as u32), "{json}");
+    assert!(orphan.alive(), "--min-uptime must narrow what --kill kills");
+}
+
 // ---- unstick ----
 
 /// The CPU% cell of this PID's row in the process table (the header says

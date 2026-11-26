@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`orphans --min-uptime`.** `proc orphans --min-uptime 3600` lists only the orphans that have run for an hour or more, the same filter `list`, `by`, `in`, `for` and `tree` already have, in whole seconds. With `--kill` it narrows what is killed too. As on the other commands, an orphan whose start time proc can't read (on macOS, another user's) is left out, since its age can't be confirmed
+
 - **One list of everywhere proc is published, and a check of what each offers.** `scripts/check-channels.sh [VERSION]` prints, for the GitHub release, crates.io, docs.rs, npm, PyPI, Docker Hub (both names), Homebrew, Scoop, the apt repository, the Ubuntu PPA, COPR, the Claude plugin, proc-cli.com, both AUR packages, nixpkgs, winget, the FreeBSD port, pkgsrc and skills.sh, the version it offers and its public page, read from each one's public API or page. It exits 1 when a channel the release publishes itself lags; channels that wait on someone else (a reviewer, a committer, a community maintainer, nixpkgs' update bot) show as `waiting`, with whom. RELEASE.md's step 7 starts with it, its package table has a Page column with the same links, and a docs test fails when a page the script reads is missing from RELEASE.md. Run against 2.5.0 the day after its release, every channel the release publishes offered it. Nothing changed in proc
 
 ### Changed

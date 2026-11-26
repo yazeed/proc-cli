@@ -50,7 +50,7 @@ Not every filter is on every command; each command's page lists its own. `--in`,
 | `--path <path>` | `-p` | Processes running this executable | `list` |
 | `--min-cpu <percent>` | | Using more than this much of one core (fractions allowed) | `by`, `in`, `for`, `list`, `tree`, `watch` |
 | `--min-mem <MB>` | | Using more than this many megabytes | `by`, `in`, `for`, `list`, `tree`, `watch` |
-| `--min-uptime <secs>` | | Running longer than this many whole seconds | `by`, `in`, `for`, `list`, `tree` |
+| `--min-uptime <secs>` | | Running longer than this many whole seconds | `by`, `in`, `for`, `list`, `tree`, `orphans` |
 | `--status <status>` | | `running`, `sleeping`, `stopped`, `zombie`, `idle` (Linux), `starting` (macOS, FreeBSD, NetBSD), `disk-wait` (Linux; `disk_wait` also works) | `by`, `in`, `for`, `list`, `tree` |
 | `--parent <pid>` | | Children of this process | `by`, `in`, `list` |
 | `--exposed` / `--local` | `-e` / `-l` | Ports open to the network / to this machine only | `ports` |

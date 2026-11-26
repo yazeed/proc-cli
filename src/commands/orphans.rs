@@ -4,12 +4,13 @@
 //!   proc orphans              # List orphaned processes
 //!   proc orphans --in .       # Orphans in current directory
 //!   proc orphans --by node    # Only those named node (--cmd: node anywhere in the command line)
+//!   proc orphans --min-uptime 3600 # Only those running for an hour or more
 //!   proc orphans --in . --kill # Find this project's orphans and kill them, after asking
 //!   proc orphans --kill --yes # Kill orphans without confirmation
 
 use crate::core::Process;
 #[cfg(unix)]
-use crate::core::{apply_filters, apply_to_each, NameMatch};
+use crate::core::{apply_filters, apply_to_each, filters::running_at_least, NameMatch};
 use crate::error::Result;
 #[cfg(unix)]
 use crate::ui::{must_confirm, plural, prompt, Printer};
@@ -54,6 +55,10 @@ pub struct OrphansCommand {
     /// Match --by as a substring of the process name or full command line (like pkill -f)
     #[arg(long)]
     pub cmd: bool,
+
+    /// Only orphans running longer than this (whole seconds)
+    #[arg(long, value_parser = crate::core::values::whole_seconds, allow_negative_numbers = true)]
+    pub min_uptime: Option<u64>,
 }
 
 impl OrphansCommand {
@@ -73,6 +78,9 @@ impl OrphansCommand {
             &self.by_name,
             NameMatch::from_flag(self.cmd),
         )?;
+        if let Some(secs) = self.min_uptime {
+            processes.retain(|p| running_at_least(p, secs));
+        }
 
         // Real CPU readings for every view that shows or returns the list; only
         // `--kill --json --yes` (no dry run) goes straight to killing

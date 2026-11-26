@@ -10,6 +10,7 @@ Often the dev servers, file watchers and headless browsers a closed terminal or 
 ```bash
 proc orphans --in .               # leftovers from this project
 proc orphans --by node            # orphaned node processes
+proc orphans --min-uptime 3600    # orphans running for an hour or more
 proc orphans --in . --kill --dry-run    # what --kill would end
 proc orphans --in . --kill        # end them, after showing the list and asking
 ```
@@ -28,13 +29,14 @@ proc orphans --in . --kill        # end them, after showing the list and asking
 | `--in [<dir>]` | `-i` | Filter by directory. Takes the next word as its directory unless it starts with `-` (bare `--in` is the current directory, `--in=DIR` is explicit) |
 | `--by <name>` | `-b` | Filter by process name (the whole name, ignoring case) |
 | `--cmd` | | Match `--by` as a substring of the process name or full command line (like `pkill -f`) |
+| `--min-uptime <s>` | | Minimum uptime in whole seconds |
 | `--json` | `-j` | Output as JSON |
 | `--verbose` | `-v` | Add PPID, STATUS and DIR to the table, and cut nothing |
 | `--wide` | `-w` | Print the directory and the command line whole instead of fitting the terminal |
 
 ## Details
 
-- **It finds candidates, not leftovers.** Any process whose parent is PID 1 is listed, apart from system daemons. On macOS that includes every app launchd started (Preview, Notification Center, helper agents), so `proc orphans` with no filter lists dozens of ordinary apps. `nohup` and `tmux` jobs are orphaned on purpose too. Narrow it with `--in` (your project) or `--by`, and check each process (`proc info`, `proc why`) before `--kill`.
+- **It finds candidates, not leftovers.** Any process whose parent is PID 1 is listed, apart from system daemons. On macOS that includes every app launchd started (Preview, Notification Center, helper agents), so `proc orphans` with no filter lists dozens of ordinary apps. `nohup` and `tmux` jobs are orphaned on purpose too. Narrow it with `--in` (your project), `--by` or `--min-uptime` (only the ones running a long time), and check each process (`proc info`, `proc why`) before `--kill`.
 - **Not on Windows.** Windows doesn't re-parent a process whose parent exited, so there is no reliable orphan to find: every form of `proc orphans`, `--kill` and `--dry-run` included, exits 4 with "not supported on Windows".
 
 ## When nothing matches
