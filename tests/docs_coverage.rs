@@ -451,13 +451,13 @@ fn version(text: &str) -> (u32, u32, u32) {
 #[test]
 fn the_skill_asks_for_a_proc_that_has_every_flag_it_uses() {
     let skill = read("skills/proc-cli/SKILL.md");
-    let asked = Regex::new(r"Requires the proc CLI (\d+\.\d+(?:\.\d+)?) or later")
+    let asked = Regex::new(r"Requires proc-cli (\d+\.\d+(?:\.\d+)?) or later")
         .unwrap()
         .captures(&skill)
-        .expect("SKILL.md's compatibility line names the proc version it needs")[1]
+        .expect("SKILL.md's compatibility line names the proc-cli version it needs")[1]
         .to_string();
     assert!(
-        skill.contains(&format!("This skill is for proc {asked} or later")),
+        skill.contains(&format!("This skill is for proc-cli {asked} or later")),
         "SKILL.md's body asks for the same version as its compatibility line, {asked}"
     );
     // The skill page on the website tells people the same version

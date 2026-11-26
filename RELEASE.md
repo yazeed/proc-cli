@@ -15,7 +15,7 @@ cargo audit                                    # No security vulnerabilities
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps # The docs.rs pages build with no broken links
 ```
 
-- [ ] CI is green on main, including "Coverage gate" (100% lines across Linux, macOS and Windows; see CONTRIBUTING.md "Coverage"), both "Nix" jobs (the flake builds proc and runs its tests in Nix's sandbox, macOS's included, and the nixpkgs package builds and installs a man page per command), both "Test (freebsd)"/"Test (netbsd)" jobs (the whole suite in a BSD VM, then the release binary built and run there) and the "Package .deb and .rpm" and "Install the packages" jobs (the four packages install, run and remove in Debian, Ubuntu and Fedora). A tag release does not wait for it. Locally: `scripts/coverage-local.sh`
+- [ ] CI is green on main, including "Coverage gate" (100% lines across Linux, macOS and Windows; see CONTRIBUTING.md "Coverage"), both "Nix" jobs (the flake builds proc-cli and runs its tests in Nix's sandbox, macOS's included, and the nixpkgs package builds and installs a man page per command), both "Test (freebsd)"/"Test (netbsd)" jobs (the whole suite in a BSD VM, then the release binary built and run there) and the "Package .deb and .rpm" and "Install the packages" jobs (the four packages install, run and remove in Debian, Ubuntu and Fedora). A tag release does not wait for it. Locally: `scripts/coverage-local.sh`
 - [ ] The release workflow's dry run is green: `gh workflow run release.yml --ref main`, then `gh run watch`. It runs every build and package job (`build-bsd` and `package-linux` among them, the release's own forms of CI's BSD and `.deb`/`.rpm` jobs) and assembles the release files with `checksums.txt`, and publishes nothing: the GitHub Release step and the crates.io, npm, PyPI, Homebrew, Scoop, apt and COPR jobs run only for a tag, the winget job prints what it would change in the first version's pull request, and the nixpkgs, FreeBSD and pkgsrc jobs run for the version in Cargo.toml and push or file nothing (step 5). Those three build that version from a tarball of the checkout (`git archive --prefix=proc-cli-X.Y.Z/`, which holds what GitHub's download of the tag will: its source hash matched GitHub's for 2.3.0), since a version has no download before its tag. Here, before step 3's bump, that is the last release's version with this release's code, so `update-pkgsrc` may stop: its diff from pkgsrc's copy is empty once pkgsrc has that release, or `COMMIT_MSG` already names the next one. The dry run that must be green in every job is the one step 5 runs after the release commit, which builds the new version itself The PyPI wheels are built and installed on every OS in the dry run (`package-pypi`, `test-pypi`); only `publish-pypi` waits for a tag. Its version checks print instead of failing, since a branch build is a `-dev` build; the tag checks them
 - [ ] The dry run's "Check credentials" job passed and printed no warning. It tries every secret under "Required Secrets" and reads when each expires (GitHub reports a token's expiry, so no date is kept anywhere): one that is invalid or expired fails the job, and the tag's release then publishes nothing; one that expires within 30 days is a warning. Renew it now, set it with `gh secret set <NAME>`, and run the dry run again
 - [ ] The credentials outside CI still work. `check-credentials` can't test them, since they never leave the maintainer's Mac, so the release session runs this there:
@@ -43,7 +43,7 @@ Clippy for the BSDs needs no linker, so it runs on any machine; their tests run 
 
 ### Oldest Supported Rust
 
-`rust-version` in Cargo.toml is the oldest Rust that builds proc. It matters to people who build from source (`cargo install`, distro packages) and to library users; the prebuilt binaries don't depend on it. It is raised only when something proc builds needs a newer Rust:
+`rust-version` in Cargo.toml is the oldest Rust that builds proc-cli. It matters to people who build from source (`cargo install`, distro packages) and to library users; the prebuilt binaries don't depend on it. It is raised only when something proc-cli builds needs a newer Rust:
 
 - **When:** a dependency update needs a newer Rust (the highest `rust_version` among the dependencies goes above ours, or the check below fails), or we decide to use a language or standard-library feature that needs one and it is worth more than the way we have. Never because a new stable came out.
 - **To what:** the lowest version that builds, which is the highest one the dependencies declare (command below) or the version that stabilized the feature. Never to the latest stable.
@@ -126,7 +126,7 @@ Update and verify all docs are complete:
 - [ ] `README.md` — Review thoroughly: hero examples, Quick Start, Commands table, Filters table, Examples section all reflect new features
 - [ ] `ROADMAP.md` — Remove everything this release shipped. The roadmap only holds what's still ahead (the CHANGELOG is the history)
 - [ ] `src/lib.rs` — Review Rust docs: Features list, Quick Start examples, Commands list all reflect new features. Run `cargo doc --no-deps --open` to preview. This is what shows on docs.rs.
-- [ ] `skills/proc-cli/SKILL.md` — Agent Skills: new commands, flags, schemas, playbooks (the "proc 2.0 or later" floor stays unless the skill needs a newer proc)
+- [ ] `skills/proc-cli/SKILL.md` — Agent Skills: new commands, flags, schemas, playbooks (the "proc-cli 2.0 or later" floor stays unless the skill needs a newer proc-cli)
 - [ ] `skills/proc-cli/evals.md` — if the skill's rules or playbooks changed in this release, run its tasks with the new SKILL.md loaded (a few paraphrases each, on a small model and a large one) and read the commands the agent ran; every Must met, no Must never. Add a task for any new rule
 - [ ] `skills/proc-cli/reference.md` — JSON output schemas match actual output
 - [ ] `SECURITY.md` — supported versions table (new major or minor line)
@@ -161,7 +161,7 @@ Nothing to publish: the AUR's `proc-cli` and `proc-cli-bin` belong to their comm
 
 ### After the tag: nixpkgs
 
-nixpkgs builds proc from the tag, with its tests, as `proc-cli`. `pkg/nixpkgs/package.nix` is the file nixpkgs carries at `pkgs/by-name/pr/proc-cli/package.nix`. It was merged on 2026-11-13 at 2.4.0 ([#581248](https://github.com/NixOS/nixpkgs/pull/581248)), so `nix run nixpkgs#proc-cli` works (it reads nixpkgs-unstable), and NixOS 26.11 takes what `master` holds when it branches. nixpkgs' update bot opens each new version's pull request (below); the release's `update-nixpkgs` job builds the same update first, so a packaging problem shows in our run and its hashes are there to check the bot's against:
+nixpkgs builds proc-cli from the tag, with its tests, as `proc-cli`. `pkg/nixpkgs/package.nix` is the file nixpkgs carries at `pkgs/by-name/pr/proc-cli/package.nix`. It was merged on 2026-11-13 at 2.4.0 ([#581248](https://github.com/NixOS/nixpkgs/pull/581248)), so `nix run nixpkgs#proc-cli` works (it reads nixpkgs-unstable), and NixOS 26.11 takes what `master` holds when it branches. nixpkgs' update bot opens each new version's pull request (below); the release's `update-nixpkgs` job builds the same update first, so a packaging problem shows in our run and its hashes are there to check the bot's against:
 
 1. `pkg/nixpkgs/update.sh X.Y.Z` sets the version, puts `lib.fakeHash` in both hashes and builds with `pkg/nixpkgs/build.nix` (the nixpkgs in `flake.lock`, plus the maintainer entry nixpkgs may not have yet): the first build fails naming the source hash, the second the cargo hash. It puts each in, then builds once more, which runs the whole test suite in the sandbox, and checks the result prints `proc X.Y.Z`.
 2. `pkg/nixpkgs/update-fork.sh X.Y.Z --push` finds `proc-cli` in nixpkgs and leaves the fork alone. (Before the merge it amended `proc-cli: init at …` on `yazeed/nixpkgs`, branch `proc-cli-init`, to the new version and retitled #581248.)
@@ -186,13 +186,13 @@ A NixOS stable release takes the version on nixpkgs' `master` when its branch is
 
 ### After the tag: Ubuntu PPA
 
-`ppa:yazeedaloyoun/proc-cli` builds proc for Ubuntu 22.04, 24.04, 26.04 and 26.10 (amd64 and arm64) from source packages signed with the maintainer's key. The key stays on the maintainer's Mac and is never given to CI, so this step runs there, as one command, once the tag is pushed:
+`ppa:yazeedaloyoun/proc-cli` builds proc-cli for Ubuntu 22.04, 24.04, 26.04 and 26.10 (amd64 and arm64) from source packages signed with the maintainer's key. The key stays on the maintainer's Mac and is never given to CI, so this step runs there, as one command, once the tag is pushed:
 
 ```bash
 pkg/ppa/release.sh X.Y.Z      # builds the source packages in Docker, signs and uploads them
 ```
 
-It builds in an `ubuntu:26.04` container (`pkg/ppa/build-source.sh`), signs with the maintainer's key (gpg asks for its passphrase unless the agent or the macOS keychain has it) and uploads by FTP (`pkg/ppa/upload.sh`). The first release's upload carries the two tarballs; the script then waits for Launchpad to publish them, usually within the hour and for 3 hours at most (it fails with "still not sent after 3 hours"), and sends the other three. It ends once Launchpad has accepted all four, and fails, naming the version, if one is not accepted within an hour after that (Launchpad emails why). Launchpad's FTP times out often: uploads retry, and running the command again sends only what has not gone. It stops before building if Docker is not running or the tag has no GitHub release, and a build that stops halfway is never reused. Launchpad can take hours to process an upload: 2.3.0's first one, sent at 11:20 UTC, was accepted at 14:35, with no email and no "Pending" source in the meantime. Don't send it again while you wait: the script's wait covers it, and a second copy of the same version only comes back "Rejected: ... is already accepted in ubuntu/<series> and you cannot upload the same version", which changes nothing. A packaging fix to a released version is `pkg/ppa/release.sh X.Y.Z 2`. A new Ubuntu release joins the list in `build-source.sh`; check its Rust is at least proc's `rust-version`. Step 7 checks the builds.
+It builds in an `ubuntu:26.04` container (`pkg/ppa/build-source.sh`), signs with the maintainer's key (gpg asks for its passphrase unless the agent or the macOS keychain has it) and uploads by FTP (`pkg/ppa/upload.sh`). The first release's upload carries the two tarballs; the script then waits for Launchpad to publish them, usually within the hour and for 3 hours at most (it fails with "still not sent after 3 hours"), and sends the other three. It ends once Launchpad has accepted all four, and fails, naming the version, if one is not accepted within an hour after that (Launchpad emails why). Launchpad's FTP times out often: uploads retry, and running the command again sends only what has not gone. It stops before building if Docker is not running or the tag has no GitHub release, and a build that stops halfway is never reused. Launchpad can take hours to process an upload: 2.3.0's first one, sent at 11:20 UTC, was accepted at 14:35, with no email and no "Pending" source in the meantime. Don't send it again while you wait: the script's wait covers it, and a second copy of the same version only comes back "Rejected: ... is already accepted in ubuntu/<series> and you cannot upload the same version", which changes nothing. A packaging fix to a released version is `pkg/ppa/release.sh X.Y.Z 2`. A new Ubuntu release joins the list in `build-source.sh`; check its Rust is at least proc-cli's `rust-version`. Step 7 checks the builds.
 
 ### After the tag: FreeBSD port
 
@@ -244,7 +244,7 @@ After tag push, monitor GitHub Actions. The release is done only when every chan
 
 ## 7. Post-Release Verification
 
-First, every channel at once: `scripts/check-channels.sh X.Y.Z` prints, for each place proc is published (the Page column of "Package Distribution" below), the version it offers. It exits 1 when a channel the release publishes itself doesn't offer X.Y.Z yet; the ones that wait on someone else (AUR, nixpkgs, winget, FreeBSD, pkgsrc, skills.sh) show as `waiting`, with whom, and catch up on their own. Run it again until the first group is all `ok`; the checks below then try each install for real.
+First, every channel at once: `scripts/check-channels.sh X.Y.Z` prints, for each place proc-cli is published (the Page column of "Package Distribution" below), the version it offers. It exits 1 when a channel the release publishes itself doesn't offer X.Y.Z yet; the ones that wait on someone else (AUR, nixpkgs, winget, FreeBSD, pkgsrc, skills.sh) show as `waiting`, with whom, and catch up on their own. Run it again until the first group is all `ok`; the checks below then try each install for real.
 
 ```bash
 scripts/check-channels.sh X.Y.Z   # every channel's version; exit 1 if one the release publishes lags
@@ -402,7 +402,7 @@ If the repository or the workflow file is renamed, all three trusted publishers 
 
 ## Package Distribution
 
-Grouped by system, as docs/install.md and the README list them. "Updates" says how an installed proc gets the next release. A channel that is not live yet is marked, and its install command is not in the user-facing docs.
+Grouped by system, as docs/install.md and the README list them. "Updates" says how an installed proc-cli gets the next release. A channel that is not live yet is marked, and its install command is not in the user-facing docs.
 
 | System | Channel | Package Name | Install Command | Updates | Page |
 |--------|---------|-------------|-----------------|---------|------|

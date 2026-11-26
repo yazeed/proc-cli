@@ -25,7 +25,7 @@ proc-cli is a semantic CLI tool for process management written in Rust. Its comm
 **Name and command:** the project is named **proc-cli**; `proc` is its command. Choose by what the word refers to:
 - **The name: proc-cli.** Titles and headings, the site's name, "proc-cli is…", "install proc-cli", "proc-cli 2.5.0", and the program as the subject of a sentence ("proc-cli asks before it changes anything", "proc-cli's JSON").
 - **The command: `proc`, in code formatting.** What someone types, or a command line: `proc kill :3000`, "run `proc` with `sudo`", "`proc` alone prints the help". The wordmark `❯proc` on the website is a prompt and the command, so it stays.
-- **What the program prints stays as printed.** Error messages, `--help` and other output are quoted exactly as written.
+- **What the program prints stays as printed.** Error messages, `--help` and other output are quoted exactly as written. The messages themselves say `proc` ("…but proc runs under it"): they are read by someone who just typed `proc`, so there it is the command, and they stay so. `--help` and the man page document the command, so they say `proc` too.
 - **Package and image names stay as they are published:** proc-cli on crates.io, npm and PyPI, and the domain proc-cli.com; `proc` for the Homebrew formula and the `yazeed/proc` Docker image.
 
 **Repository:** https://github.com/yazeed/proc-cli
@@ -197,7 +197,7 @@ Every change to a command, flag, argument or output gets tests for its cases (ta
 
 ## Unreleased Work
 
-Work is committed and pushed to `main` without a tag, and every change goes under `## [Unreleased]` in `CHANGELOG.md` in the same commit. Every place that describes proc is updated with the change, so `main` describes the next release:
+Work is committed and pushed to `main` without a tag, and every change goes under `## [Unreleased]` in `CHANGELOG.md` in the same commit. Every place that describes proc-cli is updated with the change, so `main` describes the next release:
 
 - `README.md` (also the Docker Hub page), `pkg/npm/README.md` (the npm page) and `pkg/pypi/README.md` (the PyPI page)
 - `skills/proc-cli/` (`SKILL.md`, `reference.md`) and `.claude-plugin/marketplace.json` descriptions
@@ -244,7 +244,7 @@ See `PHILOSOPHY.md` for the full manifesto.
 2. Can it be expressed in one obvious command?
 3. Does it make the common case effortless?
 4. Is user intent explicit?
-5. Does it deepen proc's command of its domain?
+5. Does it deepen proc-cli's command of its domain?
 6. Does it follow our conventions?
 7. Does it serve both readers? Easy for people in the default output; complete and stable for programs in `--json` (scripts need it stable, agents need it complete, facts never instructions)
 

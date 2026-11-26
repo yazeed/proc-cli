@@ -52,9 +52,9 @@ nixpkgs' `proc-cli` installs `proc.1` alone (`proc manpage > proc.1`), and its u
 
 ### A convention for guesses
 
-"If you have to read the docs, we failed" (PHILOSOPHY.md, "Obvious") is the standard, and proc misses it where people guess. Tried with 2.2.0:
+"If you have to read the docs, we failed" (PHILOSOPHY.md, "Obvious") is the standard, and proc-cli misses it where people guess. Tried with 2.2.0:
 
-- `proc kill 3000` and `proc on 3000` read 3000 as a PID and say "Try: proc list". Nothing mentions `:3000`, though freeing a port is proc's main job and `kill-port 3000` is the habit people bring.
+- `proc kill 3000` and `proc on 3000` read 3000 as a PID and say "Try: proc list". Nothing mentions `:3000`, though freeing a port is proc-cli's main job and `kill-port 3000` is the habit people bring.
 - `proc kill -9 node`, `proc stop --force node` and `proc kill --all node` stop at a parser error with no tip.
 - Some tips match the spelling, not the meaning: `proc list --port 5000` suggests `--sort`, `proc kill node --signal 9` suggests `--in`, and `proc what :5000` and `proc who :5000` suggest `wait`, `watch` and `why` instead of `on`.
 - `proc ps aux` takes `aux` as a name and exits 0 with "No processes found". (Since 2.5.0 it adds that a process has `aux` in its command line and suggests `--cmd`; it still reads `aux` as a name.)
@@ -64,20 +64,20 @@ Already right: `info :5000`, `list node`, `list --sort mem`, `free 5000` (its er
 
 These get fixed together, from one convention, not one error message at a time:
 
-1. **Collect the guesses** before deciding anything: the spellings of the tools people come from (`kill`, `pkill`, `killall`, `fuser`, `lsof`, `ps`, `top`, `htop`, `netstat`, `ss`, `kill-port`), the agent evals in `skills/proc-cli/evals.md`, and first-run sessions of people who have never used proc.
-2. **Give every guess one of three answers.** It works, because it is a habit proc can take in one meaning (proc then says what it did in its own words); it teaches, with an error that names the right command and why; or it is a plain error. A guess never makes proc act on a reading the user didn't type ("Explicit"): a hint can say "port 3000 is `:3000`", but `kill 3000` never kills what is on port 3000.
+1. **Collect the guesses** before deciding anything: the spellings of the tools people come from (`kill`, `pkill`, `killall`, `fuser`, `lsof`, `ps`, `top`, `htop`, `netstat`, `ss`, `kill-port`), the agent evals in `skills/proc-cli/evals.md`, and first-run sessions of people who have never used proc-cli.
+2. **Give every guess one of three answers.** It works, because it is a habit proc-cli can take in one meaning (proc-cli then says what it did in its own words); it teaches, with an error that names the right command and why; or it is a plain error. A guess never makes proc-cli act on a reading the user didn't type ("Explicit"): a hint can say "port 3000 is `:3000`", but `kill 3000` never kills what is on port 3000.
 3. **Write the convention down** in CONTRIBUTING.md, with the table of guesses and their answers, and a test for each guess, so every new command and flag is checked against it.
 4. **Change the code in one release**, with the CHANGELOG giving each guess's answer. Anything that changes what an existing spelling does (`-n`, the aliases) waits for a major release, with a deprecation notice first.
 
 This takes in the candidates "Errors that name what you meant", "Signal words, not numbers" and "`proc :3000`" below (and "One meaning for `-n`", now decided for the next major release), and the human clock is how it is measured: time to a correct answer for someone new, before and after.
 
-**Feature test:** obvious, explicit, and one spelling per intent with habits kept (PHILOSOPHY.md, "Easy to Remember"). **Decided (2026-11-03, moved 2026-11-10 and 2026-11-12):** the convention ships in 2.6.0 (2.4.0 went out with fixes, and 2.5.0 with what was on main), everything that only adds (tips, notes, `kill -9`, `proc :3000`). Its research is redone first, against 2.5.0: of the guesses above, re-tried on 2026-11-12, `ps aux` now names the command-line match and `proc :3000` gets clap's "did you mean 'on'?", and the rest still read as listed; the first-try evals and the list of guesses are run again before the plan is updated, and any guess a release has since answered leaves it; the changes to existing spellings are in "Spellings that mean one thing" under the next major release. A hint names proc's spelling for each likely reading and reports at most one cheap read-only fact; it never runs a reading, never offers a `--yes` line, and never becomes a JSON key a script could act on.
+**Feature test:** obvious, explicit, and one spelling per intent with habits kept (PHILOSOPHY.md, "Easy to Remember"). **Decided (2026-11-03, moved 2026-11-10 and 2026-11-12):** the convention ships in 2.6.0 (2.4.0 went out with fixes, and 2.5.0 with what was on main), everything that only adds (tips, notes, `kill -9`, `proc :3000`). Its research is redone first, against 2.5.0: of the guesses above, re-tried on 2026-11-12, `ps aux` now names the command-line match and `proc :3000` gets clap's "did you mean 'on'?", and the rest still read as listed; the first-try evals and the list of guesses are run again before the plan is updated, and any guess a release has since answered leaves it; the changes to existing spellings are in "Spellings that mean one thing" under the next major release. A hint names proc-cli's spelling for each likely reading and reports at most one cheap read-only fact; it never runs a reading, never offers a `--yes` line, and never becomes a JSON key a script could act on.
 
 ## Candidates
 
 ### Signal words, not numbers
 
-`-9`, `-15` and `-HUP` are notation people copy without knowing what they mean. proc already takes signal names (`--signal KILL`), but rejects numbers: `proc stop 1234 --signal 9` is an error. The idea: accept the number people already type, act on it, and answer with the word (`9 is SIGKILL`), so a habit turns into knowledge.
+`-9`, `-15` and `-HUP` are notation people copy without knowing what they mean. proc-cli already takes signal names (`--signal KILL`), but rejects numbers: `proc stop 1234 --signal 9` is an error. The idea: accept the number people already type, act on it, and answer with the word (`9 is SIGKILL`), so a habit turns into knowledge.
 
 **Feature test:** fits the domain; makes the common case effortless for people with `kill -9` in their fingers. **Open:** whether `proc kill -9 <target>` (today: "unexpected argument") should also be accepted, and how that reads next to `kill` always meaning SIGKILL.
 
@@ -110,7 +110,7 @@ When a guess is wrong, the error should say the right command. A mistyped subcom
 - `proc kill 3000 --dry-run`, with no process 3000 but a listener on port 3000, could ask "did you mean :3000?".
 - Flags people reach for from other tools: an agent tester typed `proc kill --name worker` and got "unexpected argument '--name' found". The error could say "to filter by name, use --by". Likewise `--port` (a target is `:3000`) and `--pid` (a PID is a plain number).
 
-**Feature test:** obvious, explicit (proc says which reading it took), and it keeps one spelling per intent. **Alternative considered:** hidden aliases (`--name` meaning `--by`). They fix the typo silently but give one flag two spellings and teach nothing, which "Easy to remember" argues against. **Open:** how far suggestions go before they become guesses, and which borrowed flags are common enough to name.
+**Feature test:** obvious, explicit (proc-cli says which reading it took), and it keeps one spelling per intent. **Alternative considered:** hidden aliases (`--name` meaning `--by`). They fix the typo silently but give one flag two spellings and teach nothing, which "Easy to remember" argues against. **Open:** how far suggestions go before they become guesses, and which borrowed flags are common enough to name.
 
 ### Hog
 
@@ -157,7 +157,7 @@ One health check after a crash or a messy session: port conflicts, orphans, stuc
 
 `tree` lists siblings by PID. PIDs wrap and get reused, so PID order isn't spawn order: on one Mac, 9-21% of adjacent siblings had the higher PID as the older process. A tree is read top to bottom as "what started what", so start time (PID as the tie-break) is the natural order.
 
-**Feature test:** deepens proc's command of its domain. **Open:** whether `tree` alone should differ from `list --sort pid`, or a `tree --sort` flag is better than changing the default (a sort flag on a hierarchy only orders siblings, which is easy to misread).
+**Feature test:** deepens proc-cli's command of its domain. **Open:** whether `tree` alone should differ from `list --sort pid`, or a `tree --sort` flag is better than changing the default (a sort flag on a hierarchy only orders siblings, which is easy to misread).
 
 ### Stop a process and everything it started
 
@@ -175,19 +175,19 @@ proc kill :3000 --tree -y      # what holds the port, and everything it started
 
 **Against the feature test:**
 
-1. *Fits the domain:* yes. Parentage is already proc's subject (`tree`, `why`, `orphans`, `--parent`), and stopping processes is its main job. Stopping a service's tree is still not service management: proc stops what is running now, and doesn't restart, supervise or know about units.
+1. *Fits the domain:* yes. Parentage is already proc-cli's subject (`tree`, `why`, `orphans`, `--parent`), and stopping processes is its main job. Stopping a service's tree is still not service management: proc-cli stops what is running now, and doesn't restart, supervise or know about units.
 2. *One obvious command:* `--tree`, because `proc tree <target>` already shows exactly the set it would act on, so the preview is a command people know. Not `--recursive` (`for -r` means "below a directory" from 2.5.0) and not `--children` (it reaches grandchildren).
 3. *Common case effortless:* the common case stays flag-free and unchanged. `--tree` is for the cases above, where a flag is right. A cheaper first step serves the common case directly: when a stopped process leaves children running, say so in the receipt ("2 processes it started are still running: `proc stop 4821 --tree`") and add the count to the JSON (each process already carries `child_count`). That alone turns a silent leftover into a visible one.
 4. *Explicit:* the preview and the confirmation list every process in the tree, drawn as `tree` draws it, with the count. `--json` without `--yes` exits 4 with that list, as today. Never the default.
 5. *Deepens the domain:* yes. It is the difference between stopping a process and stopping the work it was doing.
-6. *Conventions:* a flag that refines a verb (PHILOSOPHY.md, "Semantic"). Every target kind works, and several targets' trees are merged, deduplicated by PID. proc and the processes it runs under are left out of every tree, as 2.4.0 leaves them out of names, so `proc stop <my terminal> --tree` can't end the shell that ran it.
+6. *Conventions:* a flag that refines a verb (PHILOSOPHY.md, "Semantic"). Every target kind works, and several targets' trees are merged, deduplicated by PID. proc-cli and the processes it runs under are left out of every tree, as 2.4.0 leaves them out of names, so `proc stop <my terminal> --tree` can't end the shell that ran it.
 7. *Both readers:* people get the tree in the preview and a receipt that says how many were stopped. Programs get every process in `processes` with its outcome, and each descendant names the target whose tree it came from (a key such as `tree_of`, to be settled with the JSON naming rules).
 
 **What makes it hard, and must be decided first:**
 
-- **PID reuse and late children.** The tree is read once for the preview and acted on later. Each process keeps the start-time check every signal already has, so a reused PID is never hit. A child started after the preview isn't in the list a person approved: proc must not act on it silently, but should say it exists.
+- **PID reuse and late children.** The tree is read once for the preview and acted on later. Each process keeps the start-time check every signal already has, so a reused PID is never hit. A child started after the preview isn't in the list a person approved: proc-cli must not act on it silently, but should say it exists.
 - **Order of signals.** Stopping the parent first gives it the chance to restart children (supervisors do); stopping children first can make a parent respawn them. One answer is to pause the whole tree (SIGSTOP), send the signal to all of it, then resume it (SIGCONT) so each process can handle its SIGTERM. systemd's answer for a unit is to send the signal to every process at once, followed by SIGCONT. Windows: `taskkill /T`.
-- **What a tree can't see.** A process that daemonized (forked twice) or was already orphaned has PID 1 as its parent and is no longer in any tree: `--tree` doesn't find it, and the docs must say so, pointing to `orphans --in`. Process groups and cgroups would find more but exist only on some systems and aren't something people can see; parentage works on all five OSes proc supports.
+- **What a tree can't see.** A process that daemonized (forked twice) or was already orphaned has PID 1 as its parent and is no longer in any tree: `--tree` doesn't find it, and the docs must say so, pointing to `orphans --in`. Process groups and cgroups would find more but exist only on some systems and aren't something people can see; parentage works on all five OSes proc-cli supports.
 - **A tree too big to mean.** `--tree` on PID 1, launchd or a login session is the whole system. Refuse a root like that with a clear error, rather than rely on the confirmation alone.
 - **Which verbs.** `kill`, `stop`, `freeze` and `thaw` clearly (freezing a build and its compilers together is useful). `free :port` probably not: it already stops every holder of the port, and a holder's children rarely matter to the port. `unstick` no.
 
@@ -210,29 +210,29 @@ Both print processes in PID order (81 orphans on one Mac), which says nothing ab
 
 ### The human clock
 
-How long someone who has never used proc takes to get a correct answer (PHILOSOPHY.md, "Fast"). Unlike the machine clock (time per command), nothing measures it yet; the convention for guesses (above) is the first thing it would measure. **Open:** how to measure it (first-run sessions, agent evals like `skills/proc-cli/evals.md`).
+How long someone who has never used proc-cli takes to get a correct answer (PHILOSOPHY.md, "Fast"). Unlike the machine clock (time per command), nothing measures it yet; the convention for guesses (above) is the first thing it would measure. **Open:** how to measure it (first-run sessions, agent evals like `skills/proc-cli/evals.md`).
 
 ### More operating systems
 
-proc runs on macOS, Linux, Windows, FreeBSD and NetBSD. It reads processes through sysinfo, which supports Android, FreeBSD, NetBSD, iOS, Linux, macOS and Windows and returns empty lists anywhere else, so a new OS needs sysinfo support (or a process reader of proc's own), a port reader, and a CI VM. In order:
+proc-cli runs on macOS, Linux, Windows, FreeBSD and NetBSD. It reads processes through sysinfo, which supports Android, FreeBSD, NetBSD, iOS, Linux, macOS and Windows and returns empty lists anywhere else, so a new OS needs sysinfo support (or a process reader of proc-cli's own), a port reader, and a CI VM. In order:
 
-1. **Android (Termux).** sysinfo supports it and Rust targets it, so proc may nearly work; the port reader is Linux's, which reads `/proc/net`, and Android limits that for apps. Try it before deciding.
+1. **Android (Termux).** sysinfo supports it and Rust targets it, so proc-cli may nearly work; the port reader is Linux's, which reads `/proc/net`, and Android limits that for apps. Try it before deciding.
 2. **OpenBSD**, the BSD that's left: `fstat` and `netstat` in the base system cover open files and ports. The larger part is OpenBSD support in sysinfo, best contributed there, where other tools gain from it too.
-3. **illumos (SmartOS, OmniOS, OpenIndiana).** sysinfo's maintainer declined illumos support in 2026-09, so proc would read processes itself, from `/proc/<pid>/psinfo`, `usage` and `path/`, which first needs proc's sysinfo calls behind one interface. Ports come from `netstat -u` (each socket's processes) or `/proc/<pid>/fdinfo`, open files from `/proc/<pid>/path/<fd>`, and CI from an OmniOS VM; Rust's `x86_64-unknown-illumos` is Tier 2 with host tools. One limit: illumos keeps only the first 80 characters of a command line, and the rest is readable only for one's own processes. Revisit when a user asks for it, or if sysinfo takes illumos after all.
+3. **illumos (SmartOS, OmniOS, OpenIndiana).** sysinfo's maintainer declined illumos support in 2026-09, so proc-cli would read processes itself, from `/proc/<pid>/psinfo`, `usage` and `path/`, which first needs proc-cli's sysinfo calls behind one interface. Ports come from `netstat -u` (each socket's processes) or `/proc/<pid>/fdinfo`, open files from `/proc/<pid>/path/<fd>`, and CI from an OmniOS VM; Rust's `x86_64-unknown-illumos` is Tier 2 with host tools. One limit: illumos keeps only the first 80 characters of a command line, and the rest is readable only for one's own processes. Revisit when a user asks for it, or if sysinfo takes illumos after all.
 
-Not planned: Solaris (no sysinfo support, few users and a closed source base), Cygwin (its users are on Windows, where proc already runs natively) and Redox (too early). **Feature test:** a platform, not a feature; it puts the same commands where people already are. **Open:** what Android allows an app to read in `/proc`; whether sysinfo would take OpenBSD support; for illumos, how much of proc's process code a reader of its own touches.
+Not planned: Solaris (no sysinfo support, few users and a closed source base), Cygwin (its users are on Windows, where proc-cli already runs natively) and Redox (too early). **Feature test:** a platform, not a feature; it puts the same commands where people already are. **Open:** what Android allows an app to read in `/proc`; whether sysinfo would take OpenBSD support; for illumos, how much of proc-cli's process code a reader of its own touches.
 
 ### More ways to install
 
-Each of these puts proc one command away for people who don't use the channels proc has today. nixpkgs is decided (see "Nix as an official install method: the nixpkgs package" above: `nix run nixpkgs#proc-cli` once merged). PyPI shipped in 2.3.0 (see the CHANGELOG). The rest, in this order:
+Each of these puts proc-cli one command away for people who don't use the channels proc-cli has today. nixpkgs is decided (see "Nix as an official install method: the nixpkgs package" above: `nix run nixpkgs#proc-cli` once merged). PyPI shipped in 2.3.0 (see the CHANGELOG). The rest, in this order:
 
 1. **winget**, the package manager that ships with Windows (`winget install yazeed.proc-cli`). The first version is one hand-written pull request, microsoft/winget-pkgs#469298, which has passed winget's validation, install test and antivirus scan; after a moderator merges it, release.yml's "Update winget" job submits each release.
-2. **The BSDs' own package systems and CPUs:** the FreeBSD port (`pkg install proc-cli`, `pkg/freebsd/`) is filed as FreeBSD bug 300492 and waits for a ports committer; it goes through FreeBSD's review, so proc can't publish it itself. ARM64 binaries for both would build like the x86_64 ones, natively in an ARM64 VM (vmactions takes an `arch`; untried).
+2. **The BSDs' own package systems and CPUs:** the FreeBSD port (`pkg install proc-cli`, `pkg/freebsd/`) is filed as FreeBSD bug 300492 and waits for a ports committer; it goes through FreeBSD's review, so proc-cli can't publish it itself. ARM64 binaries for both would build like the x86_64 ones, natively in an ARM64 VM (vmactions takes an `arch`; untried).
 3. **homebrew-core**, later: `brew install proc` with no tap, and Linuxbrew. A new formula needs 75 stars when someone else submits it, 225 when the repo's owner does (or 30 / 90 forks or watchers), and must build from source with a `livecheck`. The repo had 62 stars when this was written.
 
-**Official Debian, revisited once the repository passes 1,000 stars.** proc's own signed apt repository (https://proc-cli.com/apt) already gives Debian and Ubuntu users every release the day it ships. Being in Debian's archive, so `apt install proc-cli` works with nothing added, costs more than it gives today: Debian builds proc from its own packaged crates, not `Cargo.lock` (five of proc's direct dependencies are at other versions there, so each release would need patches); a Debian Developer has to sponsor it through an intent-to-package bug and the new-package queue (weeks to months); and Debian stable then keeps one version for a year or more. At 1,000 stars, look again: whether someone in Debian's Rust team would sponsor or co-maintain it, and how far Debian's crate versions are from proc's.
+**Official Debian, revisited once the repository passes 1,000 stars.** proc-cli's own signed apt repository (https://proc-cli.com/apt) already gives Debian and Ubuntu users every release the day it ships. Being in Debian's archive, so `apt install proc-cli` works with nothing added, costs more than it gives today: Debian builds proc-cli from its own packaged crates, not `Cargo.lock` (five of proc-cli's direct dependencies are at other versions there, so each release would need patches); a Debian Developer has to sponsor it through an intent-to-package bug and the new-package queue (weeks to months); and Debian stable then keeps one version for a year or more. At 1,000 stars, look again: whether someone in Debian's Rust team would sponsor or co-maintain it, and how far Debian's crate versions are from proc-cli's.
 
-**Feature test:** install, not a feature; it makes the common case (getting proc) one command on each platform. **Open:** when winget's moderator and a FreeBSD ports committer take the submissions.
+**Feature test:** install, not a feature; it makes the common case (getting proc-cli) one command on each platform. **Open:** when winget's moderator and a FreeBSD ports committer take the submissions.
 
 ## Proposed changes to PHILOSOPHY.md
 
@@ -244,13 +244,13 @@ PHILOSOPHY.md is the criteria, so it changes slowly and on purpose. These change
 
 ## Not planned
 
-These are outside proc's scope. See [PHILOSOPHY.md](PHILOSOPHY.md) for why.
+These are outside proc-cli's scope. See [PHILOSOPHY.md](PHILOSOPHY.md) for why.
 
 - **Service management:** use systemd, launchd or supervisord
 - **Container management:** use docker or podman
-- **Remote processes:** use ssh + proc
+- **Remote processes:** use ssh + `proc`
 - **Historical data:** use monitoring tools; `proc watch` shows the present
-- **A GUI or an interactive TUI:** proc is for when you know what you want. `proc watch` refreshes a live view, but its only key is quit
+- **A GUI or an interactive TUI:** proc-cli is for when you know what you want. `proc watch` refreshes a live view, but its only key is quit
 - **Auto-updates:** use your package manager
 
 ---

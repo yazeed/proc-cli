@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-//! # proc - Semantic Process Management CLI
+//! # proc-cli - Semantic Process Management CLI
 //!
 //! Semantic CLI tool for process management. Target by port, PID, name or path.
 //!
@@ -94,9 +94,9 @@
 //! `2` not found, `3` permission denied, `4` invalid input (including unknown flags),
 //! an action this OS does not support, or a command that changes processes run
 //! without `--yes` where nobody can confirm (`--json`, or no terminal): nothing
-//! was changed. A signal that ends proc while `watch` has the screen or a
+//! was changed. A signal that ends proc-cli while `watch` has the screen or a
 //! prompt is waiting (SIGINT, SIGTERM, SIGHUP, SIGQUIT) puts the terminal back,
-//! then ends proc by that signal, so a shell shows 128 plus its number.
+//! then ends proc-cli by that signal, so a shell shows 128 plus its number.
 //!
 //! ## Errors
 //!
@@ -111,8 +111,8 @@
 //! | `system_error` | 1 | The OS gave an error, a signal failed, or an operation timed out |
 //! | `not_found` | 2 | No process or port matched, or the process exited meanwhile |
 //! | `command_line_only` | 2 | A name matched nothing, but is in some command lines (`--cmd` matches those) |
-//! | `ruled_out` | 2 | A process holds the target, but a guard (`--start-time`, `--by`, `--in`) rules it out, or every match was a process proc runs under |
-//! | `permission_denied` | 3 | proc may not read it, or a port's holder is out of sight (another user's process) |
+//! | `ruled_out` | 2 | A process holds the target, but a guard (`--start-time`, `--by`, `--in`) rules it out, or every match was a process proc-cli runs under |
+//! | `permission_denied` | 3 | proc-cli may not read it, or a port's holder is out of sight (another user's process) |
 //! | `invalid_input` | 4 | A wrong flag, value or argument |
 //! | `needs_confirmation` | 4 | A command that changes processes had nobody to ask (`--json` or no terminal, without `--yes`) |
 //! | `not_supported` | 4 | This OS cannot do it (`freeze`, `thaw`, `orphans` and `stop --signal` on Windows) |
@@ -132,7 +132,7 @@
 //! assert_eq!(parse_port(":3000").unwrap(), 3000);
 //! ```
 
-// proc reads processes, ports and open files with code for each system it
+// proc-cli reads processes, ports and open files with code for each system it
 // supports; anywhere else the build would fail on whichever of those it hits
 // first, so it stops here and says which systems those are
 #[cfg(not(any(
@@ -143,7 +143,7 @@
     target_os = "netbsd"
 )))]
 compile_error!(
-    "proc supports macOS, Linux, Windows, FreeBSD and NetBSD, and this system is not one of them \
+    "proc-cli supports macOS, Linux, Windows, FreeBSD and NetBSD, and this system is not one of them \
      (ROADMAP.md, \"More operating systems\", lists the ones under consideration)"
 );
 

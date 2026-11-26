@@ -11,7 +11,7 @@
 
 ## Reporting a Vulnerability
 
-We take security seriously. If you discover a security vulnerability in proc, please report it responsibly.
+We take security seriously. If you discover a security vulnerability in proc-cli, please report it responsibly.
 
 ### How to Report
 
@@ -48,17 +48,17 @@ Include the following information:
 
 ### Design Principles
 
-proc is designed with security in mind:
+proc-cli is designed with security in mind:
 
-1. **No Network Access**: proc only accesses local system information. It does not make network requests or phone home. (The npm package downloads the proc binary the first time you run it, and `install.sh` downloads it once, and both check it against the release's checksum; the binary itself never makes a request.)
+1. **No Network Access**: proc-cli only accesses local system information. It does not make network requests or phone home. (The npm package downloads the proc-cli binary the first time you run it, and `install.sh` downloads it once, and both check it against the release's checksum; the binary itself never makes a request.)
 
-2. **No Data Collection**: proc does not collect, store, or transmit any user data or telemetry.
+2. **No Data Collection**: proc-cli does not collect, store, or transmit any user data or telemetry.
 
-3. **Minimal Privileges**: proc runs with the privileges of the invoking user. It does not require or request elevated privileges except when explicitly needed (e.g., killing processes owned by other users).
+3. **Minimal Privileges**: proc-cli runs with the privileges of the invoking user. It does not require or request elevated privileges except when explicitly needed (e.g., killing processes owned by other users).
 
 4. **Safe Defaults**: Destructive operations (like `kill`) require `--yes` or an interactive confirmation. `--json` does not count as confirmation: without `--yes` it exits 4 and changes nothing.
 
-5. **Input Validation**: Inputs are validated (ports, ranges, signals, intervals), and proc starts helper programs with fixed argument lists, never through a shell.
+5. **Input Validation**: Inputs are validated (ports, ranges, signals, intervals), and proc-cli starts helper programs with fixed argument lists, never through a shell.
 
 6. **Memory Safety**: Written in Rust, which provides memory safety guarantees.
 
@@ -74,7 +74,7 @@ We carefully vet all dependencies:
 
 ### Known Limitations
 
-1. **Process Information Access**: On some systems, proc may not be able to access information about processes owned by other users without elevated privileges.
+1. **Process Information Access**: On some systems, proc-cli may not be able to access information about processes owned by other users without elevated privileges.
 
 2. **Signal Sending**: Killing processes owned by other users requires appropriate permissions (typically root/sudo).
 
@@ -86,9 +86,9 @@ We carefully vet all dependencies:
 
 2. **Use dry-run mode**: When uncertain, use `--dry-run` to see what would happen without making changes.
 
-3. **Avoid running as root**: Run proc with regular user privileges when possible. Only use sudo when necessary.
+3. **Avoid running as root**: Run `proc` with regular user privileges when possible. Only use sudo when necessary.
 
-4. **Keep proc updated**: Install security updates when available.
+4. **Keep proc-cli updated**: Install security updates when available.
 
 ## Audit History
 

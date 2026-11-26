@@ -1,6 +1,6 @@
-# Contributing to proc
+# Contributing to proc-cli
 
-Thank you for your interest in contributing to proc! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to proc-cli! This document provides guidelines and instructions for contributing.
 
 ## Code of Conduct
 
@@ -17,7 +17,7 @@ When creating a bug report, please include:
 1. **Environment details**:
    - Operating system and version
    - Rust version (`rustc --version`)
-   - proc version (`proc --version`). A build from `main` prints `-dev (branch@commit, N commits after vX.Y.Z)` after the number, so include the whole line
+   - proc-cli version (`proc --version`). A build from `main` prints `-dev (branch@commit, N commits after vX.Y.Z)` after the number, so include the whole line
 
 2. **Steps to reproduce**:
    - What commands did you run?
@@ -201,12 +201,12 @@ Line coverage says a line ran, not that its behaviour is pinned. A change that a
 - **JSON:** one document, `action`, `success`, exit codes and `reason` (`cli_json.rs`, and the checker in `tests/contract/` that runs on every JSON document a test reads); `not_found` for targets that match nothing (`cmd_not_found.rs`)
 - **Bad input:** missing or bad values, unknown flags, empty arguments (`parser_errors.rs`, generated from the CLI definition), and inputs that used to look like an answer (`silent_failures.rs`)
 - **Pipes and closed output:** stdout or stderr that can't take the bytes, a reader that stops early (`hostile_io.rs`)
-- **A terminal, or none:** confirmation prompts and the `watch` screen through a pseudo-terminal (`terminal.rs`); the same command without a terminal must exit 4, not ask. On Unix proc runs there as a shell's foreground job, through `examples/session`, so its exit doesn't revoke the terminal before the test has read it (FreeBSD and NetBSD drop unread output then)
+- **A terminal, or none:** confirmation prompts and the `watch` screen through a pseudo-terminal (`terminal.rs`); the same command without a terminal must exit 4, not ask. On Unix proc-cli runs there as a shell's foreground job, through `examples/session`, so its exit doesn't revoke the terminal before the test has read it (FreeBSD and NetBSD drop unread output then)
 - **Ordering and several holders:** stable output order (`order.rs`), a port held over IPv4 and IPv6 at once (`cmd_port_holders.rs`)
 - **Anything that waits:** `timing.rs`, so a timeout or a wait that never returns fails fast
 - **Docs:** examples never pair `--yes` with a name (`doc_examples.rs`); every command, flag, short flag, accepted value, exit code and `reason` is written where people and programs look, read from the CLI definition and the `REASON_*` constants (`docs_coverage.rs`, which lists every miss at once)
 
-Tests aim proc only at processes they started themselves (a copy of `examples/listener.rs` under its own name in a fresh temp directory, or a shell the test owns), so the suite can run on a machine that is busy with other work.
+Tests aim proc-cli only at processes they started themselves (a copy of `examples/listener.rs` under its own name in a fresh temp directory, or a shell the test owns), so the suite can run on a machine that is busy with other work.
 
 ### Tests that can't run everywhere
 
@@ -214,15 +214,15 @@ A test that needs what a machine may lack (an IPv6 loopback, lsof on macOS, fsta
 
 ### Nix
 
-`nix flake check -L` builds proc from `Cargo.lock` and runs this whole suite in Nix's build sandbox, on Linux and macOS in CI. The sandbox has no real `$HOME`, a bare `PATH`, its own process namespace, and the system's `coreutils` may be one multi-call binary, so a test must not assume a home directory, a tool the machine happens to have, that `sleep` runs under another name, or that the machine has more than one process tree. `flake.nix` sets `$HOME` for the terminal tests and adds the tools the tests call, since the `PATH` has neither `/bin` nor `/usr/sbin` (`procps` on Linux; Apple's `ps`, `darwin.ps`, and `lsof` on macOS, where proc reads ports with `lsof`); it never turns the tests off. A test the sandbox must stop is skipped by exact name in `checkFlags`, with the reason beside it. Without Nix installed, run the check in the `nixos/nix` Docker image (`--privileged` for the sandbox, and `NIX_CONFIG="experimental-features = nix-command flakes"`).
+`nix flake check -L` builds proc-cli from `Cargo.lock` and runs this whole suite in Nix's build sandbox, on Linux and macOS in CI. The sandbox has no real `$HOME`, a bare `PATH`, its own process namespace, and the system's `coreutils` may be one multi-call binary, so a test must not assume a home directory, a tool the machine happens to have, that `sleep` runs under another name, or that the machine has more than one process tree. `flake.nix` sets `$HOME` for the terminal tests and adds the tools the tests call, since the `PATH` has neither `/bin` nor `/usr/sbin` (`procps` on Linux; Apple's `ps`, `darwin.ps`, and `lsof` on macOS, where proc-cli reads ports with `lsof`); it never turns the tests off. A test the sandbox must stop is skipped by exact name in `checkFlags`, with the reason beside it. Without Nix installed, run the check in the `nixos/nix` Docker image (`--privileged` for the sandbox, and `NIX_CONFIG="experimental-features = nix-command flakes"`).
 
 ### FreeBSD and NetBSD
 
-GitHub has no BSD runners, so the `bsd` job in CI boots FreeBSD 15.1 and NetBSD 11.0 virtual machines on a Linux runner (`vmactions/freebsd-vm`, `vmactions/netbsd-vm`) and runs the whole suite in each, with only Rust installed (ports come from `sockstat` and open files from `fstat`, both in the base system). The same job then builds the release binary natively with `scripts/bsd-build.sh` and runs it; release.yml's `build-bsd` job does the same for a tag. They aren't cross-compiled: cross's FreeBSD image has no `libgeom` and its NetBSD image no `libkvm` or `libexecinfo`, which proc links. Neither OS is in the coverage merge, so code that only exists on a BSD is checked by that job's tests alone. Nix's macOS sandbox is another environment the plain macOS jobs don't have: it refuses local network listeners without `__darwinAllowLocalNetworking` and can't read `/etc/passwd`, so the CI Nix job on macOS runs with `sandbox = relaxed`, as nixpkgs reviewers build.
+GitHub has no BSD runners, so the `bsd` job in CI boots FreeBSD 15.1 and NetBSD 11.0 virtual machines on a Linux runner (`vmactions/freebsd-vm`, `vmactions/netbsd-vm`) and runs the whole suite in each, with only Rust installed (ports come from `sockstat` and open files from `fstat`, both in the base system). The same job then builds the release binary natively with `scripts/bsd-build.sh` and runs it; release.yml's `build-bsd` job does the same for a tag. They aren't cross-compiled: cross's FreeBSD image has no `libgeom` and its NetBSD image no `libkvm` or `libexecinfo`, which proc-cli links. Neither OS is in the coverage merge, so code that only exists on a BSD is checked by that job's tests alone. Nix's macOS sandbox is another environment the plain macOS jobs don't have: it refuses local network listeners without `__darwinAllowLocalNetworking` and can't read `/etc/passwd`, so the CI Nix job on macOS runs with `sandbox = relaxed`, as nixpkgs reviewers build.
 
-Two rules keep proc correct there:
+Two rules keep proc-cli correct there:
 
-- **Every sysinfo refresh goes through `sysinfo_locked`** (`src/core/process.rs`), or `refreshed_system()` for a full snapshot. FreeBSD's libkvm reads command lines into buffers shared by the whole program, so two threads refreshing at once crash proc (the tests run in parallel threads and found it). The lock also points stderr at `/dev/null` while it refreshes, because libprocstat prints a warning there for every process that exits mid-read.
+- **Every sysinfo refresh goes through `sysinfo_locked`** (`src/core/process.rs`), or `refreshed_system()` for a full snapshot. FreeBSD's libkvm reads command lines into buffers shared by the whole program, so two threads refreshing at once crash proc-cli (the tests run in parallel threads and found it). The lock also points stderr at `/dev/null` while it refreshes, because libprocstat prints a warning there for every process that exits mid-read.
 - **CPU time comes from `cpu_time_ms`**, never from sysinfo's `accumulated_cpu_time` directly. On NetBSD sysinfo counts it in hundredths of a second and rounds it to whole seconds, so a process spinning at 100% read 0% over a 0.2 s window; `cpu_time_ms` reads the kernel's counter there.
 
 Four tests of a deleted working directory are ignored on both, with the reason in the attribute: once a directory is deleted, FreeBSD shows `-` for the path and NetBSD none at all, so `proc in` has nothing to match.
@@ -285,4 +285,4 @@ Releases are managed by maintainers and follow [RELEASE.md](RELEASE.md).
 - Open a [Discussion](https://github.com/yazeed/proc-cli/discussions) for questions
 - Reach out to maintainers
 
-Thank you for contributing to proc!
+Thank you for contributing to proc-cli!

@@ -2,11 +2,11 @@
 
 **Simplicity is the ultimate sophistication.**
 
-proc exists because process management on the command line is unnecessarily complex. We believe the answer to "what's using port 3000?" should be one command, not a Stack Overflow search.
+proc-cli exists because process management on the command line is unnecessarily complex. We believe the answer to "what's using port 3000?" should be one command, not a Stack Overflow search.
 
 ## Core Belief
 
-The best tool is the one you don't have to think about. When you reach for proc, the command you guess should be the command that works.
+The best tool is the one you don't have to think about. When you reach for proc-cli, the command you guess should be the command that works.
 
 ## Principles
 
@@ -14,16 +14,16 @@ The best tool is the one you don't have to think about. When you reach for proc,
 Commands are the words you would guess, in the sense people already use them, so a newcomer finds them and anyone reading the shell history later knows what was meant. `kill` kills. `stop` stops gracefully. `freeze` pauses and `thaw` resumes. `free` frees a port and checks that it's free. `on` tells you what's on a port, and `why` tells you why it's there. A command does what its word says, with no surprises and no hidden behaviors. Flags refine a command rather than replace it; the two that add an action, `--kill` on `orphans` and `stuck`, follow the same confirmation rules as `kill` itself.
 
 ### Explicit
-User intent must be clear. Destructive actions ask first, and only `--yes` or a person's own yes counts as consent: `--json` or a missing terminal never does. `--dry-run` previews them. proc never guesses what a target means: the grammar under Unified Targets decides it. Every failure has a non-zero exit code and a message that says what went wrong. Silent failures are bugs.
+User intent must be clear. Destructive actions ask first, and only `--yes` or a person's own yes counts as consent: `--json` or a missing terminal never does. `--dry-run` previews them. proc-cli never guesses what a target means: the grammar under Unified Targets decides it. Every failure has a non-zero exit code and a message that says what went wrong. Silent failures are bugs.
 
 ### Complete
-Cover the full workflow, nothing more. proc handles process and port management completely: finding, inspecting, tracing, pausing, stopping, freeing and waiting. It doesn't creep into service management, container orchestration, or monitoring dashboards. Scope discipline is a feature.
+Cover the full workflow, nothing more. proc-cli handles process and port management completely: finding, inspecting, tracing, pausing, stopping, freeing and waiting. It doesn't creep into service management, container orchestration, or monitoring dashboards. Scope discipline is a feature.
 
 ### Fast
-Speed isn't a nice-to-have; a slow CLI trains users to avoid it. proc keeps two clocks. On the machine clock, proc answers as soon as the system does, with no daemon and no index to keep warm, and waits only where the answer needs time: a CPU reading compares two samples a moment apart, and `stuck`, `wait` and `watch` watch on purpose. On the human clock, what counts is how long someone new to proc takes to reach the right command and a correct answer.
+Speed isn't a nice-to-have; a slow CLI trains users to avoid it. proc-cli keeps two clocks. On the machine clock, proc-cli answers as soon as the system does, with no daemon and no index to keep warm, and waits only where the answer needs time: a CPU reading compares two samples a moment apart, and `stuck`, `wait` and `watch` watch on purpose. On the human clock, what counts is how long someone new to proc-cli takes to reach the right command and a correct answer.
 
 ### Lightweight
-One static binary, no runtime to install and nothing left running. proc works the same on a laptop, a server, a CI runner or inside a container, on the processes of the machine it runs on.
+One static binary, no runtime to install and nothing left running. proc-cli works the same on a laptop, a server, a CI runner or inside a container, on the processes of the machine it runs on.
 
 ### Reproducible
 Behavior comes from the command line alone: no config file, no state kept between runs, no hidden mode. The same command lists the same processes in the same order, so a preview, a retry and a script all see one answer.
@@ -56,22 +56,22 @@ Nouns observe state. Verbs change state.
 You don't "run ports"—you look at ports. You don't "observe kill"—you kill.
 
 ### Easy for People, Complete for Programs
-proc has two kinds of readers, and each output is written for one of them. The default output is for people: it answers the question first, in words, cut to fit the terminal, with colour where colour helps; `-v` shows everything, uncut, for the person who asks. `--json` is for programs. A script needs it stable: a key, its type and an exit code mean the same thing for a whole major release. An agent needs it complete: every fact it needs to decide without a second call, and an unknown value left out rather than shown as 0 or `none`. Both outputs tell the same truth; the JSON carries facts, never instructions, because an agent acts on what it reads.
+proc-cli has two kinds of readers, and each output is written for one of them. The default output is for people: it answers the question first, in words, cut to fit the terminal, with colour where colour helps; `-v` shows everything, uncut, for the person who asks. `--json` is for programs. A script needs it stable: a key, its type and an exit code mean the same thing for a whole major release. An agent needs it complete: every fact it needs to decide without a second call, and an unknown value left out rather than shown as 0 or `none`. Both outputs tell the same truth; the JSON carries facts, never instructions, because an agent acts on what it reads.
 
 ### One Contract for People, Scripts and Agents
-Every process and port command speaks JSON with `--json`: one document (`watch` streams one per refresh), with `action` and `success`, and exit codes that always mean the same thing (0 success, 1 error, 2 not found, 3 permission denied, 4 nothing was done: invalid input, a confirmation is needed, or the OS doesn't support it). Every error also says why in one fixed word, so a caller branches on the word and never parses the message. Being interrupted is not a result: a signal ends proc by that signal, so the shell reports 128 plus its number.
+Every process and port command speaks JSON with `--json`: one document (`watch` streams one per refresh), with `action` and `success`, and exit codes that always mean the same thing (0 success, 1 error, 2 not found, 3 permission denied, 4 nothing was done: invalid input, a confirmation is needed, or the OS doesn't support it). Every error also says why in one fixed word, so a caller branches on the word and never parses the message. Being interrupted is not a result: a signal ends proc-cli by that signal, so the shell reports 128 plus its number.
 
-proc composes like any Unix tool: its output pipes into `jq`, `head` or the next command, and a reader that stops early ends proc quietly. Nothing needs a terminal except a question for a person, so the same command runs in a script, a cron job or CI, where a command that changes processes needs `--yes` and automation never acts by accident.
+proc-cli composes like any Unix tool: its output pipes into `jq`, `head` or the next command, and a reader that stops early ends proc-cli quietly. Nothing needs a terminal except a question for a person, so the same command runs in a script, a cron job or CI, where a command that changes processes needs `--yes` and automation never acts by accident.
 
 ### Practical Simplicity
 Every feature solves a real, repeated problem. We don't add features because they're technically interesting or because a competitor has them. We add features when users hit the same friction repeatedly.
 
 ### Easy to Remember
-Consistent patterns mean knowing one command teaches you all commands. Each intent has one obvious spelling, and a spelling means the same thing in every command. Habits from other tools keep working: `ps` lists and `top` watches. The cognitive load of proc should be near zero after the first use.
+Consistent patterns mean knowing one command teaches you all commands. Each intent has one obvious spelling, and a spelling means the same thing in every command. Habits from other tools keep working: `ps` lists and `top` watches. The cognitive load of proc-cli should be near zero after the first use.
 
 ## The Feature Test
 
-Before any feature enters proc, it must pass all seven questions:
+Before any feature enters proc-cli, it must pass all seven questions:
 
 1. **Does it fit "process and port management"?**
    If it's about containers, services, or remote systems—it's out of scope.
@@ -85,7 +85,7 @@ Before any feature enters proc, it must pass all seven questions:
 4. **Is user intent explicit?**
    Destructive operations need confirmation. Ambiguous inputs need clarification.
 
-5. **Does it deepen proc's command of its domain?**
+5. **Does it deepen proc-cli's command of its domain?**
    Robust tools handle the case you didn't expect to need. Sophistication is completeness without complexity.
 
 6. **Does it follow our conventions?**
@@ -94,15 +94,15 @@ Before any feature enters proc, it must pass all seven questions:
 7. **Does it serve both readers?**
    Easy for a person in the default output, complete and stable for a program in `--json`.
 
-If the answer to any question is no, the feature doesn't belong in proc.
+If the answer to any question is no, the feature doesn't belong in proc-cli.
 
-## What proc Is Not
+## What proc-cli Is Not
 
 - **Not a service manager** — Use systemd, launchd, or supervisord
 - **Not a container tool** — Use docker or podman
-- **Not for remote processes** — Use ssh + proc
+- **Not for remote processes** — Use ssh + `proc`
 - **Not a monitoring system** — Use proper observability tools; `proc watch` shows the present, not history
-- **Not a GUI or interactive TUI** — proc is a CLI, intentionally: you say what you want, it does it
+- **Not a GUI or interactive TUI** — proc-cli is a CLI, intentionally: you say what you want, it does it
 
 ## The Goal
 
