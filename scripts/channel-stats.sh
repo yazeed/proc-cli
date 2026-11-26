@@ -29,7 +29,13 @@ gh_get() {
     if gh auth status >/dev/null 2>&1; then gh api "$1"; else get "https://api.github.com/$1"; fi
 }
 
-row() { printf '%-14s %-40s %s\n' "$1" "$2" "${3:-(could not read)}"; }
+# An empty value, or jq's null from an answer without the field, is a source
+# that could not be read, never a 0
+row() {
+    value=${3:-}
+    [ -n "$value" ] && [ "$value" != null ] || value="(could not read)"
+    printf '%-14s %-40s %s\n' "$1" "$2" "$value"
+}
 
 echo "proc-cli usage, $(date -u '+%Y-%m-%d %H:%M UTC')"
 echo
@@ -79,17 +85,19 @@ done
 # Launchpad counts each binary package (one per Ubuntu release, CPU and
 # version) on its own; this adds them all, current and superseded
 ppa=0 unread=0
-for link in $(get 'https://api.launchpad.net/1.0/~yazeedaloyoun/+archive/ubuntu/proc-cli?ws.op=getPublishedBinaries&ws.size=300' |
-    jq -r '.entries[].self_link'); do
+links=$(get 'https://api.launchpad.net/1.0/~yazeedaloyoun/+archive/ubuntu/proc-cli?ws.op=getPublishedBinaries&ws.size=300' |
+    jq -r '.entries[].self_link')
+for link in $links; do
     if n=$(get "$link?ws.op=getDownloadCount"); then ppa=$((ppa + n)); else unread=$((unread + 1)); fi
 done
 [ "$unread" -eq 0 ] || ppa="$ppa ($unread packages could not be read)"
+[ -n "$links" ] || ppa=""
 row "Ubuntu PPA" "package downloads, all versions" "$ppa"
 
 # COPR has no API for counts: its project page shows, beside each release,
 # how many times that release's .repo file was downloaded
 copr=$(get https://copr.fedorainfracloud.org/coprs/yazeed/proc-cli/ |
-    sed -n 's/.*(\([0-9][0-9]*\) downloads\{0,1\}).*/\1/p' | awk '{ s += $1 } END { print s + 0 }')
+    sed -n 's/.*(\([0-9][0-9]*\) downloads\{0,1\}).*/\1/p' | awk '{ s += $1 } END { if (NR) print s }')
 row COPR ".repo file downloads, all releases" "$copr"
 
 get 'https://aur.archlinux.org/rpc/v5/info?arg[]=proc-cli&arg[]=proc-cli-bin' |
