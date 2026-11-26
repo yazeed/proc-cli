@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Dependabot updates.** The Docker image's base, `distroless/static-debian13`, moved to digest `1a64f46` (was `4488103`); `cachix/install-nix-action` moved to 31.11.5 and `taiki-e/install-action` to 2.90.4. CI passed on each before it was merged. Nothing changed in proc
+- **Dependabot updates.** The Docker image's base, `distroless/static-debian13`, moved to digest `4c2cd1d` (was `4488103`), and the `rust:1-alpine` image it is built in to `8d0e82a` (was `44819b2`); `cachix/install-nix-action` moved to 32.0.0 and `taiki-e/install-action` to 2.90.8. 32.0.0 no longer installs Nix on Intel Macs, which CI never asked it to: the Nix jobs run on Linux and Apple Silicon. CI passed on each before it was merged. Nothing changed in proc
 
 - **RELEASE.md: a release is done when every channel has it and its run is green.** Step 6 now says to fix and rerun each failed job of the tag's run, including one that published and failed afterwards, before the release counts as done. Nothing changed in proc
 
