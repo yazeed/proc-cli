@@ -54,7 +54,7 @@ proc wait node --json --timeout 120 || echo "still running"
 }
 ```
 
-Each process in `exited` and `still_running` is a whole process object, as `list` prints it: an `exited` one carries the last reading proc had of it, a `still_running` one the reading taken when `wait` began. On a timeout, `success` is `false`, `timed_out` is `true` and the exit code is 1. Deprecated, use the new name (removed in 3.0): `elapsed_seconds`, `exited_after_seconds`, `initial_count` and `target`. Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#wait).
+Each process in `exited` and `still_running` is a whole process object, as `list` prints it: an `exited` one carries the last reading proc-cli had of it, a `still_running` one the reading taken when `wait` began. On a timeout, `success` is `false`, `timed_out` is `true` and the exit code is 1. Deprecated, use the new name (removed in 3.0): `elapsed_seconds`, `exited_after_seconds`, `initial_count` and `target`. Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#wait).
 
 ## See also
 

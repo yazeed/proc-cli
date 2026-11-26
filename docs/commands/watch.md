@@ -41,7 +41,7 @@ The table has the same columns as [`proc list`](list): PID, NAME, USER, CPU%, ME
 
 ## Details
 
-- **The terminal is always put back**, also when a signal ends watch (`kill`, closing the window) or when it panics. proc then ends by that same signal, so a shell shows 130 for `Ctrl+C`, 143 for SIGTERM, 129 for SIGHUP and 131 for SIGQUIT (130 for any Ctrl+C, Ctrl+Break or closed console on Windows).
+- **The terminal is always put back**, also when a signal ends watch (`kill`, closing the window) or when it panics. proc-cli then ends by that same signal, so a shell shows 130 for `Ctrl+C`, 143 for SIGTERM, 129 for SIGHUP and 131 for SIGQUIT (130 for any Ctrl+C, Ctrl+Break or closed console on Windows).
 - **`--limit` is `-l` here**, because `-n` is `--interval`.
 - **With `--verbose`** a row can be longer than the terminal and wrap; the row limit counts processes, not screen lines.
 - **Several targets** are separate arguments. Comma-separated lists (`:3000,:8080`) still work but are deprecated.

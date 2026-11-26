@@ -10,7 +10,7 @@ pipx install proc-cli
 uv tool install proc-cli
 ```
 
-Other ways to install proc (Homebrew, Scoop, apt, dnf, npm, cargo and more): [proc-cli.com/install](https://proc-cli.com/install).
+Other ways to install proc-cli (Homebrew, Scoop, apt, dnf, npm, cargo and more): [proc-cli.com/install](https://proc-cli.com/install).
 
 ## Usage
 

@@ -1,4 +1,4 @@
-title: proc
+title: proc-cli
 description: Semantic CLI tool for process management. Target by port, PID, name or path.
 url: https://proc-cli.com
 baseurl: ""

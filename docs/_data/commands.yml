@@ -1,4 +1,4 @@
-# The one grouping of proc's commands. The home page, the commands page and
+# The one grouping of proc-cli's commands. The home page, the commands page and
 # its sidebar read it; the README's three tables and docs.rs's command list
 # follow it, and tests/docs_coverage.rs fails if any of them, or this file,
 # misses a command or puts it in another group.

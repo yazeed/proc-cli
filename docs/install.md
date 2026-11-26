@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Install
-description: "Install proc on macOS, Linux, Windows, FreeBSD or NetBSD, with Homebrew, Scoop, apt, dnf, npm, cargo, pip and more. One binary, no dependencies."
+description: "Install proc-cli on macOS, Linux, Windows, FreeBSD or NetBSD, with Homebrew, Scoop, apt, dnf, npm, cargo, pip and more. One binary, no dependencies."
 permalink: /install
 ---
 
@@ -42,7 +42,7 @@ npm, pip and cargo work on Windows too: see [any system](#any-system-with-a-lang
 
 ### Debian, Ubuntu and derivatives
 
-**proc's apt repository**, signed, for amd64 and ARM64. [The apt page](apt/) has the setup commands. Every release lands there automatically, so `apt upgrade` keeps proc current.
+**proc-cli's apt repository**, signed, for amd64 and ARM64. [The apt page](apt/) has the setup commands. Every release lands there automatically, so `apt upgrade` keeps proc-cli current.
 
 ```bash
 sudo apt install proc-cli
@@ -125,7 +125,7 @@ Does not update itself. Run it again for a newer version. `cargo binstall proc-c
 
 There is no FreeBSD port yet. It is submitted and waits for review.
 
-proc reads ports with `sockstat` and open files with `fstat`, both in the base system, so it needs nothing else installed. Once a directory is deleted, the kernel forgets that it was a process's working directory, so `proc in` a deleted directory exits 4 here, where Linux and macOS still find the processes in it.
+proc-cli reads ports with `sockstat` and open files with `fstat`, both in the base system, so it needs nothing else installed. Once a directory is deleted, the kernel forgets that it was a process's working directory, so `proc in` a deleted directory exits 4 here, where Linux and macOS still find the processes in it.
 
 ## Any system, with a language package manager
 
@@ -161,7 +161,7 @@ Update with `pip install --upgrade proc-cli`, `pipx upgrade proc-cli` or `uv too
 
 ## Nix
 
-nixpkgs has proc as `proc-cli`, built for Linux and Apple-silicon Macs, with the man page and shell completions:
+nixpkgs has proc-cli, built for Linux and Apple-silicon Macs, with the man page and shell completions:
 
 ```bash
 # install it
@@ -185,7 +185,7 @@ Does not update itself. Without `/v{{ site.data.release.version }}` the flake bu
 
 ## Docker
 
-`--pid=host` lets proc see the host's processes, and `--net=host` its ports (for `on :port`, `ports` and `free`). `--cap-add SYS_PTRACE --security-opt apparmor=unconfined` lets it see which process holds a port or a file when that process belongs to a user other than root, as most dev servers do: Docker drops that capability by default, and on a host with AppArmor (Ubuntu and Debian have it on) Docker's default profile blocks those reads even with the capability. Without both, proc can't read those processes' open files and sockets. On Docker Desktop, which has no AppArmor, the second flag changes nothing. The image is also published as `yazeed/proc`.
+`--pid=host` lets proc-cli see the host's processes, and `--net=host` its ports (for `on :port`, `ports` and `free`). `--cap-add SYS_PTRACE --security-opt apparmor=unconfined` lets it see which process holds a port or a file when that process belongs to a user other than root, as most dev servers do: Docker drops that capability by default, and on a host with AppArmor (Ubuntu and Debian have it on) Docker's default profile blocks those reads even with the capability. Without both, proc-cli can't read those processes' open files and sockets. On Docker Desktop, which has no AppArmor, the second flag changes nothing. The image is also published as `yazeed/proc`.
 
 ```bash
 docker run --rm -it --pid=host --net=host --cap-add SYS_PTRACE --security-opt apparmor=unconfined yazeed/proc-cli
@@ -193,7 +193,7 @@ docker run --rm -it --pid=host --net=host --cap-add SYS_PTRACE --security-opt ap
 
 Update with `docker pull yazeed/proc-cli`.
 
-The image is proc's static Linux binary on [distroless](https://github.com/GoogleContainerTools/distroless), with nothing else in it: no shell and no package manager. To add proc to an image of your own, copy the binary out of it:
+The image is proc-cli's static Linux binary on [distroless](https://github.com/GoogleContainerTools/distroless), with nothing else in it: no shell and no package manager. To add proc-cli to an image of your own, copy the binary out of it:
 
 ```dockerfile
 COPY --from=yazeed/proc-cli /usr/local/bin/proc /usr/local/bin/proc
@@ -212,7 +212,7 @@ proc ports
 
 ## Teach your coding agent
 
-The [agent skill](skill) teaches Claude Code, Codex, Cursor, Gemini CLI and others when to reach for proc:
+The [agent skill](skill) teaches Claude Code, Codex, Cursor, Gemini CLI and others when to reach for proc-cli:
 
 ```bash
 npx skills add yazeed/proc-cli

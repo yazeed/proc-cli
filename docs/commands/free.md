@@ -39,7 +39,7 @@ The list of what holds the port, then the question. After a yes, a line per port
 
 ## When nothing matches
 
-`⚠ No process listening on port 3000` and `✓ All specified ports are already free`, exit 0: a port nobody holds is already free. A port another user's process holds, when proc isn't root, is exit 3: it is in use, not free. [Messages](messages) explains each one.
+`⚠ No process listening on port 3000` and `✓ All specified ports are already free`, exit 0: a port nobody holds is already free. A port another user's process holds, when proc-cli isn't root, is exit 3: it is in use, not free. [Messages](messages) explains each one.
 
 ## JSON
 

@@ -18,9 +18,15 @@ Project-specific instructions for Claude Code.
 
 ## Project Overview
 
-proc is a semantic CLI tool for process management written in Rust. It provides a unified interface for process and port operations across macOS, Linux, Windows, FreeBSD and NetBSD.
+proc-cli is a semantic CLI tool for process management written in Rust. Its command is `proc`. It provides a unified interface for process and port operations across macOS, Linux, Windows, FreeBSD and NetBSD.
 
 **Tagline (use exactly):** "Semantic CLI tool for process management. Target by port, PID, name or path."
+
+**Name and command:** the project is named **proc-cli**; `proc` is its command. Choose by what the word refers to:
+- **The name: proc-cli.** Titles and headings, the site's name, "proc-cli is…", "install proc-cli", "proc-cli 2.5.0", and the program as the subject of a sentence ("proc-cli asks before it changes anything", "proc-cli's JSON").
+- **The command: `proc`, in code formatting.** What someone types, or a command line: `proc kill :3000`, "run `proc` with `sudo`", "`proc` alone prints the help". The wordmark `❯proc` on the website is a prompt and the command, so it stays.
+- **What the program prints stays as printed.** Error messages, `--help` and other output are quoted exactly as written.
+- **Package and image names stay as they are published:** proc-cli on crates.io, npm and PyPI, and the domain proc-cli.com; `proc` for the Homebrew formula and the `yazeed/proc` Docker image.
 
 **Repository:** https://github.com/yazeed/proc-cli
 

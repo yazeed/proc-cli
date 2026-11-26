@@ -51,7 +51,7 @@ $ proc info 39158
 
 ## Details
 
-- **A line is left out when the system doesn't give the value**, never printed empty. For another user's process (`proc info 1` as a user on macOS) the card can be as short as `Process:`, `Path:` and `Children:`, because macOS gives a normal user no command line, directory, user, parent, status, resources or start time for it, and proc can't see that process's sockets. The card then ends with `Try: sudo proc info 1 to see the rest`.
+- **A line is left out when the system doesn't give the value**, never printed empty. For another user's process (`proc info 1` as a user on macOS) the card can be as short as `Process:`, `Path:` and `Children:`, because macOS gives a normal user no command line, directory, user, parent, status, resources or start time for it, and proc-cli can't see that process's sockets. The card then ends with `Try: sudo proc info 1 to see the rest`.
 - **No port table** (for example macOS without `lsof` on the PATH) leaves out `Listening:` and `Connections:`; the rest is as usual.
 - **Several targets** are separate arguments. Comma-separated lists (`:3000,:8080`) still work but are deprecated.
 
@@ -69,7 +69,7 @@ $ proc info 39158
 }
 ```
 
-Each process has `ports`: the ports it listens on, each with `exposure` and `connections` (`total` and `by_state`, no peers), or `[]`. `ports` is absent, not `[]`, when the system gives no port table, and for another user's process when proc isn't root, since an empty list would claim a `none` proc can't back. With every target missing, the document stays, with `count: 0` and `reason: "not_found"`, exit 2. `found_count` is deprecated (use `count`) and goes in 3.0. Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#info).
+Each process has `ports`: the ports it listens on, each with `exposure` and `connections` (`total` and `by_state`, no peers), or `[]`. `ports` is absent, not `[]`, when the system gives no port table, and for another user's process when proc-cli isn't root, since an empty list would claim a `none` proc-cli can't back. With every target missing, the document stays, with `count: 0` and `reason: "not_found"`, exit 2. `found_count` is deprecated (use `count`) and goes in 3.0. Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#info).
 
 ## See also
 

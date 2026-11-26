@@ -210,9 +210,9 @@ const server = app.listen(0, () => {
 });
 ```
 
-## with proc
+## with proc-cli
 
-If you have [proc](https://github.com/yazeed/proc-cli) installed, `proc on :3000` shows what's on the port (the process, its command, its directory and who's connected), and `proc free :3000` frees it: it lists what it will stop and asks first, gives each holder 5 seconds to exit before forcing it, and checks the port is free afterwards.
+If you have [proc-cli](https://github.com/yazeed/proc-cli) installed, `proc on :3000` shows what's on the port (the process, its command, its directory and who's connected), and `proc free :3000` frees it: it lists what it will stop and asks first, gives each holder 5 seconds to exit before forcing it, and checks the port is free afterwards.
 
 ```bash
 # what's using this port?
@@ -225,7 +225,7 @@ proc free :3000
 proc on :3000 :8080 :5432
 ```
 
-The same commands work on macOS, Linux and Windows. When the port is held by another user's process, proc says so (`Port 80 is in use, but proc can't see which process holds it`) instead of calling the port free.
+The same commands work on macOS, Linux and Windows. When the port is held by another user's process, proc-cli says so (`Port 80 is in use, but proc can't see which process holds it`) instead of calling the port free.
 
 ## Install
 

@@ -443,9 +443,9 @@ echo "Deploy complete"
 
 Shorter, but still a meaningful amount of shell for what is fundamentally: stop old process, start new one, check it's healthy.
 
-## proc's JSON mode
+## proc-cli's JSON mode
 
-If you have [proc](https://github.com/yazeed/proc-cli) installed, the process inspection parts get simpler -- and structured.
+If you have [proc-cli](https://github.com/yazeed/proc-cli) installed, the process inspection parts get simpler -- and structured.
 
 Check what's on a port and get JSON back:
 

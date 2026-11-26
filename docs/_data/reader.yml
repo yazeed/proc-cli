@@ -1,16 +1,16 @@
 # The home page command reader: pick a command, then a target, and read what that command does.
-# Every sentence is checked against proc's --help and source; see the facts list in the design note.
+# Every sentence is checked against proc-cli's --help and source; see the facts list in the design note.
 # t: the target as typed ("" for none). kind: picks the rule line from `rules`, unless `rule` is given.
 
 rules:
-  port: "A leading colon means a port: proc acts on whatever is listening on it."
+  port: "A leading colon means a port: proc-cli acts on whatever is listening on it."
   pid: "A number is a PID: that one process and nothing else."
   name: "Anything else is a name, matched against the whole process name, so <code>node</code> finds <code>node</code> and not <code>nodemon</code> or an editor with node in its command line. Add <code>--cmd</code> to match any part of the name or the full command line."
   list: "Several targets are separate arguments. A process matched twice is only acted on once."
   scope: "<code>--in</code> keeps any target inside a folder and the folders below it. Most commands take it."
   path: "With <code>proc for</code>, the target is a file: relative, absolute or starting with <code>~</code>."
   dir: "With <code>proc in</code>, the target is a folder. <code>.</code> is the one you're in."
-  none: "No target: proc looks at every process."
+  none: "No target: proc-cli looks at every process."
 
 groups:
   - name: Discovery
@@ -96,7 +96,7 @@ groups:
         examples:
           - t: ""
             kind: none
-            rule: "No target: proc looks at every listening port."
+            rule: "No target: proc-cli looks at every listening port."
             text: "Lists every listening port, whether it is local or exposed, and the process behind it with its uptime and command."
           - t: "--exposed"
             rule: "<code>--exposed</code> keeps ports listening on 0.0.0.0 or ::, and <code>--local</code> the localhost ones."
@@ -119,7 +119,7 @@ groups:
         examples:
           - t: ""
             kind: none
-            rule: "No target: proc looks at every process whose parent has gone."
+            rule: "No target: proc-cli looks at every process whose parent has gone."
             text: "Finds processes whose parent has exited, like dev servers left behind by a closed terminal. System services are left out."
           - t: "--in ."
             kind: scope

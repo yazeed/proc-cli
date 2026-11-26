@@ -167,7 +167,7 @@ The process runs inside tmux's virtual terminal, which survives your SSH disconn
 
 For one-off commands where you don't need to reconnect, `nohup` is simpler. For interactive sessions you want to resume, use tmux.
 
-## with proc
+## with proc-cli
 
 If you've lost track of background processes, `proc list` shows every process on the machine. `proc by node --in .` narrows it to a specific project directory. And `proc tree` shows parent-child relationships to find orphaned background processes.
 

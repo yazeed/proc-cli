@@ -219,9 +219,9 @@ Stop-Process -Name node -Force
 
 Add `/T` to end each one's child processes too. Without `/F`, `taskkill` asks the program to close, which console programs like `node` usually ignore.
 
-## with proc
+## with proc-cli
 
-[proc](https://github.com/yazeed/proc-cli) takes a PID, a name or a port in the same place, and shows you the list before anything is signalled:
+[proc-cli](https://github.com/yazeed/proc-cli) takes a PID, a name or a port in the same place, and shows you the list before anything is signalled:
 
 ```bash
 # preview: processes named node
@@ -240,7 +240,7 @@ proc kill :3000 webpack
 proc wait node
 ```
 
-A name matches the whole name (`node`, never `nodemon`), and proc leaves out the shell and agent it runs under, so `proc kill zsh` can't end the terminal you typed it in. The same commands work on macOS, Linux and Windows. No regex surprises, and nothing is signalled until you've seen the list.
+A name matches the whole name (`node`, never `nodemon`), and proc-cli leaves out the shell and agent it runs under, so `proc kill zsh` can't end the terminal you typed it in. The same commands work on macOS, Linux and Windows. No regex surprises, and nothing is signalled until you've seen the list.
 
 ## Install
 

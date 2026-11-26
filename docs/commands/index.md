@@ -1,7 +1,7 @@
 ---
 layout: page
 title: commands
-description: "Every proc command, the filters and options they share, what each exit code means, and how to set up completions and the man page."
+description: "Every proc-cli command, the filters and options they share, what each exit code means, and how to set up completions and the man page."
 permalink: /commands
 ---
 
@@ -82,7 +82,7 @@ Seconds are whole seconds everywhere except `watch --interval`: `--min-uptime 72
 | `--wait <secs>` | | Seconds to wait for the port to be free (default 10) | `free` |
 | `--interval <secs>` | `-n` | Seconds between status lines (`wait`, whole seconds, default 5) or refreshes (`watch`, at least 0.1, default 2) | `wait`, `watch` |
 | `--quiet` | `-q` | No periodic still-running lines | `wait` |
-| `--help` | `-h` | Help for proc, or for one command with two examples, a link to its page and, where the exit code says whether it worked, its exit codes | all |
+| `--help` | `-h` | Help for proc-cli, or for one command with two examples, a link to its page and, where the exit code says whether it worked, its exit codes | all |
 
 ## Platforms
 
@@ -99,16 +99,16 @@ On macOS `orphans` also lists every app launchd started, so narrow it with `--in
 
 <span id="scripting"></span>
 
-With `--json`, every command prints one JSON document with `action` (the command name) and `success`. `proc watch --json` streams one per refresh. Errors, including invalid flags, are JSON too, and every error says why in `"reason"`, one fixed word: `"system_error"` (exit 1); `"not_found"`, `"command_line_only"` or `"ruled_out"` (with `"ruled_out_by"`, the guards that ruled the process out, or `"left_out"`, the processes proc runs under that were all a name matched) for exit 2; `"permission_denied"` (exit 3); and for exit 4, which means nothing was done, `"invalid_input"` (a wrong flag, value or argument), `"needs_confirmation"` or `"not_supported"` (this OS cannot do it). A command that changes processes run with `--json` but without `--yes` exits 4 and adds `"needs_confirmation": true` and `"processes"` (the ones it would have changed); with `--yes`, the receipt lists the same processes as `"processes"`, in the same order, each with an `"outcome"` (`"succeeded"` or `"failed"`, and `"error"` when it failed), and a `"count"`. `why`, `info`, `kill`, `stop`, `freeze`, `thaw`, `unstick`, `free`, `wait`, and `on` given several targets, also put `"not_found"` in their JSON, an array of the targets that matched nothing (empty when all were found); the found ones are still handled, and when every target is missing the command exits 2, with all of them in the error's `not_found` (`free` exits 0: a port nobody holds is already free).
+With `--json`, every command prints one JSON document with `action` (the command name) and `success`. `proc watch --json` streams one per refresh. Errors, including invalid flags, are JSON too, and every error says why in `"reason"`, one fixed word: `"system_error"` (exit 1); `"not_found"`, `"command_line_only"` or `"ruled_out"` (with `"ruled_out_by"`, the guards that ruled the process out, or `"left_out"`, the processes proc-cli runs under that were all a name matched) for exit 2; `"permission_denied"` (exit 3); and for exit 4, which means nothing was done, `"invalid_input"` (a wrong flag, value or argument), `"needs_confirmation"` or `"not_supported"` (this OS cannot do it). A command that changes processes run with `--json` but without `--yes` exits 4 and adds `"needs_confirmation": true` and `"processes"` (the ones it would have changed); with `--yes`, the receipt lists the same processes as `"processes"`, in the same order, each with an `"outcome"` (`"succeeded"` or `"failed"`, and `"error"` when it failed), and a `"count"`. `why`, `info`, `kill`, `stop`, `freeze`, `thaw`, `unstick`, `free`, `wait`, and `on` given several targets, also put `"not_found"` in their JSON, an array of the targets that matched nothing (empty when all were found); the found ones are still handled, and when every target is missing the command exits 2, with all of them in the error's `not_found` (`free` exits 0: a port nobody holds is already free).
 
 | Exit code | Meaning |
 |-----------|---------|
 | `0` | Success |
 | `1` | Error, or not fully successful: a process failed, a port stayed busy, `wait` timed out |
 | `2` | Process or port not found |
-| `3` | Permission denied: proc itself got an I/O permission error, or a `:port` has a holder proc can't see (another user's process when proc isn't root, or, on FreeBSD and NetBSD, a system that hides other users' sockets), so the port is not known to be free. A signal the OS refuses (another user's process) is a `failed` entry and exit 1 |
+| `3` | Permission denied: proc-cli itself got an I/O permission error, or a `:port` has a holder proc-cli can't see (another user's process when proc-cli isn't root, or, on FreeBSD and NetBSD, a system that hides other users' sockets), so the port is not known to be free. A signal the OS refuses (another user's process) is a `failed` entry and exit 1 |
 | `4` | Invalid input (unknown flag, bad or empty argument, invalid signal, an `--in` directory that doesn't exist), an action this OS doesn't support (`freeze`, `thaw`, `orphans` and `stop --signal` on Windows), or a command that changes processes run without `--yes` where nobody can confirm (`--json`, or no terminal): nothing was changed |
-| `129`, `130`, `131`, `143` | A signal ended proc (SIGHUP, SIGINT or Ctrl+C, SIGQUIT, SIGTERM) while `watch` had the screen or a prompt was waiting: the terminal is put back first, then proc ends by that signal, so a shell shows 128 plus its number and Ctrl+C stops a script's loop. Nothing was changed by an unanswered prompt |
+| `129`, `130`, `131`, `143` | A signal ended proc-cli (SIGHUP, SIGINT or Ctrl+C, SIGQUIT, SIGTERM) while `watch` had the screen or a prompt was waiting: the terminal is put back first, then proc-cli ends by that signal, so a shell shows 128 plus its number and Ctrl+C stops a script's loop. Nothing was changed by an unanswered prompt |
 
 `"success": false` always comes with a non-zero exit code.
 
@@ -121,7 +121,7 @@ With `--json`, every command prints one JSON document with `action` (the command
 | `free` | `0`: a port nobody holds is already free |
 | `watch` | `2` for PIDs nothing holds; a name or port is watched until something matches |
 
-[Messages](/commands/messages) explains each warning and error proc prints, and what to do about it.
+[Messages](/commands/messages) explains each warning and error proc-cli prints, and what to do about it.
 
 Every JSON shape, the values each flag accepts, what each command prints when nothing matches, and what a release may change are in the [JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md). In short: within 2.x keys are only added, never removed or given another meaning, and `error`, `message` and the human output are text for people, so branch on `reason`, `exit_code` and `count`.
 

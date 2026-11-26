@@ -202,7 +202,7 @@ The decision is mostly made for you by your platform and use case:
 
 ## Or abstract the differences
 
-[proc](https://github.com/yazeed/proc-cli) handles the platform detection for you. Same command on macOS and Linux, same output format:
+[proc-cli](https://github.com/yazeed/proc-cli) handles the platform detection for you. Same command on macOS and Linux, same output format:
 
 ```bash
 proc on :3000            # What's listening on port 3000

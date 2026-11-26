@@ -60,14 +60,14 @@ $ proc on :53581
 
 ## Details
 
-- **A line is left out when the system doesn't give the value**, never printed empty. Another user's process on macOS can leave only `Process:`, `Path:` and `Children:`: macOS gives a normal user none of the rest, and proc can't see its sockets, so the card has no `Listening:`. The card then ends with `Try: sudo proc info <pid> to see the rest`.
+- **A line is left out when the system doesn't give the value**, never printed empty. Another user's process on macOS can leave only `Process:`, `Path:` and `Children:`: macOS gives a normal user none of the rest, and proc-cli can't see its sockets, so the card has no `Listening:`. The card then ends with `Try: sudo proc info <pid> to see the rest`.
 - **A port can have several holders.** `127.0.0.1:3000` and `[::1]:3000` are different sockets, so two processes can hold one port number. `proc on :3000` shows a card for each.
-- **Connections** are the TCP connections to a port the process listens on, counted by state, with the process at the other end when it is on this machine. The card lists 5 and says how many more; `-v` lists all. On FreeBSD and NetBSD proc reads no connections, so the card has no `Connections:` line there.
+- **Connections** are the TCP connections to a port the process listens on, counted by state, with the process at the other end when it is on this machine. The card lists 5 and says how many more; `-v` lists all. On FreeBSD and NetBSD proc-cli reads no connections, so the card has no `Connections:` line there.
 - **Comma-separated targets** (`:3000,:8080`) still work but are deprecated; write separate arguments.
 
 ## When nothing matches
 
-A port nobody listens on is `No process listening on port 3000`, and a PID or name nothing matches is `No process found matching '…'`, both exit 2. With several targets, the ones found are shown and `⚠ Not found:` names the rest. A port another user's process holds, when proc isn't root, is `Port 80 is in use, but proc can't see which process holds it`, exit 3, never "No process listening"; `sudo` shows the holder. On FreeBSD and NetBSD set to hide other users' sockets (`security.bsd.see_other_uids=0`, `security.curtain=1`), proc can't tell whether such a port is in use and says so, exit 3. [Messages](messages) explains each one.
+A port nobody listens on is `No process listening on port 3000`, and a PID or name nothing matches is `No process found matching '…'`, both exit 2. With several targets, the ones found are shown and `⚠ Not found:` names the rest. A port another user's process holds, when proc-cli isn't root, is `Port 80 is in use, but proc can't see which process holds it`, exit 3, never "No process listening"; `sudo` shows the holder. On FreeBSD and NetBSD set to hide other users' sockets (`security.bsd.see_other_uids=0`, `security.curtain=1`), proc-cli can't tell whether such a port is in use and says so, exit 3. [Messages](messages) explains each one.
 
 ## JSON
 
@@ -92,7 +92,7 @@ The shape follows the question:
 }
 ```
 
-The first is a port, the second a PID, the third a name or several targets (each result then has its `target`, and the document has `not_found`). `processes` lists every holder of a port; `process` is the one with the lowest PID, and `address` and `exposure` (`"local"` or `"exposed"`) are its. `connections` has `total`, `by_state` and `peers` (up to 50, each with `holder_pid`, `state`, `remote_address`, `remote_port` and the `peer` process when it is on this machine), with `peers_truncated` when there are more; on each port of a PID or name it has `total` and `by_state` only. For another user's process, when proc isn't root, `ports` is `[]` because proc can't see its sockets, not because it listens on nothing. A value the system doesn't give is an absent key, never `null`. Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#on).
+The first is a port, the second a PID, the third a name or several targets (each result then has its `target`, and the document has `not_found`). `processes` lists every holder of a port; `process` is the one with the lowest PID, and `address` and `exposure` (`"local"` or `"exposed"`) are its. `connections` has `total`, `by_state` and `peers` (up to 50, each with `holder_pid`, `state`, `remote_address`, `remote_port` and the `peer` process when it is on this machine), with `peers_truncated` when there are more; on each port of a PID or name it has `total` and `by_state` only. For another user's process, when proc-cli isn't root, `ports` is `[]` because proc-cli can't see its sockets, not because it listens on nothing. A value the system doesn't give is an absent key, never `null`. Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#on).
 
 ## See also
 

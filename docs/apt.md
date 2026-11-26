@@ -1,11 +1,11 @@
 ---
 layout: page
 title: apt repository
-description: "Install proc on Debian and Ubuntu from its signed apt repository, so apt upgrade keeps it current."
+description: "Install proc-cli on Debian and Ubuntu from its signed apt repository, so apt upgrade keeps it current."
 permalink: /apt/
 ---
 
-This is proc's apt repository, for Debian, Ubuntu and their derivatives on x86_64 (amd64) and ARM64. It holds the same `.deb` files as the [releases page](https://github.com/yazeed/proc-cli/releases/latest), and each release adds itself, so `apt upgrade` keeps proc current.
+This is proc-cli's apt repository, for Debian, Ubuntu and their derivatives on x86_64 (amd64) and ARM64. It holds the same `.deb` files as the [releases page](https://github.com/yazeed/proc-cli/releases/latest), and each release adds itself, so `apt upgrade` keeps proc-cli current.
 
 ## Add it
 
@@ -42,4 +42,4 @@ sudo apt remove proc-cli
 sudo rm /etc/apt/sources.list.d/proc-cli.sources /etc/apt/keyrings/proc-cli.gpg
 ```
 
-For every other way to install proc, see [Install](../install).
+For every other way to install proc-cli, see [Install](../install).

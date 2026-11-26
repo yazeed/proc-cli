@@ -124,9 +124,9 @@ To find out which: look at its parent, with `ps -o ppid= -p 12345` and then `ps 
 - **It shows `Z` or `<defunct>`:** it's a zombie. It has already exited; its parent hasn't collected its exit status. Restart the parent instead. See [zombie, orphan and stuck processes](/posts/zombie-orphan-stuck-processes-guide/).
 - **It shows `D`:** it's waiting on a disk or a network mount that stopped answering, and no signal reaches it until that wait ends. Fix the mount or the device; sometimes only a reboot clears it.
 
-## With proc
+## With proc-cli
 
-[proc](https://github.com/yazeed/proc-cli) takes a PID, a name or a port in the same place, shows you what matched, and asks before it stops anything:
+[proc-cli](https://github.com/yazeed/proc-cli) takes a PID, a name or a port in the same place, shows you what matched, and asks before it stops anything:
 
 ```bash
 # SIGTERM, SIGKILL after 10s
@@ -140,7 +140,7 @@ proc tree 12345
 proc why 12345
 ```
 
-`proc why` shows the chain of parents, so a service or a supervisor that would restart the process is visible before you stop it. A name matches the whole process name, and proc never matches the shell it runs in, so `proc kill bash` can't end your own terminal.
+`proc why` shows the chain of parents, so a service or a supervisor that would restart the process is visible before you stop it. A name matches the whole process name, and proc-cli never matches the shell it runs in, so `proc kill bash` can't end your own terminal.
 
 ## Install
 

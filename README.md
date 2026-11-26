@@ -1,4 +1,4 @@
-# proc
+# proc-cli
 
 Semantic CLI tool for process management. Target by port, PID, name or path.
 
@@ -11,10 +11,10 @@ brew install yazeed/proc/proc
 Also on [Scoop, apt, dnf, npm, PyPI, cargo, Nix, Docker, and as .deb and .rpm files](#install).
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/yazeed/proc-cli/main/demo.gif" alt="proc demo: npm run dev fails because port 3000 is taken; proc on, why and free find the old tmux session holding it and free the port; proc orphans finds and cleans up leftover processes" width="800" />
+  <img src="https://raw.githubusercontent.com/yazeed/proc-cli/main/demo.gif" alt="proc-cli demo: npm run dev fails because port 3000 is taken; proc on, why and free find the old tmux session holding it and free the port; proc orphans finds and cleans up leftover processes" width="800" />
 </p>
 
-A dev server won't start because port 3000 is taken. proc finds the old tmux session holding it, frees the port, then cleans up what else was left running.
+A dev server won't start because port 3000 is taken. proc-cli finds the old tmux session holding it, frees the port, then cleans up what else was left running.
 
 [![CI](https://github.com/yazeed/proc-cli/workflows/CI/badge.svg)](https://github.com/yazeed/proc-cli/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -28,7 +28,7 @@ A dev server won't start because port 3000 is taken. proc finds the old tmux ses
 
 ## One command instead of a pipeline
 
-| Task | proc | Without proc |
+| Task | proc-cli | Without proc-cli |
 |------|------|-------------|
 | What's on port 3000? | `proc on :3000` | `lsof -i :3000 -P -n` |
 | What is PID 1234, and what does it listen on? | `proc on 1234` | `ps -p 1234 -o pid,ppid,user,etime,command` + `lsof -a -p 1234 -iTCP -sTCP:LISTEN` |
@@ -66,7 +66,7 @@ proc free :3000 --yes             # a port target: no question
 |--------|---------|---------|
 | macOS | `brew install yazeed/proc/proc` | `brew upgrade` |
 | Windows | `scoop bucket add proc https://github.com/yazeed/scoop-bucket-proc && scoop install proc` | `scoop update proc` |
-| Debian / Ubuntu | [proc's apt repository](https://proc-cli.com/apt/) | `apt upgrade`; every release lands there |
+| Debian / Ubuntu | [proc-cli's apt repository](https://proc-cli.com/apt/) | `apt upgrade`; every release lands there |
 | Ubuntu (22.04, 24.04, 26.04, 26.10) | `sudo add-apt-repository ppa:yazeedaloyoun/proc-cli && sudo apt install proc-cli` | `apt upgrade` |
 | Fedora / RHEL, AlmaLinux, Rocky / Amazon Linux 2023 | `sudo dnf copr enable yazeed/proc-cli && sudo dnf install proc-cli` | `dnf upgrade`; every release builds there |
 | Arch Linux | `yay -S proc-cli-bin` (release binary) or `yay -S proc-cli` (from source), AUR, community-maintained | when the maintainer publishes it |
@@ -80,7 +80,7 @@ proc free :3000 --yes             # a port target: no question
 | Docker | `docker run --rm -it --pid=host --net=host --cap-add SYS_PTRACE --security-opt apparmor=unconfined yazeed/proc-cli` | `docker pull yazeed/proc-cli` |
 | Release files | `.deb`, `.rpm` and binaries on the [releases page](https://github.com/yazeed/proc-cli/releases/latest) | download the new file |
 
-Every channel, with who maintains it and how it updates, is on [proc-cli.com/install](https://proc-cli.com/install). `--pid=host` lets proc in Docker see the host's processes, `--net=host` its ports (for `on :port`, `ports` and `free`), and `--cap-add SYS_PTRACE --security-opt apparmor=unconfined` which process holds a port or a file when that process isn't root's (Docker drops that capability, and on hosts with AppArmor, such as Ubuntu, its default profile blocks those reads too).
+Every channel, with who maintains it and how it updates, is on [proc-cli.com/install](https://proc-cli.com/install). `--pid=host` lets proc-cli in Docker see the host's processes, `--net=host` its ports (for `on :port`, `ports` and `free`), and `--cap-add SYS_PTRACE --security-opt apparmor=unconfined` which process holds a port or a file when that process isn't root's (Docker drops that capability, and on hosts with AppArmor, such as Ubuntu, its default profile blocks those reads too).
 
 The `.deb` and `.rpm` files install `proc`, its man pages (`man proc`, and one per command: `man proc-kill`) and its bash, zsh and fish completions. A file does not update with `apt upgrade` or `dnf upgrade`; the apt repository and COPR do.
 
@@ -194,13 +194,13 @@ All commands accept the same targets:
 
 A process named twice is handled once, except by the read-only `on` and `why`, which answer each target under its own header. Comma-separated targets (`:3000,:8080,node`) still work but are deprecated and will be removed in a future major release: a command that gets one prints a `note:` on stderr with the separate-argument form (human output only; `--json` is unchanged).
 
-**Names.** A name matches the whole process name, ignoring case, the way `killall` and `pkill -x` read it. `proc kill node` stops the processes named `node` and leaves `Claude Helper` alone, and `--by` follows the same rule. The file name of the executable and of the first argument count as names too, so a long name that Linux cuts to 15 characters still matches, and on Windows a trailing `.exe` is optional. Add `--cmd` to match any part of the name or the full command line instead, like `pkill -f`: `proc kill serve --cmd`. A path is not a name: `proc kill ./server` finds nothing, so use `--cmd`, or `proc for <file>` for an executable. proc doesn't expand wildcards; an unquoted `node*` is expanded by your shell into file names, so use `--cmd` for partial matches.
+**Names.** A name matches the whole process name, ignoring case, the way `killall` and `pkill -x` read it. `proc kill node` stops the processes named `node` and leaves `Claude Helper` alone, and `--by` follows the same rule. The file name of the executable and of the first argument count as names too, so a long name that Linux cuts to 15 characters still matches, and on Windows a trailing `.exe` is optional. Add `--cmd` to match any part of the name or the full command line instead, like `pkill -f`: `proc kill serve --cmd`. A path is not a name: `proc kill ./server` finds nothing, so use `--cmd`, or `proc for <file>` for an executable. proc-cli doesn't expand wildcards; an unquoted `node*` is expanded by your shell into file names, so use `--cmd` for partial matches.
 
 **`--in`.** `--in` (short `-i`) takes the next word as its directory unless that word starts with `-`; a bare `--in` is the current directory. Put it after the targets (`proc kill 1234 5678 --in .`) or write `--in=DIR`.
 
 **The process card.** `on` (by port, PID or name), `info`, `for` with one hit and `why` print the same card for a process: `Process:`, `Command:`, `Directory:`, `Path:`, `User:`, `Parent:`, `Status:`, `Resources:`, `Started:`, `Children:`, then `Listening:` (every port, with its exposure) and `Connections:` for a process that listens. `proc on 1234` is the card for a PID, `proc on :3000` the card for each holder of a port. A process the system shows only in part (another user's, on macOS) gets a last line, `Try: sudo proc info <pid> to see the rest`.
 
-**Tables.** `list`, `by`, `in`, `for` (several hits), `orphans`, `stuck`, `watch` and the list in front of every `--dry-run` or question print one table: `PID NAME USER CPU% MEM UPTIME COMMAND`. A value proc cannot read is `-`. COMMAND takes the width the other columns leave and ends with `…` where it is cut; the list you approve prints it whole. With `--in`, the directory is the second column. `--verbose` keeps the table, adds `PPID STATUS DIR` and cuts nothing.
+**Tables.** `list`, `by`, `in`, `for` (several hits), `orphans`, `stuck`, `watch` and the list in front of every `--dry-run` or question print one table: `PID NAME USER CPU% MEM UPTIME COMMAND`. A value proc-cli cannot read is `-`. COMMAND takes the width the other columns leave and ends with `…` where it is cut; the list you approve prints it whole. With `--in`, the directory is the second column. `--verbose` keeps the table, adds `PPID STATUS DIR` and cuts nothing.
 
 **Ports.** `ports` prints `PORT PROTO ADDRESS EXPOSURE PID NAME UPTIME COMMAND` (EXPOSURE is `local` or `exposed`), so each row says what the listener is. `--verbose` adds `USER MEM` and the executable's path (`PATH`) and cuts nothing; `--json` also gives `command`, `user`, `uptime_secs` and `memory_mb` per port, and with `-v` the connection counts.
 
@@ -257,26 +257,26 @@ proc on :8080 --json | jq '.process | {pid, cwd, uptime_secs}'
 ```
 
 - **Errors are JSON too**, including invalid flags: `{"action", "success": false, "error", "exit_code", "reason"}`. `"success": false` always comes with a non-zero exit code.
-- **Every error says why in `"reason"`**, one fixed word to branch on: `"system_error"` (exit 1); `"not_found"`, `"command_line_only"` (the name is only in command lines; `--cmd` matches) or `"ruled_out"` (a guard ruled the process out, listed in `"ruled_out_by"`, or every match was a process proc runs under, listed in `"left_out"`) for exit 2; `"permission_denied"` (exit 3); and, for exit 4, where nothing was done, `"invalid_input"` (a wrong flag, value or argument), `"needs_confirmation"` or `"not_supported"` (this OS cannot do it).
+- **Every error says why in `"reason"`**, one fixed word to branch on: `"system_error"` (exit 1); `"not_found"`, `"command_line_only"` (the name is only in command lines; `--cmd` matches) or `"ruled_out"` (a guard ruled the process out, listed in `"ruled_out_by"`, or every match was a process proc-cli runs under, listed in `"left_out"`) for exit 2; `"permission_denied"` (exit 3); and, for exit 4, where nothing was done, `"invalid_input"` (a wrong flag, value or argument), `"needs_confirmation"` or `"not_supported"` (this OS cannot do it).
 - **Preview, then confirm.** A command that changes processes, run with `--json` but without `--yes`, exits 4 with `"needs_confirmation": true` and `"processes"` (the ones it would have changed), so a script can show them before running it again with `--yes`. With `--yes`, the receipt lists the same processes as `"processes"`, in the same order, each with an `"outcome"` (`"succeeded"` or `"failed"`, and `"error"` when it failed) and a `"count"`.
 - **`not_found`** lists the targets that matched nothing (empty when all were found). It is in the JSON of `why`, `info`, `kill`, `stop`, `freeze`, `thaw`, `unstick`, `free` and `wait`, of `on` given several targets, in the exit 4 output above, and in the exit 2 error when every target is missing (`why`, `kill`, `stop`, `freeze`, `thaw`, `unstick`, `wait`, `on` given several, and `watch` given PIDs). `on` with one target, `tree`, `by`, `for`, `in`, `list` and `watch` do not have it.
 - **A prompt shows what you would approve.** The list of processes goes to the terminal beside the `[y/N]` question: on stdout, or on stderr when stdout is a file or a pipe. If the list cannot be shown, nothing is asked and nothing is changed (exit 4).
-- **A reader that stops early ends proc quietly.** `proc list | head -n1` exits 0 without an error, and `proc kill 1234 --yes | head -n1` still kills the process and exits with the code of the kill (0 if it worked, 2 if there was nothing to kill): a closed pipe never changes the result, on stdout or stderr. A write that fails for another reason (a full disk) is exit 1, with one line on stderr.
+- **A reader that stops early ends proc-cli quietly.** `proc list | head -n1` exits 0 without an error, and `proc kill 1234 --yes | head -n1` still kills the process and exits with the code of the kill (0 if it worked, 2 if there was nothing to kill): a closed pipe never changes the result, on stdout or stderr. A write that fails for another reason (a full disk) is exit 1, with one line on stderr.
 
 | Exit code | Meaning |
 |-----------|---------|
 | `0` | Success |
 | `1` | Error, or not fully successful: a process failed, a port stayed busy, `wait` timed out |
 | `2` | Process or port not found |
-| `3` | Permission denied: proc itself got an I/O permission error, or a `:port` has a holder proc can't see (another user's process when proc isn't root, or, on FreeBSD and NetBSD, a system that hides other users' sockets), so the port is not known to be free. A signal the OS refuses (another user's process) is a `failed` entry and exit 1 |
+| `3` | Permission denied: proc-cli itself got an I/O permission error, or a `:port` has a holder proc-cli can't see (another user's process when proc-cli isn't root, or, on FreeBSD and NetBSD, a system that hides other users' sockets), so the port is not known to be free. A signal the OS refuses (another user's process) is a `failed` entry and exit 1 |
 | `4` | Invalid input (unknown flag, bad or empty argument, invalid signal, an `--in` directory that doesn't exist), an action this OS doesn't support (`freeze`, `thaw`, `orphans` and `stop --signal` on Windows), or a command that changes processes run without `--yes` where nobody can confirm (`--json`, or no terminal): nothing was changed |
-| `129`, `130`, `131`, `143` | A signal ended proc (SIGHUP, SIGINT or Ctrl+C, SIGQUIT, SIGTERM) while `watch` had the screen or a prompt was waiting: the terminal is put back first, then proc ends by that signal, so a shell shows 128 plus its number and Ctrl+C stops a script's loop. Nothing was changed by an unanswered prompt |
+| `129`, `130`, `131`, `143` | A signal ended proc-cli (SIGHUP, SIGINT or Ctrl+C, SIGQUIT, SIGTERM) while `watch` had the screen or a prompt was waiting: the terminal is put back first, then proc-cli ends by that signal, so a shell shows 128 plus its number and Ctrl+C stops a script's loop. Nothing was changed by an unanswered prompt |
 
 Full schemas: [`skills/proc-cli/reference.md`](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md).
 
 ### Agent skill
 
-Teach your coding agent (Claude Code, Codex, Cursor, Gemini CLI and others) when to reach for proc and how to use it safely, with structured JSON output:
+Teach your coding agent (Claude Code, Codex, Cursor, Gemini CLI and others) when to reach for proc-cli and how to use it safely, with structured JSON output:
 
 ```bash
 npx skills add yazeed/proc-cli
@@ -306,11 +306,11 @@ The skill lives in [`skills/proc-cli/`](https://github.com/yazeed/proc-cli/blob/
 | NetBSD | x86_64 (other CPUs: `cargo install proc-cli`) | ✅ (see below) |
 | Docker | linux/amd64, linux/arm64 | ✅ |
 
-The Linux binaries are statically linked (musl) and need no particular glibc version, so they also run on Alpine and on older releases such as Debian 10, Ubuntu 20.04 and Amazon Linux 2. On Linux proc reads processes, ports and open files from `/proc`, so it needs nothing else installed. The Docker image is the same binary on distroless, with no shell; `COPY --from=yazeed/proc-cli /usr/local/bin/proc /usr/local/bin/proc` adds it to an image of your own.
+The Linux binaries are statically linked (musl) and need no particular glibc version, so they also run on Alpine and on older releases such as Debian 10, Ubuntu 20.04 and Amazon Linux 2. On Linux proc-cli reads processes, ports and open files from `/proc`, so it needs nothing else installed. The Docker image is the same binary on distroless, with no shell; `COPY --from=yazeed/proc-cli /usr/local/bin/proc /usr/local/bin/proc` adds it to an image of your own.
 
-On FreeBSD and NetBSD proc reads ports with `sockstat` and open files with `fstat`, both in the base system, so it needs nothing installed. The kernel forgets the path of a working directory once the directory is deleted, so `proc in` a deleted directory exits 4 there, where Linux and macOS still find the processes in it.
+On FreeBSD and NetBSD proc-cli reads ports with `sockstat` and open files with `fstat`, both in the base system, so it needs nothing installed. The kernel forgets the path of a working directory once the directory is deleted, so `proc in` a deleted directory exits 4 there, where Linux and macOS still find the processes in it.
 
-proc is for processes and ports on the machine it runs on. It is not for containers, system services or remote hosts (see [PHILOSOPHY.md](https://github.com/yazeed/proc-cli/blob/main/PHILOSOPHY.md)).
+proc-cli is for processes and ports on the machine it runs on. It is not for containers, system services or remote hosts (see [PHILOSOPHY.md](https://github.com/yazeed/proc-cli/blob/main/PHILOSOPHY.md)).
 
 ## Shell completions and man page
 
@@ -344,7 +344,7 @@ The binary will be at `target/release/proc`.
 
 ## Use as a library
 
-proc is also a Rust crate, `proc_cli`: see the [API docs on docs.rs](https://docs.rs/proc-cli) and the `Library API` entries in the [changelog](https://github.com/yazeed/proc-cli/blob/main/CHANGELOG.md).
+proc-cli is also a Rust crate, `proc_cli`: see the [API docs on docs.rs](https://docs.rs/proc-cli) and the `Library API` entries in the [changelog](https://github.com/yazeed/proc-cli/blob/main/CHANGELOG.md).
 
 ## Contributing
 

@@ -8,7 +8,7 @@
 {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
-  "name": "proc",
+  "name": "proc-cli",
   "description": {{ site.description | jsonify }},
   "url": "{{ site_url }}/",
   "applicationCategory": "DeveloperApplication",
@@ -36,7 +36,7 @@
   "@context": "https://schema.org",
   "@type": "BreadcrumbList",
   "itemListElement": [
-    { "@type": "ListItem", "position": 1, "name": "proc", "item": "{{ site_url }}/" },
+    { "@type": "ListItem", "position": 1, "name": "proc-cli", "item": "{{ site_url }}/" },
     { "@type": "ListItem", "position": 2, "name": "{{ crumb_name }}", "item": "{{ site_url }}{{ crumb_url }}" },
     { "@type": "ListItem", "position": 3, "name": {{ page.title | jsonify }}, "item": "{{ site_url }}{{ page.url }}" }
   ]

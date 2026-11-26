@@ -219,7 +219,7 @@ child.on('error', (err) => {
 });
 ```
 
-## with proc
+## with proc-cli
 
 When Node child processes escape cleanup, `proc tree <pid>` shows that process and everything it spawned (add `-a` to see its ancestors). `proc by node --in .` finds all Node processes in your project. And `proc stop :3000 --yes` handles the "port still in use after crash" scenario.
 

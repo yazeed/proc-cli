@@ -225,7 +225,7 @@ fi
 
 ## Or skip the pipeline
 
-[proc](https://github.com/yazeed/proc-cli) is a CLI tool that handles the common cases without chaining five commands together:
+[proc-cli](https://github.com/yazeed/proc-cli) is a CLI tool that handles the common cases without chaining five commands together:
 
 ```bash
 proc kill node              # Kill processes named "node" (confirms first)

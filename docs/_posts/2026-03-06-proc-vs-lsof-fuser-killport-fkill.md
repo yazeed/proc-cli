@@ -1,5 +1,5 @@
 ---
-title: "proc vs lsof vs fuser vs killport vs fkill vs procs"
+title: "proc-cli vs lsof vs fuser vs killport vs fkill vs procs"
 description: "A practical comparison of CLI tools for process and port management on macOS and Linux."
 date: 2026-03-06
 ---
@@ -14,13 +14,13 @@ lsof -i :3000 -t | xargs kill -9
 
 It works. But it's not exactly *obvious*. And if you need to do anything beyond "find port, kill it" — like checking what directory a process is running from, or killing multiple targets at once, or watching processes in real-time — you're back to the man pages.
 
-**proc** is a semantic CLI for process management. One tool, one syntax, for everything you do with processes and ports.
+**proc-cli** is a semantic CLI for process management. One tool, one syntax, for everything you do with processes and ports.
 
-This post compares proc with the tools you're probably already using.
+This post compares proc-cli with the tools you're probably already using.
 
 ## The quick comparison
 
-| Task | proc | Traditional |
+| Task | proc-cli | Traditional |
 |------|------|------------|
 | What's on port 3000? | `proc on :3000` | `lsof -i :3000 -P -n` |
 | Kill it | `proc kill :3000` | <code markdown="0">lsof -i :3000 -t &#124; xargs kill -9</code> |
@@ -52,14 +52,14 @@ lsof -i :3000 -t      # PID only (for piping to kill)
 
 Four flags to get a PID. And you need to remember which combination to use. The `-P` and `-n` flags are practically mandatory but easy to forget.
 
-**With proc:**
+**With proc-cli:**
 
 ```bash
 proc on :3000          # Shows process name, PID, port, directory
 proc kill :3000        # One command
 ```
 
-**Verdict:** lsof is a Swiss Army knife. proc is a purpose-built tool. If you specifically need to find who has a file descriptor open, use lsof. For everything else process/port related, proc is clearer.
+**Verdict:** lsof is a Swiss Army knife. proc-cli is a purpose-built tool. If you specifically need to find who has a file descriptor open, use lsof. For everything else process/port related, proc-cli is clearer.
 
 ### fuser
 
@@ -77,7 +77,7 @@ fuser -n tcp 3000-9000   # Range... but output is hard to parse
 
 fuser's output format is notoriously hard to parse — the label (`3000/tcp:`) goes to stderr and the PIDs to stdout, with leading padding. And `fuser -k` kills without asking.
 
-**With proc:**
+**With proc-cli:**
 
 ```bash
 proc on :3000            # Clean output with process details
@@ -85,7 +85,7 @@ proc kill :3000          # Asks for confirmation first
 proc ports --range 3000-9000  # Clean table output
 ```
 
-**Verdict:** fuser is fast but crude. No process details, no confirmation, awkward output. proc gives you the same information in a usable format.
+**Verdict:** fuser is fast but crude. No process details, no confirmation, awkward output. proc-cli gives you the same information in a usable format.
 
 ### killport
 
@@ -108,7 +108,7 @@ killport does one thing: kill by port. It doesn't support:
 - Process trees, monitoring, stuck process recovery
 - PID targeting, JSON output
 
-**With proc:**
+**With proc-cli:**
 
 ```bash
 proc kill :3000          # Same thing, with confirmation
@@ -117,7 +117,7 @@ proc on :3000            # But also: just look without killing
 proc kill :3000 node     # And: mixed targets
 ```
 
-**Verdict:** If all you ever do is kill ports, killport is fine. proc does ports *and* everything else.
+**Verdict:** If all you ever do is kill ports, killport is fine. proc-cli does ports *and* everything else.
 
 ### fkill / fkill-cli
 
@@ -139,7 +139,7 @@ fkill :3000              # Kill by port
 - No process trees, monitoring, or info commands
 - No JSON output
 
-**With proc:**
+**With proc-cli:**
 
 ```bash
 proc kill node           # Kill by name (with confirmation table)
@@ -148,7 +148,7 @@ proc kill node --in .    # Only in current directory
 proc kill node --dry-run # Preview first
 ```
 
-**Verdict:** fkill is great when you want to *browse*. proc is for when you *know* what you want. Different philosophies. Also, proc doesn't require Node.js.
+**Verdict:** fkill is great when you want to *browse*. proc-cli is for when you *know* what you want. Different philosophies. Also, proc-cli doesn't require Node.js.
 
 ### procs
 
@@ -172,9 +172,9 @@ procs node               # Filter by name
 # File-based lookup
 ```
 
-procs is a process *viewer*. proc is a process *manager*.
+procs is a process *viewer*. proc-cli is a process *manager*.
 
-**Verdict:** procs is an excellent `ps` replacement. proc covers listing (with `proc list`) *plus* the entire lifecycle: find, inspect, filter, kill, stop, recover, monitor.
+**Verdict:** procs is an excellent `ps` replacement. proc-cli covers listing (with `proc list`) *plus* the entire lifecycle: find, inspect, filter, kill, stop, recover, monitor.
 
 ## When to use what
 
@@ -187,7 +187,7 @@ procs is a process *viewer*. proc is a process *manager*.
 
 ## The philosophy
 
-proc's design principle is that process management shouldn't require remembering flag combinations. Every command reads like English:
+proc-cli's design principle is that process management shouldn't require remembering flag combinations. Every command reads like English:
 
 - `proc on :3000` — What's **on** port 3000?
 - `proc by node --in .` — Processes **by** name "node" **in** current directory

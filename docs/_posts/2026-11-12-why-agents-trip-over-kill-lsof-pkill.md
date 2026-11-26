@@ -1,6 +1,6 @@
 ---
 title: "Why AI agents trip over lsof, kill and pkill"
-description: "An agent that frees a port or stops a server reads exit codes and output that were written for people: lsof exits 1 for both 'nothing found' and 'bad argument', kill exits 1 for both 'gone' and 'not yours', and on Linux pkill -f can kill the shell running it. Measured on macOS and Ubuntu, and what proc does instead."
+description: "An agent that frees a port or stops a server reads exit codes and output that were written for people: lsof exits 1 for both 'nothing found' and 'bad argument', kill exits 1 for both 'gone' and 'not yours', and on Linux pkill -f can kill the shell running it. Measured on macOS and Ubuntu, and what proc-cli does instead."
 date: 2026-11-12
 ---
 
@@ -67,9 +67,9 @@ An agent that started a server at the beginning of a task and stops it an hour l
 
 `kill`, `pkill` and `killall` act the moment they run. There's no preview, so an agent that matched more than it meant finds out afterwards, if at all.
 
-## What proc does instead
+## What proc-cli does instead
 
-[proc](https://github.com/yazeed/proc-cli) was built to be read by programs as well as people (the [two readers](/posts/two-readers/) post explains the idea). For an agent, that comes down to these.
+[proc-cli](https://github.com/yazeed/proc-cli) was built to be read by programs as well as people (the [two readers](/posts/two-readers/) post explains the idea). For an agent, that comes down to these.
 
 **One exit code per kind of answer, on every system.**
 
@@ -78,10 +78,10 @@ An agent that started a server at the beginning of a task and stops it an hour l
 | 0 | Done |
 | 1 | An error, or not fully done (a signal the system refused) |
 | 2 | Nothing matched |
-| 3 | Permission denied: proc can't see what it needs, so it doesn't guess |
+| 3 | Permission denied: proc-cli can't see what it needs, so it doesn't guess |
 | 4 | Nothing was done: invalid input, `--yes` needed, or not supported here |
 
-The same cases as above, with proc 2.4.0 on Ubuntu 24.04:
+The same cases as above, with proc-cli 2.4.0 on Ubuntu 24.04:
 
 ```bash
 # exit 2, reason not_found
@@ -113,17 +113,17 @@ esac
 
 `free` checks the port really is free afterwards, so exit 0 is the answer the agent wanted, whether something held the port or not.
 
-**It never acts on itself or on what runs it.** A name is matched against the whole process name, not any part of the command line; `--cmd` widens it to command lines, and even then a match in proc's own arguments doesn't count. So in the `pkill -f` case above, `proc kill --cmd "sleep 4242"` matches the `sleep` and not the shell running it, and the shell carries on. A process proc runs under (the shell, the agent) is never acted on even when its name matches: it's left out and named in the JSON's `left_out`, and if it was the only match, nothing happens and proc exits 2 with `"reason": "ruled_out"`.
+**It never acts on itself or on what runs it.** A name is matched against the whole process name, not any part of the command line; `--cmd` widens it to command lines, and even then a match in proc-cli's own arguments doesn't count. So in the `pkill -f` case above, `proc kill --cmd "sleep 4242"` matches the `sleep` and not the shell running it, and the shell carries on. A process proc-cli runs under (the shell, the agent) is never acted on even when its name matches: it's left out and named in the JSON's `left_out`, and if it was the only match, nothing happens and proc-cli exits 2 with `"reason": "ruled_out"`.
 
-**It checks the PID is still the same process.** Every process proc reports carries its `start_time`. Pass it back with `--start-time` and proc acts only if that PID still belongs to the process that started then; if the PID was reused, the answer is exit 2 with `"reason": "ruled_out"` and nothing is signalled. proc also checks start times itself right before each signal, so a PID that changed hands between the preview and the signal is never hit.
+**It checks the PID is still the same process.** Every process proc-cli reports carries its `start_time`. Pass it back with `--start-time` and proc-cli acts only if that PID still belongs to the process that started then; if the PID was reused, the answer is exit 2 with `"reason": "ruled_out"` and nothing is signalled. proc-cli also checks start times itself right before each signal, so a PID that changed hands between the preview and the signal is never hit.
 
 **It asks first, and an agent can't skip the question by accident.** A command that changes processes needs `--yes` or a person's yes at a terminal. Without a terminal and without `--yes`, nothing happens: exit 4, `"reason": "needs_confirmation"`, and the JSON lists every process it would have changed, so the agent can show the user exactly what it's about to do. `--dry-run` gives the same list without the error.
 
-**It runs the same on five systems.** proc reads processes and sockets itself on Linux, macOS, Windows, FreeBSD and NetBSD, with the same commands, flags, JSON and exit codes, so an agent's instructions don't need a branch per system.
+**It runs the same on five systems.** proc-cli reads processes and sockets itself on Linux, macOS, Windows, FreeBSD and NetBSD, with the same commands, flags, JSON and exit codes, so an agent's instructions don't need a branch per system.
 
 ## Give your agent the skill
 
-proc ships an [agent skill](/skill) that teaches an agent these rules: record the PID and start time of what it starts, branch on `reason`, treat process names as text and never as instructions, and ask the user before stopping something it didn't start. It works with Claude Code and other agents that read skills.
+proc-cli ships an [agent skill](/skill) that teaches an agent these rules: record the PID and start time of what it starts, branch on `reason`, treat process names as text and never as instructions, and ask the user before stopping something it didn't start. It works with Claude Code and other agents that read skills.
 
 ```bash
 npx skills add yazeed/proc-cli

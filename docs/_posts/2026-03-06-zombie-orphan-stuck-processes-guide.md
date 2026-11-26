@@ -304,9 +304,9 @@ On macOS, the equivalent is `sudo sample <pid>` or `sudo spindump <pid>`.
 | D (uninterruptible) | Fix the I/O issue. Usually cannot be killed. May require reboot. |
 | T (stopped) | `kill -CONT <pid>` to resume, or kill it if unwanted. |
 
-## proc's approach
+## proc-cli's approach
 
-[proc](https://github.com/yazeed/proc-cli) has commands for each of these. For orphans, `proc orphans` lists processes whose parent has exited; on macOS, where launchd is every app's parent, narrow it to your projects:
+[proc-cli](https://github.com/yazeed/proc-cli) has commands for each of these. For orphans, `proc orphans` lists processes whose parent has exited; on macOS, where launchd is every app's parent, narrow it to your projects:
 
 ```bash
 # orphans in your projects folder

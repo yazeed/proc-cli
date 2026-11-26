@@ -11,7 +11,7 @@
     proc free :3000
     ```
 
-    Without proc, on macOS or Linux: `lsof -ti :3000 | xargs kill`. On Windows: find the PID with `netstat -ano | findstr :3000`, then `taskkill /PID <pid> /F`.
+    Without proc-cli, on macOS or Linux: `lsof -ti :3000 | xargs kill`. On Windows: find the PID with `netstat -ano | findstr :3000`, then `taskkill /PID <pid> /F`.
 
 - q: How do I find what process is using a port?
   id: find-process-using-port
@@ -23,12 +23,12 @@
     proc on 1234      # what is PID 1234, and what does it listen on
     ```
 
-    Without proc: `lsof -i :8080` on macOS, `ss -ltnp 'sport = :8080'` on Linux, or `netstat -ano | findstr :8080` on Windows.
+    Without proc-cli: `lsof -i :8080` on macOS, `ss -ltnp 'sport = :8080'` on Linux, or `netstat -ano | findstr :8080` on Windows.
 
 - q: How do I check if a port is already in use?
   id: check-port-in-use
   a: |
-    `proc on :8080` prints what's listening, or says nothing is. In scripts, check the exit code: `0` means the port is taken, `2` means nothing is listening, and `3` means something is listening that proc can't see (another user's process): treat that as taken too.
+    `proc on :8080` prints what's listening, or says nothing is. In scripts, check the exit code: `0` means the port is taken, `2` means nothing is listening, and `3` means something is listening that proc-cli can't see (another user's process): treat that as taken too.
 
     ```bash
     proc on :8080 --json > /dev/null
@@ -60,12 +60,12 @@
 - q: How do I kill a process on a port on Mac?
   id: kill-port-mac
   a: |
-    Install proc with `brew install yazeed/proc/proc`, then run `proc free :3000`. Without proc: `lsof -ti :3000 | xargs kill`. Add `-9` to `kill` only if the process ignores the normal signal.
+    Install proc-cli with `brew install yazeed/proc/proc`, then run `proc free :3000`. Without proc-cli: `lsof -ti :3000 | xargs kill`. Add `-9` to `kill` only if the process ignores the normal signal.
 
 - q: How do I kill a process on a port on Windows?
   id: kill-port-windows
   a: |
-    proc works on Windows too (`scoop bucket add proc https://github.com/yazeed/scoop-bucket-proc` then `scoop install proc`, `npm install -g proc-cli`, `pip install proc-cli` or `cargo install proc-cli`), with the same command: `proc free :3000`. Without proc, run `netstat -ano | findstr :3000` to get the PID in the last column, then `taskkill /PID <pid> /F`.
+    proc-cli works on Windows too (`scoop bucket add proc https://github.com/yazeed/scoop-bucket-proc` then `scoop install proc`, `npm install -g proc-cli`, `pip install proc-cli` or `cargo install proc-cli`), with the same command: `proc free :3000`. Without proc-cli, run `netstat -ano | findstr :3000` to get the PID in the last column, then `taskkill /PID <pid> /F`.
 
 - q: How do I list all open or listening ports?
   id: list-listening-ports
@@ -77,7 +77,7 @@
     proc ports --exposed
     ```
 
-    Without proc: `ss -ltnp` on Linux, `lsof -iTCP -sTCP:LISTEN -n -P` on macOS.
+    Without proc-cli: `ss -ltnp` on Linux, `lsof -iTCP -sTCP:LISTEN -n -P` on macOS.
 
 - q: How do I find a process by name?
   id: find-process-by-name
@@ -101,7 +101,7 @@
     proc kill 1234 5678 --yes
     ```
 
-    Without proc: `pkill node` (or `pkill -f node` to match the full command line), which kills every match without asking.
+    Without proc-cli: `pkill node` (or `pkill -f node` to match the full command line), which kills every match without asking.
 
 - q: What is a zombie process, and how do I get rid of one?
   id: zombie-process
@@ -139,22 +139,22 @@
   a: |
     `proc stop` asks a process to exit (`SIGTERM`) and only forces it after a timeout, so it can clean up. `proc kill` ends it immediately (`SIGKILL`). `proc free` takes a port, stops whatever holds it, and then checks the port is free. All three ask before acting unless you pass `--yes`, and all take `--dry-run`.
 
-- q: Why did proc exit 4, or ask me to pass --yes?
+- q: Why did proc-cli exit 4, or ask me to pass --yes?
   id: exit-4-yes
   a: |
     A command that changes processes (`kill`, `stop`, `freeze`, `thaw`, `free`, `unstick`, and `stuck` or `orphans` with `--kill`) asks before it acts. In a script, with stdin redirected, or with `--json`, there is nobody to ask, so it changes nothing and exits 4. Preview what it would touch with `--dry-run`, then run it again with `--yes`. Exit 4 also means a mistyped flag or value, or something this system can't do (`freeze` on Windows); the message says which. [Messages](/commands/messages) explains each one.
 
-- q: What do proc's exit codes mean?
+- q: What do proc-cli's exit codes mean?
   id: exit-codes
   a: |
     `0` worked, `1` partly failed (a process refused, a port stayed busy, `wait` timed out), `2` nothing matched, `3` permission denied (or a port another user holds), and `4` nothing was done because the command was wrong, unsupported here, or needed `--yes`. A search that finds nothing, such as `proc list node` with no `node` running, is `0`: an empty answer is still an answer. The full table is under [Scripting and exit codes](/commands#exit-codes).
 
-- q: How do I install proc, and does it update itself?
+- q: How do I install proc-cli, and does it update itself?
   id: install-update
   a: |
-    Use your system's package manager: Homebrew on macOS, Scoop on Windows, the [apt repository](apt/) or the Ubuntu PPA on Debian and Ubuntu, COPR on Fedora, RHEL and Amazon Linux, and the AUR on Arch. npm, cargo and pip (`pip install proc-cli`) work on any system. [Install](install) lists every channel, who maintains it and how it updates. proc never updates itself: the package managers do (`brew upgrade`, `scoop update proc`, `apt upgrade`, `dnf upgrade`), and the install script, cargo and the release files take a new run or download for each version.
+    Use your system's package manager: Homebrew on macOS, Scoop on Windows, the [apt repository](apt/) or the Ubuntu PPA on Debian and Ubuntu, COPR on Fedora, RHEL and Amazon Linux, and the AUR on Arch. npm, cargo and pip (`pip install proc-cli`) work on any system. [Install](install) lists every channel, who maintains it and how it updates. proc-cli never updates itself: the package managers do (`brew upgrade`, `scoop update proc`, `apt upgrade`, `dnf upgrade`), and the install script, cargo and the release files take a new run or download for each version.
 
-- q: Is proc free, and where does it run?
+- q: Is proc-cli free, and where does it run?
   id: about-proc
   a: |
-    Yes. proc is free and open source under the MIT license, written in Rust, and runs on macOS, Linux, Windows, FreeBSD and NetBSD as a single binary. See [install](install) for every option.
+    Yes. proc-cli is free and open source under the MIT license, written in Rust, and runs on macOS, Linux, Windows, FreeBSD and NetBSD as a single binary. See [install](install) for every option.

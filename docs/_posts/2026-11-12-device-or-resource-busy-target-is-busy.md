@@ -115,9 +115,9 @@ Windows says *The action can't be completed because the file is open in another 
 - **Handle**, from Microsoft's Sysinternals: `handle.exe report.xlsx`.
 - **File Locksmith** in Microsoft PowerToys: right-click the file and open it with File Locksmith, which lists the programs using it and can end them.
 
-## With proc
+## With proc-cli
 
-[proc](https://github.com/yazeed/proc-cli) answers the question in one command:
+[proc-cli](https://github.com/yazeed/proc-cli) answers the question in one command:
 
 ```bash
 # everything keeping the mount (or any directory) busy
@@ -130,7 +130,7 @@ proc for /mnt/usb/notes.txt
 proc in /mnt/usb
 ```
 
-`proc for -r` (proc 2.5.0 and later) lists every process using anything below the path: a file open anywhere under it, a shell or program working in it, or a program running from it. Then stop each one with `proc stop <pid>`, or `cd` out of your own shell, and unmount. On Linux it reads `/proc` itself and needs nothing installed. On macOS it lists open files once with `lsof` and keeps the ones below the path, which took under a second on a home folder where `lsof +D` took over five minutes. On FreeBSD and NetBSD, `-r` works on a mount point, which is the unmount case.
+`proc for -r` (proc-cli 2.5.0 and later) lists every process using anything below the path: a file open anywhere under it, a shell or program working in it, or a program running from it. Then stop each one with `proc stop <pid>`, or `cd` out of your own shell, and unmount. On Linux it reads `/proc` itself and needs nothing installed. On macOS it lists open files once with `lsof` and keeps the ones below the path, which took under a second on a home folder where `lsof +D` took over five minutes. On FreeBSD and NetBSD, `-r` works on a mount point, which is the unmount case.
 
 Without `-r`, `proc for` checks one path: a process that has it open, runs it, maps it, or has it as its working directory. `proc in` lists the processes whose working directory is in that directory or any folder below it.
 

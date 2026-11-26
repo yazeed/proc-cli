@@ -62,7 +62,7 @@ With no target, `⚠ No processes match the specified filters`, exit 0. A target
 }
 ```
 
-The second is `--ancestors`, with `chain` from the top ancestor down to the target. Every node and every chain entry is a whole process object, the same one `list` and `on` print, with `"runs_proc": true` on a process proc runs under. Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#tree).
+The second is `--ancestors`, with `chain` from the top ancestor down to the target. Every node and every chain entry is a whole process object, the same one `list` and `on` print, with `"runs_proc": true` on a process proc-cli runs under. Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#tree).
 
 ## See also
 

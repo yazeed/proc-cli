@@ -1,6 +1,6 @@
 ---
 layout: default
-title: proc
+title: proc-cli
 description: "Semantic CLI tool for process management. Target by port, PID, name or path."
 ---
 <div class="home">
@@ -8,7 +8,7 @@ description: "Semantic CLI tool for process management. Target by port, PID, nam
   <section class="hero" aria-labelledby="hero-title">
     <div class="hero-copy">
       <h1 id="hero-title"><span class="hero-target">Target</span> processes by port, PID, name or path.</h1>
-      <p class="hero-lede">proc is a semantic CLI tool for process management on macOS, Linux, Windows, FreeBSD and NetBSD. Find what's on a port, why it's there, and stop it, in one command you'd guess on the first try.</p>
+      <p class="hero-lede">proc-cli is a semantic CLI tool for process management on macOS, Linux, Windows, FreeBSD and NetBSD, and <code>proc</code> is its command. Find what's on a port, why it's there, and stop it, in one command you'd guess on the first try.</p>
     </div>
 
     {%- comment -%} The default command, rendered without JavaScript: kill :3000 {%- endcomment -%}
@@ -47,10 +47,10 @@ description: "Semantic CLI tool for process management. Target by port, PID, nam
   </section>
 
   <figure class="demo">
-    <video autoplay loop muted playsinline preload="metadata" aria-label="proc freeing port 3000 from a forgotten tmux session, then cleaning up leftover processes">
+    <video autoplay loop muted playsinline preload="metadata" aria-label="proc-cli freeing port 3000 from a forgotten tmux session, then cleaning up leftover processes">
       <source src="{{ '/assets/demo.mp4' | relative_url }}" type="video/mp4">
     </video>
-    <figcaption>A dev server won't start because port 3000 is taken. proc finds the old tmux session holding it, frees the port, then cleans up what else was left running.</figcaption>
+    <figcaption>A dev server won't start because port 3000 is taken. proc-cli finds the old tmux session holding it, frees the port, then cleans up what else was left running.</figcaption>
   </figure>
 
   <section class="section" aria-labelledby="swap-title">
@@ -94,11 +94,11 @@ description: "Semantic CLI tool for process management. Target by port, PID, nam
     <h2 id="agents-title">Made for scripts and coding agents</h2>
     <div class="agents">
       <div>
-        <p class="section-lede">Every command prints JSON with <code>--json</code> (one document per command; <code>watch</code> streams one per refresh), and exit codes always mean the same thing. An agent can read proc the way you do, without parsing tables.</p>
+        <p class="section-lede">Every command prints JSON with <code>--json</code> (one document per command; <code>watch</code> streams one per refresh), and exit codes always mean the same thing. An agent can read proc-cli the way you do, without parsing tables.</p>
         <ul class="prose-list">
           <li><code>0</code> success, <code>1</code> error, <code>2</code> not found, <code>3</code> permission denied, <code>4</code> invalid input</li>
           <li><code>--dry-run</code> shows what would be touched, and nothing else</li>
-          <li>The <a href="{{ '/skill' | relative_url }}">agent skill</a> teaches Claude Code, Codex, Cursor, Gemini CLI and others when to reach for proc</li>
+          <li>The <a href="{{ '/skill' | relative_url }}">agent skill</a> teaches Claude Code, Codex, Cursor, Gemini CLI and others when to reach for proc-cli</li>
         </ul>
       </div>
       <div class="term highlight">

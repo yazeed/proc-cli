@@ -70,7 +70,7 @@ killall Safari
 pkill -x Safari
 ```
 
-App names with spaces need quotes: `killall "Google Chrome"`. Names are case-sensitive for `killall` and `pkill -x` (`killall safari` finds nothing; proc ignores case), and an app often runs helper processes under other names (`Google Chrome Helper (Renderer)`), which `pgrep -il chrome` lists. Try `kill` before `kill -9`: SIGTERM lets the program save and clean up, SIGKILL doesn't. For the differences between the three commands, see [kill vs pkill vs killall](/posts/kill-vs-pkill-vs-killall/).
+App names with spaces need quotes: `killall "Google Chrome"`. Names are case-sensitive for `killall` and `pkill -x` (`killall safari` finds nothing; proc-cli ignores case), and an app often runs helper processes under other names (`Google Chrome Helper (Renderer)`), which `pgrep -il chrome` lists. Try `kill` before `kill -9`: SIGTERM lets the program save and clean up, SIGKILL doesn't. For the differences between the three commands, see [kill vs pkill vs killall](/posts/kill-vs-pkill-vs-killall/).
 
 A process that belongs to another user or to the system answers `Operation not permitted`. Run the same command with `sudo` if you're sure.
 
@@ -93,9 +93,9 @@ If that's port 5000 or 7000, it's probably the AirPlay Receiver, which comes bac
 - **Don't force quit `WindowServer` or `loginwindow`.** Ending either logs you out and closes every app.
 - **A process won't die even with `kill -9`.** It's waiting on a disk or a network drive that stopped answering. See [stuck processes](/posts/zombie-orphan-stuck-processes-guide/).
 
-## With proc
+## With proc-cli
 
-[proc](https://github.com/yazeed/proc-cli) does the Terminal part in commands you'd guess, and shows you what it found before it stops anything:
+[proc-cli](https://github.com/yazeed/proc-cli) does the Terminal part in commands you'd guess, and shows you what it found before it stops anything:
 
 ```bash
 # the 10 busiest processes
@@ -109,7 +109,7 @@ proc free :3000
 proc stop Safari
 ```
 
-`proc stop` asks the process to exit and forces it after 10 seconds if it hasn't. Every command that stops something lists what it found and asks first. proc runs on macOS, Linux and Windows.
+`proc stop` asks the process to exit and forces it after 10 seconds if it hasn't. Every command that stops something lists what it found and asks first. proc-cli runs on macOS, Linux and Windows.
 
 ## Install
 

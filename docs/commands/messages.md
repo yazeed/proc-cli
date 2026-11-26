@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Messages
-description: "What each warning and error proc prints means, and what to do about it."
+description: "What each warning and error proc-cli prints means, and what to do about it."
 permalink: /commands/messages
 ---
 
@@ -11,7 +11,7 @@ A line that starts with `⚠` is a warning: the command still ran. An error ends
 
 #### `No process found matching '1234'`
 
-No process has that PID or name, or it exited before proc looked. Run `proc list` to see what is running. A name has to be the whole process name: `node` doesn't match `node-server` or `Claude Helper`.
+No process has that PID or name, or it exited before proc-cli looked. Run `proc list` to see what is running. A name has to be the whole process name: `node` doesn't match `node-server` or `Claude Helper`.
 
 #### `3 processes have 'serve' in their command line (add --cmd to match those)`
 
@@ -27,11 +27,11 @@ Nothing listens on that port: it is free. `proc ports` lists the ports in use.
 
 #### `sshd (PID 1329) matches 'sshd', but proc runs under it, so it's left out`
 
-The only processes the name matched are ones proc itself runs under: your shell, your terminal or the agent that ran proc. proc won't stop the program that is running it. Target it by PID if you really mean it.
+The only processes the name matched are ones proc-cli itself runs under: your shell, your terminal or the agent that ran `proc`. proc-cli won't stop the program that is running it. Target it by PID if you really mean it.
 
 #### `Process 1234 is no longer running`
 
-It exited between the moment proc found it and the moment proc acted on it. There is nothing left to do.
+It exited between the moment proc-cli found it and the moment proc-cli acted on it. There is nothing left to do.
 
 ## Permission (exit 3)
 
@@ -41,11 +41,11 @@ Something listens on the port, but another user owns it (root's nginx, for examp
 
 #### `proc can't tell whether port 22 is in use: this system hides other users' sockets (security.bsd.see_other_uids=0)`
 
-On FreeBSD and NetBSD set to hide other users' sockets, a port another user holds is invisible, so proc can't say whether it is free. `sudo` sees every socket.
+On FreeBSD and NetBSD set to hide other users' sockets, a port another user holds is invisible, so proc-cli can't say whether it is free. `sudo` sees every socket.
 
 #### `Permission denied for PID 42`
 
-The system refused proc a read it needed (the PID reads `0` when the refusal wasn't about one process). Run the command with `sudo` only once you've checked the process is one you mean to touch.
+The system refused proc-cli a read it needed (the PID reads `0` when the refusal wasn't about one process). Run the command with `sudo` only once you've checked the process is one you mean to touch.
 
 ## Partly done (exit 1)
 
@@ -63,7 +63,7 @@ The system refused the signal, and the line ends with its reason. `EPERM: Operat
 
 #### `System error: …`
 
-The system gave an error proc couldn't work around, such as an unreadable process table. Try again; if it keeps happening, report it with the full message.
+The system gave an error proc-cli couldn't work around, such as an unreadable process table. Try again; if it keeps happening, report it with the full message.
 
 ## Nothing was done (exit 4)
 
@@ -85,7 +85,7 @@ The directory given to `--in` or `in` doesn't exist and nothing runs in it. A di
 
 #### `error: unrecognized subcommand 'kil'` with `tip: did you mean 'kill'?`
 
-A command proc doesn't have. The tip names the closest ones. `proc --help` lists them all.
+A command proc-cli doesn't have. The tip names the closest ones. `proc --help` lists them all.
 
 #### `Not supported on this platform: …`
 
@@ -97,15 +97,15 @@ These don't stop the command.
 
 #### `⚠ Not found: 99999999`
 
-Some of the targets matched nothing; proc carried on with the others. If every target is missing, it is the exit 2 error above instead.
+Some of the targets matched nothing; proc-cli carried on with the others. If every target is missing, it is the exit 2 error above instead.
 
 #### `⚠ Left out: zsh (PID 81340), which runs this proc`
 
-A command that changes processes matched the shell, terminal or agent that runs proc, and skipped it, so `proc kill zsh` can't end the shell you typed it in. The other matches are handled.
+A command that changes processes matched the shell, terminal or agent that runs `proc`, and skipped it, so `proc kill zsh` can't end the shell you typed it in. The other matches are handled.
 
 #### `ℹ Includes zsh (PID 81340), which runs this proc`
 
-A command that only reads listed a process proc runs under. It is in the list; this line tells you which one it is.
+A command that only reads listed a process proc-cli runs under. It is in the list; this line tells you which one it is.
 
 #### `⚠ 2 ports in use by other users' processes, which proc can't see: 22, 80 (run with sudo to see them)`
 
@@ -113,7 +113,7 @@ A command that only reads listed a process proc runs under. It is in the list; t
 
 #### `Try: sudo proc info 1 to see the rest`
 
-Under a card (`on`, `info`, `why`, `for`): the system showed proc this process only in part. On macOS another user's process, root's `launchd` among them, gives a normal user its name, path and children and little else. `sudo` reads the rest.
+Under a card (`on`, `info`, `why`, `for`): the system showed proc-cli this process only in part. On macOS another user's process, root's `launchd` among them, gives a normal user its name, path and children and little else. `sudo` reads the rest.
 
 #### `⚠ No processes found`
 

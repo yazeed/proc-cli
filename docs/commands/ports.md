@@ -24,7 +24,7 @@ proc ports --sort name          # by the holder's name
  60916  TCP    0.0.0.0    exposed   26582  demo-web     33s  ./demo-web --serve --port-hint 3000
 ```
 
-Each row says what the listener is. EXPOSURE is `local` (bound to loopback only) or `exposed` (all interfaces, another address, or none known). NAME, UPTIME and COMMAND are the holder's, as in every other table, and COMMAND ends with `…` where it is cut. A value proc can't read shows as `-`.
+Each row says what the listener is. EXPOSURE is `local` (bound to loopback only) or `exposed` (all interfaces, another address, or none known). NAME, UPTIME and COMMAND are the holder's, as in every other table, and COMMAND ends with `…` where it is cut. A value proc-cli can't read shows as `-`.
 
 ## Options
 
@@ -43,7 +43,7 @@ Each row says what the listener is. EXPOSURE is `local` (bound to loopback only)
 
 ## Details
 
-- **Other users' ports.** When proc isn't root it can't see other users' processes' sockets, so their ports are left out, and on Linux and macOS a line after the table names them: `⚠ 2 ports in use by other users' processes, which proc can't see: 22, 80 (run with sudo to see them)`. The line is left out with `--by`, `--in`, `--exposed` or `--local`, since proc can't tell whether a holder it can't see would match; `--range` applies to it.
+- **Other users' ports.** When proc-cli isn't root it can't see other users' processes' sockets, so their ports are left out, and on Linux and macOS a line after the table names them: `⚠ 2 ports in use by other users' processes, which proc can't see: 22, 80 (run with sudo to see them)`. The line is left out with `--by`, `--in`, `--exposed` or `--local`, since proc-cli can't tell whether a holder it can't see would match; `--range` applies to it.
 - **FreeBSD and NetBSD** set to hide other users' sockets show only your own ports, and a line after the table says so.
 - **Only TCP listeners** appear; a UDP socket isn't listed.
 

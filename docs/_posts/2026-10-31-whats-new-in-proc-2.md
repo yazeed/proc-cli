@@ -1,10 +1,10 @@
 ---
-title: "What's new in proc 2: it does what you meant, and says why when it doesn't"
-description: "A name means that name, nothing changes without a yes, a PID that changed hands is refused, every error says why in a word a script can read, and proc installs with Nix and runs on any Windows machine."
+title: "What's new in proc-cli 2: it does what you meant, and says why when it doesn't"
+description: "A name means that name, nothing changes without a yes, a PID that changed hands is refused, every error says why in a word a script can read, and proc-cli installs with Nix and runs on any Windows machine."
 date: 2026-10-31
 ---
 
-The [last post](/posts/whats-new-in-proc/) covered proc up to 1.14.5. Since then 2.0.0, 2.0.1, 2.0.2, 2.1.0 and 2.1.1 came out. 2.0.0 is a breaking release, and the breaks are the point: each one closes a way proc could act on something you didn't mean. Here's what changed, and what to do if you used proc before.
+The [last post](/posts/whats-new-in-proc/) covered proc-cli up to 1.14.5. Since then 2.0.0, 2.0.1, 2.0.2, 2.1.0 and 2.1.1 came out. 2.0.0 is a breaking release, and the breaks are the point: each one closes a way proc-cli could act on something you didn't mean. Here's what changed, and what to do if you used proc-cli before.
 
 ## A name means that name
 
@@ -15,7 +15,7 @@ proc by node          # processes named node
 proc by node --cmd    # the old way: node anywhere in the name or command line
 ```
 
-When a name matches nothing exactly but appears in command lines, proc says so rather than quietly finding nothing:
+When a name matches nothing exactly but appears in command lines, proc-cli says so rather than quietly finding nothing:
 
 ```
 No process found matching 'slee'
@@ -33,7 +33,7 @@ In 1.x, `--json` counted as consent, so a script or agent asking for JSON could 
 
 (Shortened: each process in `processes` carries all its details.)
 
-`--dry-run` still previews without asking. And when there's no terminal to ask in, proc doesn't ask: it says what to pass instead.
+`--dry-run` still previews without asking. And when there's no terminal to ask in, proc-cli doesn't ask: it says what to pass instead.
 
 ## Several targets, one spelling
 
@@ -47,14 +47,14 @@ The OS hands a PID to a new process once the old one exits, and on one busy Mac 
 proc stop 19724 --start-time 1793506406 --yes
 ```
 
-If PID 19724 now belongs to a process that started at another time, proc refuses and touches nothing:
+If PID 19724 now belongs to a process that started at another time, proc-cli refuses and touches nothing:
 
 ```json
 {"exit_code": 2, "reason": "ruled_out", "ruled_out_by": ["--start-time"],
  "error": "No process found matching '19724' (ruled out by --start-time 1793506406)"}
 ```
 
-Independently of the flag, proc checks again right before each signal, including `stop`'s SIGKILL that comes seconds later, so a delayed signal can't land on a process that took the PID in the meantime.
+Independently of the flag, proc-cli checks again right before each signal, including `stop`'s SIGKILL that comes seconds later, so a delayed signal can't land on a process that took the PID in the meantime.
 
 ## Every error says why
 
@@ -62,7 +62,7 @@ Exit codes keep one meaning on every command: `0` success, `1` error, `2` not fo
 
 ## The edges
 
-- **Pipes:** `proc list | head -n1` no longer crashes proc, and a `kill --yes` whose output goes to a reader that stopped early still reports what it really did.
+- **Pipes:** `proc list | head -n1` no longer crashes proc-cli, and a `kill --yes` whose output goes to a reader that stopped early still reports what it really did.
 - **Typos:** `proc kil` ends with `tip: did you mean 'kill'?`, and a mistyped port like `:3000x` is an error that says ports go from `:1` to `:65535`, not a search for a process named `:3000x`.
 - **The terminal:** a signal at a prompt or in `proc watch` no longer leaves the terminal in raw mode.
 - **Order:** the same command lists the same processes in the same order every time, so `--limit` picks the same rows and a preview matches what runs.
@@ -70,7 +70,7 @@ Exit codes keep one meaning on every command: `0` success, `1` error, `2` not fo
 
 ## More ways to install
 
-- **Nix:** `nix profile install github:yazeed/proc-cli/vX.Y.Z`, with a release's tag ([the install page](/install#nix) has the current one), installs proc with its man page and shell completions, and `nix run github:yazeed/proc-cli/vX.Y.Z -- on :3000` runs it once without installing. The flake builds proc and runs its whole test suite in Nix's sandbox, checked in CI on Linux and macOS. A nixpkgs package is in review.
+- **Nix:** `nix profile install github:yazeed/proc-cli/vX.Y.Z`, with a release's tag ([the install page](/install#nix) has the current one), installs proc-cli with its man page and shell completions, and `nix run github:yazeed/proc-cli/vX.Y.Z -- on :3000` runs it once without installing. The flake builds proc-cli and runs its whole test suite in Nix's sandbox, checked in CI on Linux and macOS. A nixpkgs package is in review.
 - **Arch Linux:** the AUR has `proc` (built from source) next to `proc-bin` (the release binaries), both maintained by Rafael Dominiquini, their community packager.
 - **Windows:** the binary no longer needs the Visual C++ runtime, so it starts on a machine that never installed it.
 

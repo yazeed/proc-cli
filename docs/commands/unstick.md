@@ -17,7 +17,7 @@ proc unstick 1234 :3000      # several targets
 
 ## Output
 
-`⚠ Found 2 processes to unstick:` and the process table every list in proc prints, then the question. After a yes, a line per process: `recovered`, `not stuck`, `still stuck`, `terminated` or `failed`.
+`⚠ Found 2 processes to unstick:` and the process table every list in proc-cli prints, then the question. After a yes, a line per process: `recovered`, `not stuck`, `still stuck`, `terminated` or `failed`.
 
 ## Options
 

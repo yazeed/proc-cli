@@ -513,7 +513,7 @@ If the process you killed keeps coming back on the same port, something is resta
 
 All of the above works. But if you're doing this regularly — killing dev servers, checking what's on a port, freeing up ports — it's a lot of flags to remember, and the commands are different on macOS vs Linux.
 
-[proc](https://github.com/yazeed/proc-cli) is a cross-platform CLI that does this with one syntax, on macOS, Linux and Windows:
+[proc-cli](https://github.com/yazeed/proc-cli) is a cross-platform CLI that does this with one syntax, on macOS, Linux and Windows:
 
 ```bash
 # What's on port 3000: the process, its command, directory and who's connected

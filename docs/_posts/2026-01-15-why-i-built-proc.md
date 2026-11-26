@@ -1,5 +1,5 @@
 ---
-title: "Why I built proc"
+title: "Why I built proc-cli"
 description: "I kept forgetting how to find what's on port 3000. So I built a tool where the command you'd guess is the command that works."
 date: 2026-01-15
 ---
@@ -66,7 +66,7 @@ Rust gave me that, plus cross-platform compilation. The same codebase builds for
 
 ## What I chose not to build
 
-Scope discipline matters more than features. proc does process and port management. It doesn't do:
+Scope discipline matters more than features. proc-cli does process and port management. It doesn't do:
 
 - Service management (use systemd)
 - Containers (use docker)
@@ -78,9 +78,9 @@ Every feature has to pass a simple test: does it fit "process and port managemen
 
 ## Putting it out there
 
-I posted proc on Hacker News and Reddit. HN was receptive — people understood the pitch and had good technical feedback. Reddit was harder. The Rust subreddit and r/commandline had seen enough port-killing tools that another one didn't register. "Just another ports tool" was the general sentiment.
+I posted proc-cli on Hacker News and Reddit. HN was receptive — people understood the pitch and had good technical feedback. Reddit was harder. The Rust subreddit and r/commandline had seen enough port-killing tools that another one didn't register. "Just another ports tool" was the general sentiment.
 
-And honestly, that's fair. If you glance at proc and only see `proc kill :3000`, it does look like killport. The difference is what happens when you need more: filtering by directory, process trees, stuck process recovery, multi-target operations, real-time monitoring, JSON output for scripting. That's where a semantic tool with a unified interface starts to pay off versus a collection of single-purpose scripts.
+And honestly, that's fair. If you glance at proc-cli and only see `proc kill :3000`, it does look like killport. The difference is what happens when you need more: filtering by directory, process trees, stuck process recovery, multi-target operations, real-time monitoring, JSON output for scripting. That's where a semantic tool with a unified interface starts to pay off versus a collection of single-purpose scripts.
 
 Whether that difference matters enough is something the community decides, not me. I built the tool I wanted. I use it every day. Where it goes from here, who knows.
 

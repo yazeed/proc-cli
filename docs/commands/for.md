@@ -40,9 +40,9 @@ One process gets the same card as [`proc on`](on), under the line `✓ Found 1 p
 ## Details
 
 - **A process counts** when it runs the file or uses it: an open file, its working directory or root directory, or a file mapped into memory (a shared library).
-- **Where proc reads it:** on Linux from `/proc`, so nothing needs installing; macOS asks `lsof`, and FreeBSD and NetBSD `fstat`. Where that program is missing, `proc for` says so and exits 4 (`not_supported`) rather than reporting no processes. Windows finds the processes running the file only.
+- **Where proc-cli reads it:** on Linux from `/proc`, so nothing needs installing; macOS asks `lsof`, and FreeBSD and NetBSD `fstat`. Where that program is missing, `proc for` says so and exits 4 (`not_supported`) rather than reporting no processes. Windows finds the processes running the file only.
 - **`--recursive` on a directory** counts every process using anything below it, which is what keeps `umount` saying "target is busy" or `rm` saying "Device or resource busy". Below means by whole folder names: `/srv/app2` is not below `/srv/app`. On a file it gives the same answer as without it. Linux reads `/proc`; macOS lists every open file once with `lsof` and keeps those below the directory, under a second however big the tree. FreeBSD's and NetBSD's `fstat` reports the filesystem a file is on but not its path, so there `--recursive` answers for a mount point, and any other directory exits 4 (`not_supported`). Windows finds the processes working in the directory or running a program from it.
-- proc leaves itself out.
+- proc-cli leaves itself out.
 - If the system gives no port table (for example macOS without `lsof` on the PATH), the card and the table leave the ports out.
 
 ## When nothing matches

@@ -199,9 +199,9 @@ Real-time signals (32-64) are queued and delivered in order, but most applicatio
 
 Note: signal numbers differ between platforms (Linux x86 and ARM in the first column, macOS in the second). SIGBUS, SIGUSR1, SIGUSR2, SIGCHLD, SIGCONT, SIGSTOP, SIGTSTP, SIGURG and SIGIO differ; the rest match. Use signal names, not numbers, in portable scripts.
 
-## with proc
+## with proc-cli
 
-[proc](https://github.com/yazeed/proc-cli)'s `stop` command sends SIGTERM first with a configurable timeout, then escalates to SIGKILL. `proc stuck` finds processes that have run over five minutes and are busy (over 50% CPU) or blocked in uninterruptible sleep, and `proc unstick` sends recovery signals (SIGCONT, then SIGINT, which ends most programs) and, with `--force`, escalates to SIGTERM and SIGKILL.
+[proc-cli](https://github.com/yazeed/proc-cli)'s `stop` command sends SIGTERM first with a configurable timeout, then escalates to SIGKILL. `proc stuck` finds processes that have run over five minutes and are busy (over 50% CPU) or blocked in uninterruptible sleep, and `proc unstick` sends recovery signals (SIGCONT, then SIGINT, which ends most programs) and, with `--force`, escalates to SIGTERM and SIGKILL.
 
 ```bash
 proc stop node                 # SIGTERM, wait, then SIGKILL

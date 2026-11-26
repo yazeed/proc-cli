@@ -26,7 +26,7 @@ proc list --status running --sort mem     # running processes, biggest first
  38120  zsh      dev    0.0   4.1MB  2h 14m  -zsh
 ```
 
-Every process table in proc (`list`, `by`, `in`, `for` with several hits, `orphans`, `stuck`, `watch`, and the list in front of a `--dry-run` or a question) has these columns: PID, NAME, USER, CPU%, MEM, UPTIME and COMMAND. A value proc can't read shows as `-`. With `--in`, the directory is the second column (`PID DIR NAME ...`).
+Every process table in proc-cli (`list`, `by`, `in`, `for` with several hits, `orphans`, `stuck`, `watch`, and the list in front of a `--dry-run` or a question) has these columns: PID, NAME, USER, CPU%, MEM, UPTIME and COMMAND. A value proc-cli can't read shows as `-`. With `--in`, the directory is the second column (`PID DIR NAME ...`).
 
 One process is always one line. COMMAND takes the width the other columns leave and ends with `…` where it is cut. The directory under `--in` is cut in the middle (`/Users/…/my-app/.next/standalone`) before it takes more than a third of the line. The list in front of a `--dry-run` or a question prints the command line whole, since that is what you approve.
 
@@ -66,7 +66,7 @@ One process is always one line. COMMAND takes the width the other columns leave 
 }
 ```
 
-Each process has all the table shows and more: `parent_name`, `child_count`, `cpu_time_secs` and `open_files` (a key is left out where the system doesn't give the value), and `"runs_proc": true` on a process proc runs under (its shell, or the agent that ran it). Nothing found is `count: 0` and `processes: []`. Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#process-and-port-objects).
+Each process has all the table shows and more: `parent_name`, `child_count`, `cpu_time_secs` and `open_files` (a key is left out where the system doesn't give the value), and `"runs_proc": true` on a process proc-cli runs under (its shell, or the agent that ran it). Nothing found is `count: 0` and `processes: []`. Every key: [the JSON reference](https://github.com/yazeed/proc-cli/blob/main/skills/proc-cli/reference.md#process-and-port-objects).
 
 ## See also
 

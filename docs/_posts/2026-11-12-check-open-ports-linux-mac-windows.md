@@ -148,9 +148,9 @@ Test-NetConnection 192.168.1.20 -Port 3000
 
 Only scan machines you're responsible for: port scans of other people's hosts can break their terms of service or the law.
 
-## With proc
+## With proc-cli
 
-[proc](https://github.com/yazeed/proc-cli) lists listening ports the same way on Linux, macOS, Windows, FreeBSD and NetBSD, and says for each one whether the network can reach it:
+[proc-cli](https://github.com/yazeed/proc-cli) lists listening ports the same way on Linux, macOS, Windows, FreeBSD and NetBSD, and says for each one whether the network can reach it:
 
 ```bash
 proc ports
@@ -171,7 +171,7 @@ proc ports --range 3000-9000
 proc on :3000
 ```
 
-On Linux it reads the kernel's socket table itself, so it works where `lsof` isn't installed. When a port belongs to another user and proc can't see which process holds it, it says so instead of leaving it out.
+On Linux it reads the kernel's socket table itself, so it works where `lsof` isn't installed. When a port belongs to another user and proc-cli can't see which process holds it, it says so instead of leaving it out.
 
 To stop what's on a port, see [find and kill a process on a port](/posts/find-kill-process-on-port-macos-linux/). For the three classic tools side by side, see [ss vs netstat vs lsof](/posts/ss-vs-netstat-vs-lsof/).
 
